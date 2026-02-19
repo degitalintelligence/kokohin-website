@@ -1,0 +1,450 @@
+import React, { useState } from 'react';
+import { 
+  LayoutDashboard, Users, Calculator, FileText, Settings, 
+  Search, Plus, ArrowLeft, Download, CheckCircle, AlertCircle,
+  Briefcase, TrendingUp, DollarSign, PenTool, HardHat, FileEdit
+} from 'lucide-react';
+
+const COLORS = {
+  primary: '#E30613',
+  dark: '#1D1D1B',
+  light: '#F8F8F8'
+};
+
+// --- MOCK DATA LEADS ---
+const MOCK_LEADS = [
+  { id: 'L-001', name: 'Budi Santoso', type: 'Kanopi Standar', zone: 'Jaksel (+5%)', status: 'Quoted', date: '2026-10-10' },
+  { id: 'L-002', name: 'Andi (Desain Custom)', type: 'Custom Pagar', zone: 'Depok (+0%)', status: 'Need Manual Quote', date: '2026-10-11' },
+  { id: 'L-003', name: 'Siska', type: 'Kanopi Premium', zone: 'Tangsel (+5%)', status: 'Surveyed', date: '2026-10-11' },
+];
+
+// --- MOCK MATAERIAL UNTUK COSTING BUILDER ---
+const MOCK_MATERIALS = [
+  { id: 'm1', name: 'Besi Hollow 4x4 Galvanis', unit: 'Batang (6m)', price: 125000, length_per_unit: 6 },
+  { id: 'm2', name: 'Alderon Double Layer', unit: 'Meter Lari (m¹)', price: 165000, length_per_unit: 1 },
+  { id: 'm3', name: 'Plat Laser Cut Custom', unit: 'Lembar (1.2x2.4m)', price: 1800000, length_per_unit: 1 },
+  { id: 'm4', name: 'Jasa Tukang Las', unit: 'Hari', price: 200000, length_per_unit: 1 },
+];
+
+export default function App() {
+  const [view, setView] = useState('dashboard'); // 'dashboard' | 'costing_builder'
+  const [activeLead, setActiveLead] = useState(null);
+  
+  // State untuk Costing Builder
+  const [costingItems, setCostingItems] = useState([
+    { id: 1, materialId: 'm1', name: 'Besi Hollow 4x4 Galvanis', unit: 'Batang (6m)', hpp: 125000, lengthPerUnit: 6, qtyNeeded: 14, qtyCharged: 3, subtotal: 375000 }
+  ]);
+  const [marginSetting, setMarginSetting] = useState(30); // 30% margin default
+  const [zoneMarkup, setZoneMarkup] = useState(0);
+
+  // Helper Math untuk Costing
+  const calculateTotalHPP = () => costingItems.reduce((acc, item) => acc + item.subtotal, 0);
+  const totalHPP = calculateTotalHPP();
+  const marginNominal = totalHPP * (marginSetting / 100);
+  const markupNominal = totalHPP * (zoneMarkup / 100);
+  const totalSellingPrice = totalHPP + marginNominal + markupNominal;
+
+  const handleOpenBuilder = (lead) => {
+    setActiveLead(lead);
+    setZoneMarkup(lead.zone.includes('+5%') ? 5 : 0);
+    // Reset or load items based on lead (mockup logic)
+    if (lead.id === 'L-002') {
+      setCostingItems([
+        { id: 1, materialId: 'm3', name: 'Plat Laser Cut Custom', unit: 'Lembar (1.2x2.4m)', hpp: 1800000, lengthPerUnit: 1, qtyNeeded: 3, qtyCharged: 3, subtotal: 5400000 },
+        { id: 2, materialId: 'm1', name: 'Besi Hollow 4x4 Galvanis', unit: 'Batang (6m)', hpp: 125000, lengthPerUnit: 6, qtyNeeded: 20, qtyCharged: 4, subtotal: 500000 },
+        { id: 3, materialId: 'm4', name: 'Jasa Tukang Las', unit: 'Hari', hpp: 200000, lengthPerUnit: 1, qtyNeeded: 5, qtyCharged: 5, subtotal: 1000000 },
+      ]);
+    }
+    setView('costing_builder');
+  };
+
+  const handleAddItem = (materialId) => {
+    const mat = MOCK_MATERIALS.find(m => m.id === materialId);
+    if (!mat) return;
+    
+    // Default add 1 needed
+    const qtyNeeded = 1;
+    const qtyCharged = Math.ceil(qtyNeeded / mat.length_per_unit) * mat.length_per_unit;
+    // Special rule for things that dont have length waste (length = 1)
+    const finalCharged = mat.length_per_unit === 1 ? qtyNeeded : Math.ceil(qtyNeeded / mat.length_per_unit);
+    
+    setCostingItems([...costingItems, {
+      id: Date.now(),
+      materialId: mat.id,
+      name: mat.name,
+      unit: mat.unit,
+      hpp: mat.price,
+      lengthPerUnit: mat.length_per_unit,
+      qtyNeeded: qtyNeeded,
+      qtyCharged: finalCharged,
+      subtotal: finalCharged * mat.price
+    }]);
+  };
+
+  const updateItemQty = (id, newQtyNeeded) => {
+    setCostingItems(costingItems.map(item => {
+      if (item.id === id) {
+        // CEILING MATH LOGIC (The core secret of contractor margins)
+        const qtyCharged = item.lengthPerUnit === 1 
+          ? Number(newQtyNeeded) 
+          : Math.ceil(Number(newQtyNeeded) / item.lengthPerUnit);
+          
+        return {
+          ...item,
+          qtyNeeded: Number(newQtyNeeded),
+          qtyCharged: qtyCharged,
+          subtotal: qtyCharged * item.hpp
+        };
+      }
+      return item;
+    }));
+  };
+
+  return (
+    <div className="font-sans min-h-screen flex bg-gray-50" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+      <style dangerouslySetInnerHTML={{__html: `
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap');
+      `}} />
+
+      {/* --- SIDEBAR --- */}
+      <aside className="w-64 flex-shrink-0 flex flex-col h-screen sticky top-0" style={{ backgroundColor: COLORS.dark }}>
+        <div className="h-20 flex items-center px-6 border-b border-gray-800 gap-3">
+          <div className="w-8 h-8 flex items-center justify-center rounded-sm bg-[#E30613]">
+            <HardHat color="white" size={20} />
+          </div>
+          <span className="font-bold text-xl text-white tracking-tight">Kokohin ERP</span>
+        </div>
+        
+        <div className="p-4">
+          <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-2">Role: Admin Proyek</div>
+        </div>
+
+        <nav className="flex-1 px-4 space-y-1">
+          <a href="#" onClick={() => setView('dashboard')} className={`flex items-center gap-3 px-3 py-3 rounded-lg font-semibold transition-colors ${view === 'dashboard' ? 'bg-[#E30613] text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}>
+            <LayoutDashboard size={20} /> Pipeline Leads
+          </a>
+          <a href="#" className="flex items-center gap-3 px-3 py-3 rounded-lg font-semibold text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
+            <Calculator size={20} /> Master Estimasi
+          </a>
+          <a href="#" className="flex items-center gap-3 px-3 py-3 rounded-lg font-semibold text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
+            <Briefcase size={20} /> Master Material
+          </a>
+          <a href="#" className="flex items-center gap-3 px-3 py-3 rounded-lg font-semibold text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
+            <FileText size={20} /> Katalog Pricelist
+          </a>
+        </nav>
+        
+        <div className="p-4 border-t border-gray-800">
+          <a href="#" className="flex items-center gap-3 px-3 py-3 rounded-lg font-semibold text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">
+            <Settings size={20} /> Settings
+          </a>
+        </div>
+      </aside>
+
+      {/* --- MAIN CONTENT AREA --- */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+        
+        {/* HEADER */}
+        <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 flex-shrink-0 z-10">
+          <h2 className="text-xl font-bold text-gray-800">
+            {view === 'dashboard' ? 'Pipeline Leads & Proyek' : `Costing Builder: ${activeLead?.name}`}
+          </h2>
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input type="text" placeholder="Cari ID/Nama..." className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613]" />
+            </div>
+            <div className="w-10 h-10 rounded-full bg-gray-200 border-2 border-white shadow-sm overflow-hidden">
+              <img src="https://ui-avatars.com/api/?name=Admin+Proyek&background=1D1D1B&color=fff" alt="User" />
+            </div>
+          </div>
+        </header>
+
+        {/* SCROLLABLE CONTENT */}
+        <div className="flex-1 overflow-auto p-8">
+          
+          {/* =========================================
+              VIEW 1: DASHBOARD LEADS PIPELINE
+          ========================================= */}
+          {view === 'dashboard' && (
+            <div className="animate-in fade-in duration-300">
+              
+              {/* Metric Cards */}
+              <div className="grid grid-cols-3 gap-6 mb-8">
+                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+                    <Users size={24} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-500">Total Leads (Bulan Ini)</p>
+                    <h3 className="text-2xl font-extrabold text-gray-900">42</h3>
+                  </div>
+                </div>
+                <div className="bg-white p-6 rounded-xl border border-red-100 shadow-sm flex items-center gap-4 border-l-4 border-l-[#E30613]">
+                  <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-[#E30613]">
+                    <AlertCircle size={24} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-500">Need Manual Quote</p>
+                    <h3 className="text-2xl font-extrabold text-gray-900">3 <span className="text-xs font-semibold text-[#E30613] bg-red-50 px-2 py-1 rounded ml-2">Action Required</span></h3>
+                  </div>
+                </div>
+                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center text-green-600">
+                    <TrendingUp size={24} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-500">Total Deal Value</p>
+                    <h3 className="text-2xl font-extrabold text-gray-900">Rp 142M</h3>
+                  </div>
+                </div>
+              </div>
+
+              {/* Data Table */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                  <h3 className="font-bold text-lg text-gray-800">Data Prospek Masuk</h3>
+                  <button className="flex items-center gap-2 text-sm font-bold text-white bg-[#1D1D1B] px-4 py-2 rounded-lg hover:bg-gray-800">
+                    <Plus size={16} /> Input Manual Lead
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-white border-b border-gray-200 text-sm">
+                        <th className="p-4 font-bold text-gray-500 uppercase">ID Lead</th>
+                        <th className="p-4 font-bold text-gray-500 uppercase">Nama Customer</th>
+                        <th className="p-4 font-bold text-gray-500 uppercase">Tipe Konstruksi</th>
+                        <th className="p-4 font-bold text-gray-500 uppercase">Zona Lokasi</th>
+                        <th className="p-4 font-bold text-gray-500 uppercase">Status</th>
+                        <th className="p-4 font-bold text-gray-500 uppercase text-right">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm">
+                      {MOCK_LEADS.map((lead) => (
+                        <tr key={lead.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                          <td className="p-4 font-semibold text-gray-800">{lead.id}</td>
+                          <td className="p-4 font-bold text-gray-900">
+                            {lead.name}
+                            {lead.type.includes('Custom') && <span className="block text-xs font-medium text-gray-500 mt-1 flex items-center gap-1"><PenTool size={12}/> Desain Khusus</span>}
+                          </td>
+                          <td className="p-4 text-gray-700">{lead.type}</td>
+                          <td className="p-4 text-gray-700">{lead.zone}</td>
+                          <td className="p-4">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${
+                              lead.status === 'Need Manual Quote' ? 'bg-red-50 text-[#E30613] border-red-200 animate-pulse' :
+                              lead.status === 'Quoted' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                              'bg-yellow-50 text-yellow-700 border-yellow-200'
+                            }`}>
+                              {lead.status === 'Need Manual Quote' && <AlertCircle size={12} className="mr-1" />}
+                              {lead.status}
+                            </span>
+                          </td>
+                          <td className="p-4 text-right">
+                            {lead.status === 'Need Manual Quote' ? (
+                              <button onClick={() => handleOpenBuilder(lead)} className="inline-flex items-center gap-1 text-xs font-bold text-white bg-[#E30613] px-3 py-1.5 rounded hover:bg-red-700 transition-colors shadow-sm">
+                                <Calculator size={14} /> Buat Estimasi
+                              </button>
+                            ) : (
+                              <button onClick={() => handleOpenBuilder(lead)} className="inline-flex items-center gap-1 text-xs font-bold text-gray-700 bg-gray-100 border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-200 transition-colors">
+                                <FileEdit size={14} /> Edit Estimasi V2
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+
+          {/* =========================================
+              VIEW 2: COSTING BUILDER (THE MAGIC!)
+          ========================================= */}
+          {view === 'costing_builder' && (
+            <div className="animate-in slide-in-from-bottom-8 duration-300">
+              
+              <div className="flex items-center gap-4 mb-6">
+                <button onClick={() => setView('dashboard')} className="p-2 bg-white rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 transition-colors shadow-sm">
+                  <ArrowLeft size={20} />
+                </button>
+                <div>
+                  <h2 className="text-2xl font-extrabold text-gray-900">Costing Builder <span className="text-gray-400 font-medium">| Estimasi V1</span></h2>
+                  <p className="text-sm font-semibold text-[#E30613] flex items-center gap-2 mt-1">
+                    <PenTool size={14} /> Request: {activeLead?.type} - {activeLead?.name}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                
+                {/* LEFT COL: MATERIAL INPUT (HPP) */}
+                <div className="xl:col-span-2 space-y-6">
+                  
+                  <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                    <div className="p-5 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                      <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2"><HardHat size={18} className="text-gray-500" /> Rincian Modal (HPP Material & Jasa)</h3>
+                      <div className="flex gap-2">
+                        <select 
+                          className="text-sm border border-gray-300 rounded-md px-3 py-1.5 font-medium outline-none focus:ring-1 focus:ring-[#E30613]"
+                          onChange={(e) => handleAddItem(e.target.value)}
+                          value=""
+                        >
+                          <option value="" disabled>+ Tambah Material</option>
+                          {MOCK_MATERIALS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    
+                    <div className="p-0 overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead>
+                          <tr className="bg-white border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
+                            <th className="p-4 font-bold">Item Material/Jasa</th>
+                            <th className="p-4 font-bold w-24">Harga Modal (Rp)</th>
+                            <th className="p-4 font-bold bg-yellow-50 text-yellow-800 w-28 border-l border-yellow-200" title="Kebutuhan riil di lapangan">Kebutuhan Riil</th>
+                            <th className="p-4 font-bold bg-red-50 text-[#E30613] w-28 border-l border-red-200" title="Kuantitas yang dibebankan ke customer setelah pembulatan (Ceiling)">Qty Dibebankan<br/><span className="text-[10px] font-normal text-gray-500">(Formula Ceiling)</span></th>
+                            <th className="p-4 font-bold text-right w-32">Subtotal Modal</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {costingItems.map((item, index) => (
+                            <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50">
+                              <td className="p-4">
+                                <p className="font-bold text-gray-800">{item.name}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">Satuan: {item.unit}</p>
+                              </td>
+                              <td className="p-4 font-medium text-gray-700">{item.hpp.toLocaleString('id-ID')}</td>
+                              <td className="p-4 bg-yellow-50/30 border-l border-yellow-100">
+                                <div className="flex items-center gap-1">
+                                  <input 
+                                    type="number" 
+                                    value={item.qtyNeeded}
+                                    onChange={(e) => updateItemQty(item.id, e.target.value)}
+                                    className="w-16 p-1.5 border border-yellow-300 rounded text-center text-sm font-bold focus:outline-none focus:ring-1 focus:ring-yellow-500 bg-white"
+                                  />
+                                  <span className="text-xs text-gray-500">{item.lengthPerUnit > 1 ? 'm' : 'x'}</span>
+                                </div>
+                              </td>
+                              <td className="p-4 bg-red-50/30 border-l border-red-100">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-extrabold text-lg text-[#1D1D1B]">{item.qtyCharged}</span>
+                                  {item.lengthPerUnit > 1 && (
+                                    <span className="text-[10px] font-bold text-gray-400 leading-tight">Batang<br/>Utuh</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-4 font-bold text-gray-900 text-right">
+                                Rp {item.subtotal.toLocaleString('id-ID')}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                          <tr>
+                            <td colSpan="4" className="p-4 text-right font-bold text-gray-600 uppercase text-xs">Total Modal (HPP):</td>
+                            <td className="p-4 text-right font-extrabold text-lg text-gray-900">Rp {totalHPP.toLocaleString('id-ID')}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                  
+                  {/* Alert Edukatif untuk Engineer */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex gap-3 shadow-sm">
+                    <CheckCircle className="text-blue-500 flex-shrink-0 mt-0.5" size={20} />
+                    <div>
+                      <h4 className="font-bold text-blue-900 text-sm mb-1">Waste Material Ter-Cover Otomatis</h4>
+                      <p className="text-xs text-blue-800 leading-relaxed">
+                        Sistem otomatis membulatkan kebutuhan riil (kolom kuning) menjadi satuan batang utuh (kolom merah). Sisa potongan besi <strong>sudah dibebankan ke customer</strong>, menjaga margin perusahaan tetap aman.
+                      </p>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* RIGHT COL: PRICING & MARGIN (SELLING PRICE) */}
+                <div className="xl:col-span-1 space-y-6">
+                  
+                  <div className="bg-[#1D1D1B] rounded-xl shadow-lg border border-gray-800 overflow-hidden text-white sticky top-28">
+                    <div className="p-6 border-b border-gray-800">
+                      <h3 className="font-bold text-lg flex items-center gap-2"><DollarSign className="text-[#E30613]" /> Summary Penjualan</h3>
+                    </div>
+                    
+                    <div className="p-6 space-y-5">
+                      
+                      {/* Modal */}
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-400 font-medium">Total Modal (HPP)</span>
+                        <span className="font-bold">Rp {totalHPP.toLocaleString('id-ID')}</span>
+                      </div>
+                      
+                      <hr className="border-gray-800" />
+
+                      {/* Margin Setup */}
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <label className="text-sm font-bold text-gray-300">Set Margin Profit (%)</label>
+                          <span className="font-extrabold text-lg text-[#E30613]">{marginSetting}%</span>
+                        </div>
+                        <input 
+                          type="range" 
+                          min="10" max="60" step="5"
+                          value={marginSetting}
+                          onChange={(e) => setMarginSetting(Number(e.target.value))}
+                          className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-[#E30613]"
+                        />
+                        <div className="flex justify-between text-[10px] text-gray-500 mt-1 font-bold">
+                          <span>10% (Promo)</span>
+                          <span>30% (Standar)</span>
+                          <span>60% (High Margin)</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm mt-3">
+                          <span className="text-gray-400">Nominal Margin</span>
+                          <span className="font-bold text-green-400">+ Rp {marginNominal.toLocaleString('id-ID')}</span>
+                        </div>
+                      </div>
+
+                      <hr className="border-gray-800" />
+
+                      {/* Markup Zona */}
+                      <div className="flex justify-between items-center text-sm">
+                        <div>
+                          <span className="text-gray-400 font-medium block">Markup Lokasi</span>
+                          <span className="text-[10px] text-gray-500">Berdasarkan zonasi: {activeLead?.zone}</span>
+                        </div>
+                        <span className="font-bold text-yellow-400">+ Rp {markupNominal.toLocaleString('id-ID')}</span>
+                      </div>
+                    </div>
+                    
+                    {/* TOTAL SELLING PRICE */}
+                    <div className="bg-[#E30613] p-6 text-center">
+                      <p className="text-sm font-bold text-white/80 uppercase tracking-widest mb-1">Harga Jual Final</p>
+                      <h1 className="text-4xl font-extrabold text-white mb-2">
+                        Rp {totalSellingPrice.toLocaleString('id-ID')}
+                      </h1>
+                      <p className="text-xs text-white/90 font-medium">Nominal ini yang akan muncul di PDF Quotation customer.</p>
+                    </div>
+
+                    <div className="p-4 bg-gray-900">
+                      <button className="w-full py-4 bg-white text-[#1D1D1B] font-bold rounded-lg flex justify-center items-center gap-2 hover:bg-gray-100 transition-colors shadow-md">
+                        <Download size={18} /> Generate PDF Quotation V1
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+            </div>
+          )}
+
+        </div>
+      </main>
+
+    </div>
+  );
+}

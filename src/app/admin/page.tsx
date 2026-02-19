@@ -37,6 +37,14 @@ export default async function AdminDashboardPage() {
                 <nav className={styles.sidebarNav}>
                     <Link href="/admin" className={`${styles.navItem} ${styles.active}`}>📊 Dashboard</Link>
                     <Link href="/admin/leads" className={styles.navItem}>📋 Leads</Link>
+                    
+                    <div className={styles.navSeparator}>Mini‑ERP</div>
+                    <Link href="/admin/materials" className={styles.navItem}>📦 Material</Link>
+                    <Link href="/admin/catalogs" className={styles.navItem}>📁 Katalog</Link>
+                    <Link href="/admin/zones" className={styles.navItem}>🗺️ Zona</Link>
+                    <Link href="/admin/projects" className={styles.navItem}>🏗️ Proyek</Link>
+                    
+                    <div className={styles.navSeparator}>Lainnya</div>
                     <Link href="/" className={styles.navItem} target="_blank">🌐 Lihat Website ↗</Link>
                 </nav>
                 <form action={signOut} className={styles.sidebarFooter}>

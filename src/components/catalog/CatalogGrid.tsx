@@ -1,0 +1,287 @@
+'use client'
+
+import { useState } from 'react'
+import Image from 'next/image'
+import { Check, Star, Shield, TrendingUp, Package } from 'lucide-react'
+import type { Catalog } from '@/lib/types'
+
+// Dummy data untuk katalog (akan diganti dengan data dari Supabase)
+const dummyCatalogs: Catalog[] = [
+  {
+    id: '1',
+    title: 'Paket Kanopi Baja Ringan Standard',
+    image_url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop',
+    atap_id: 'atap-1',
+    rangka_id: 'frame-1',
+    base_price_per_m2: 450000,
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: '2',
+    title: 'Paket Kanopi Polycarbonate Premium',
+    image_url: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w-800&auto=format&fit=crop',
+    atap_id: 'atap-2',
+    rangka_id: 'frame-1',
+    base_price_per_m2: 650000,
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: '3',
+    title: 'Paket Carport Minimalis',
+    image_url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w-800&auto=format&fit=crop',
+    atap_id: 'atap-3',
+    rangka_id: 'frame-2',
+    base_price_per_m2: 850000,
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: '4',
+    title: 'Paket Pergola Kayu',
+    image_url: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w-800&auto=format&fit=crop',
+    atap_id: null,
+    rangka_id: 'frame-3',
+    base_price_per_m2: 1200000,
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }
+]
+
+const features = [
+  { icon: Shield, text: 'Garansi Material 5 Tahun' },
+  { icon: Check, text: 'Survey & Konsultasi Gratis' },
+  { icon: Star, text: 'Free Maintenance 1 Tahun' },
+  { icon: TrendingUp, text: 'Harga Terjangkau' }
+]
+
+export default function CatalogGrid() {
+  const [selectedCatalog, setSelectedCatalog] = useState<string | null>(null)
+  
+  const formatRupiah = (amount: number) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount)
+  }
+  
+  const calculatePriceForArea = (basePrice: number, area: number = 10) => {
+    return basePrice * area
+  }
+  
+  return (
+    <div className="max-w-7xl mx-auto p-6 md:p-8">
+      {/* Header */}
+      <div className="text-center mb-12">
+        <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full mb-4">
+          <Package className="w-4 h-4 text-primary" />
+          <span className="text-sm font-semibold text-primary">PAKET POPULER</span>
+        </div>
+        <h2 className="text-4xl md:text-5xl font-bold text-primary-dark mb-6">
+          Pilihan Paket Kanopi Terbaik
+        </h2>
+        <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+          Dari kanopi standar hingga custom premium, kami menawarkan solusi lengkap dengan harga transparan.
+        </p>
+      </div>
+      
+      {/* Features */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
+        {features.map((feature, index) => (
+          <div key={index} className="flex flex-col items-center text-center p-4 bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-3 bg-primary/10 rounded-full mb-3">
+              <feature.icon className="w-6 h-6 text-primary" />
+            </div>
+            <span className="font-medium text-gray-800">{feature.text}</span>
+          </div>
+        ))}
+      </div>
+      
+      {/* Catalog Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
+        {dummyCatalogs.map((catalog) => {
+          const estimatedPrice = calculatePriceForArea(catalog.base_price_per_m2, 10)
+          const isSelected = selectedCatalog === catalog.id
+          
+          return (
+            <div
+              key={catalog.id}
+              className={`group relative bg-white rounded-2xl shadow-lg overflow-hidden border-2 transition-all duration-300 hover:shadow-xl ${
+                isSelected ? 'border-primary shadow-brand' : 'border-transparent'
+              }`}
+              onClick={() => setSelectedCatalog(catalog.id)}
+            >
+              {/* Badge */}
+              <div className="absolute top-4 left-4 z-10">
+                <div className="px-3 py-1 bg-primary text-white text-xs font-bold rounded-full">
+                  POPULER
+                </div>
+              </div>
+              
+              {/* Image */}
+              <div className="h-48 overflow-hidden bg-gray-100 relative">
+                <Image
+                  src={catalog.image_url || 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop'}
+                  alt={catalog.title}
+                  fill
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                  className="object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+              </div>
+              
+              {/* Content */}
+              <div className="p-6">
+                <h3 className="text-xl font-bold text-primary-dark mb-3 line-clamp-2">
+                  {catalog.title}
+                </h3>
+                
+                <div className="space-y-4 mb-6">
+                  <div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-bold text-primary">
+                        {formatRupiah(catalog.base_price_per_m2)}
+                      </span>
+                      <span className="text-gray-500">/m²</span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Estimasi 10m²: <span className="font-semibold">{formatRupiah(estimatedPrice)}</span>
+                    </p>
+                  </div>
+                  
+                  <div className="pt-4 border-t border-gray-100">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2">Termasuk:</h4>
+                    <ul className="space-y-2">
+                      <li className="flex items-center gap-2 text-sm">
+                        <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+                        <span>Material berkualitas</span>
+                      </li>
+                      <li className="flex items-center gap-2 text-sm">
+                        <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+                        <span>Pemasangan profesional</span>
+                      </li>
+                      <li className="flex items-center gap-2 text-sm">
+                        <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+                        <span>Garansi instalasi</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+                
+                <div className="space-y-3">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      window.location.href = `/kalkulator?catalog=${catalog.id}`
+                    }}
+                    className="w-full btn btn-primary"
+                  >
+                    Hitung Harga
+                  </button>
+                  
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      window.location.href = `/konsultasi?catalog=${catalog.id}`
+                    }}
+                    className="w-full btn btn-outline"
+                  >
+                    Konsultasi Gratis
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      
+      {/* CTA Section */}
+      <div className="bg-gradient-to-r from-primary-dark to-primary rounded-3xl p-8 md:p-12 text-white">
+        <div className="max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+            <div>
+              <h3 className="text-3xl md:text-4xl font-bold mb-4">
+                Butuh Paket Custom atau Spesifikasi Khusus?
+              </h3>
+              <p className="text-white/90 mb-6">
+                Tim ahli kami siap mendesain kanopi sesuai kebutuhan spesifik Anda. 
+                Dapatkan penawaran kompetitif dengan kualitas terjamin.
+              </p>
+              <div className="space-y-3">
+                <button
+                  onClick={() => window.location.href = '/kontak'}
+                  className="btn bg-white text-primary-dark hover:bg-white/90 font-bold px-8"
+                >
+                  Request Custom Quote
+                </button>
+                <button
+                  onClick={() => window.location.href = '/whatsapp'}
+                  className="btn bg-white/20 text-white hover:bg-white/30 ml-4"
+                >
+                  Chat via WhatsApp
+                </button>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white/10 rounded-xl p-4 text-center">
+                <div className="text-2xl font-bold">500+</div>
+                <div className="text-sm text-white/80">Proyek Selesai</div>
+              </div>
+              <div className="bg-white/10 rounded-xl p-4 text-center">
+                <div className="text-2xl font-bold">5 Tahun</div>
+                <div className="text-sm text-white/80">Garansi Material</div>
+              </div>
+              <div className="bg-white/10 rounded-xl p-4 text-center">
+                <div className="text-2xl font-bold">98%</div>
+                <div className="text-sm text-white/80">Kepuasan Klien</div>
+              </div>
+              <div className="bg-white/10 rounded-xl p-4 text-center">
+                <div className="text-2xl font-bold">24 Jam</div>
+                <div className="text-sm text-white/80">Respon Cepat</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* FAQ Section */}
+      <div className="mt-16">
+        <h3 className="text-3xl font-bold text-primary-dark text-center mb-8">
+          Pertanyaan Umum
+        </h3>
+        <div className="max-w-3xl mx-auto space-y-4">
+          {[
+            {
+              q: 'Apakah harga sudah termasuk pemasangan?',
+              a: 'Ya, semua harga paket sudah termasuk material berkualitas dan pemasangan profesional oleh tim ahli kami.'
+            },
+            {
+              q: 'Berapa lama proses instalasi kanopi?',
+              a: 'Waktu instalasi bervariasi tergantung kompleksitas proyek, rata-rata 2-5 hari kerja setelah survey.'
+            },
+            {
+              q: 'Apakah ada biaya survey?',
+              a: 'Survey dan konsultasi awal kami berikan secara gratis tanpa biaya apapun.'
+            },
+            {
+              q: 'Bagaimana dengan garansi?',
+              a: 'Kami memberikan garansi material 5 tahun dan garansi instalasi 1 tahun untuk semua produk kami.'
+            }
+          ].map((faq, index) => (
+            <div key={index} className="card hover:shadow-md transition-shadow">
+              <h4 className="font-bold text-primary-dark mb-2">{faq.q}</h4>
+              <p className="text-gray-600">{faq.a}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}

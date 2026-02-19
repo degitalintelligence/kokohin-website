@@ -51,6 +51,15 @@
     border-left-color: var(--clr-accent);
 }
 
+.navSeparator {
+    padding: var(--sp-4) var(--sp-6) var(--sp-2);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, .4);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
 .sidebarFooter {
     padding: var(--sp-6);
 }

@@ -1,210 +1,519 @@
+'use client'
+
+import { useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
-import type { Service, Project, Testimonial } from '@/lib/types'
-import styles from './page.module.css'
+import Image from 'next/image'
+import {
+  HardHat, Ruler, ShieldCheck, ArrowRight, Phone, CheckCircle,
+  Calculator, Layers, Zap, PenTool, TrendingUp
+} from 'lucide-react'
 
-// ——————————————————————————————
-// Static fallback data (shown when Supabase is not yet connected)
-// ——————————————————————————————
-const FALLBACK_SERVICES: Partial<Service>[] = [
-  { id: '1', name: 'Kanopi Baja Ringan', short_desc: 'Material kuat, ringan, dan tahan lama untuk hunian modern.', icon: '🏗️' },
-  { id: '2', name: 'Kanopi Polycarbonate', short_desc: 'Anti-UV, tembus cahaya, dan estetis untuk tampilan modern.', icon: '✨' },
-  { id: '3', name: 'Kanopi Kaca', short_desc: 'Elegan dan premium untuk area komersial dan rumah mewah.', icon: '🪟' },
-  { id: '4', name: 'Kanopi Spandek', short_desc: 'Harga terjangkau dengan ketahanan terhadap panas dan hujan.', icon: '🔩' },
-  { id: '5', name: 'Kanopi Membrane', short_desc: 'Desain artistik dan fleksibel untuk area outdoor modern.', icon: '🎪' },
-  { id: '6', name: 'Pergola & Carport', short_desc: 'Struktur outdoor elegan untuk taman dan area parkir.', icon: '🏡' },
-]
-
-const FALLBACK_TESTIMONIALS: Partial<Testimonial>[] = [
-  { id: '1', name: 'Budi Santoso', company: 'Perumahan Griya Asri', content: 'Hasil pemasangan kanopi sangat rapih dan profesional. Tim Kokohin bekerja cepat dan hasilnya memuaskan!', rating: 5 },
-  { id: '2', name: 'Siti Rahayu', company: null, content: 'Saya pesan kanopi polycarbonate untuk teras rumah. Kualitasnya bagus dan harganya sesuai budget. Recommended!', rating: 5 },
-  { id: '3', name: 'Ahmad Fauzi', company: 'Toko Bangunan Maju Jaya', content: 'Sudah 3 kali pakai jasa Kokohin untuk proyek kanopi. Selalu puas dengan hasilnya. Garansi juga ditepati!', rating: 5 },
-]
-
-const STATS = [
-  { value: '10+', label: 'Tahun Pengalaman' },
-  { value: '500+', label: 'Proyek Selesai' },
-  { value: '98%', label: 'Klien Puas' },
-  { value: '2 Th', label: 'Garansi Kerja' },
-]
-
-const FEATURES = [
-  { icon: '🏆', title: 'Berpengalaman', desc: 'Lebih dari 10 tahun mengerjakan proyek kanopi untuk hunian dan komersial.' },
-  { icon: '🛡️', title: 'Bergaransi', desc: 'Setiap pekerjaan dijamin dengan garansi konstruksi selama 2 tahun.' },
-  { icon: '💎', title: 'Material Premium', desc: 'Kami hanya menggunakan material berkualitas tinggi dari supplier terpercaya.' },
-  { icon: '💰', title: 'Harga Terjangkau', desc: 'Harga kompetitif tanpa mengorbankan kualitas. Gratis survei dan estimasi.' },
-]
-
-function StarRating({ rating }: { rating: number }) {
-  return (
-    <div className={styles.stars} aria-label={`Rating ${rating} dari 5`}>
-      {Array.from({ length: 5 }).map((_, i) => (
-        <span key={i} className={i < rating ? styles.starFilled : styles.starEmpty}>★</span>
-      ))}
-    </div>
-  )
+const COLORS = {
+  primary: '#E30613',
+  dark: '#1D1D1B',
+  light: '#F8F8F8'
 }
 
-export default async function HomePage() {
-  let services: Partial<Service>[] = FALLBACK_SERVICES
-  let testimonials: Partial<Testimonial>[] = FALLBACK_TESTIMONIALS
+// Database mock untuk visual & micro-copy
+const MATERIAL_SPECS = {
+  atap: {
+    alderon_double: {
+      name: 'Alderon Double Layer',
+      tag: '✨ Paling Laris & Adem',
+      desc: 'Rongga udara ganda menahan panas matahari secara maksimal.',
+      imgUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&q=80&w=600',
+      color: 'bg-blue-50 text-blue-700 border-blue-200'
+    },
+    alderon_single: {
+      name: 'Alderon RS Single',
+      tag: '👍 Ekonomis & Kuat',
+      desc: 'Material uPVC tangguh, tahan karat dan bahan kimia.',
+      imgUrl: 'https://images.unsplash.com/photo-1600607688969-a5bfcd64bd15?auto=format&fit=crop&q=80&w=600',
+      color: 'bg-green-50 text-green-700 border-green-200'
+    },
+    spandek_pasir: {
+      name: 'Spandek Pasir',
+      tag: '☔ Meredam Suara Hujan',
+      desc: 'Lapisan pasir khusus mengurangi kebisingan saat hujan deras.',
+      imgUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&q=80&w=600',
+      color: 'bg-orange-50 text-orange-700 border-orange-200'
+    }
+  },
+  rangka: {
+    hollow_galvanis: {
+      name: 'Besi Hollow Galvanis',
+      icon: <Layers size={18} />,
+      desc: 'Rangka kotak anti-karat dengan finishing cat rapi.'
+    },
+    baja_ringan: {
+      name: 'Baja Ringan',
+      icon: <Zap size={18} />,
+      desc: 'Pemasangan super cepat, anti rayap, harga hemat.'
+    },
+    wf: {
+      name: 'Besi WF',
+      icon: <HardHat size={18} />,
+      desc: 'Tulang baja kelas berat, garansi anti melengkung.'
+    }
+  },
+  pagar_desain: {
+    minimalis_hollow: {
+      name: 'Minimalis Hollow',
+      tag: '👍 Best Value',
+      desc: 'Desain garis tegas minimalis modern, cocok untuk perumahan cluster.',
+      imgUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&q=80&w=600',
+      color: 'bg-gray-100 text-gray-800 border-gray-300'
+    },
+    expanded_metal: {
+      name: 'Industrial Expanded Metal',
+      tag: '🏗️ Tren Industrial',
+      desc: 'Jaring besi tebal untuk sirkulasi udara maksimal & look maskulin.',
+      imgUrl: 'https://images.unsplash.com/photo-1600566753086-00f18efc2291?auto=format&fit=crop&q=80&w=600',
+      color: 'bg-orange-50 text-orange-700 border-orange-200'
+    },
+    laser_cut: {
+      name: 'Plat Laser Cut Custom',
+      tag: '💎 Elegan & Mewah',
+      desc: 'Plat besi tebal dengan motif potongan laser sesuai keinginan Anda.',
+      imgUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&q=80&w=600',
+      color: 'bg-blue-50 text-blue-700 border-blue-200'
+    }
+  }
+}
 
-  try {
-    const supabase = await createClient()
-    const [{ data: svcData }, { data: testiData }] = await Promise.all([
-      supabase.from('services').select('*').order('order'),
-      supabase.from('testimonials').select('*').eq('active', true).order('created_at'),
-    ])
-    if (svcData && svcData.length > 0) services = svcData
-    if (testiData && testiData.length > 0) testimonials = testiData
-  } catch {
-    // Supabase not yet configured — use static fallback
+// Data mock untuk Katalog/Pricelist (CMS Driven)
+const CATALOG_DATA = [
+  {
+    id: 1, type: 'kanopi', title: 'Kanopi Premium Alderon', imgUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&q=80&w=600',
+    spec_1_id: 'alderon_double', spec_2_id: 'hollow_galvanis', basePrice: '750.000', unit: 'm²', popular: true
+  },
+  {
+    id: 2, type: 'kanopi', title: 'Kanopi Ekonomis Pasir', imgUrl: 'https://images.unsplash.com/photo-1600607688969-a5bfcd64bd15?auto=format&fit=crop&q=80&w=600',
+    spec_1_id: 'spandek_pasir', spec_2_id: 'baja_ringan', basePrice: '350.000', unit: 'm²', popular: false
+  },
+  {
+    id: 3, type: 'pagar', title: 'Pagar Industrial Expanded', imgUrl: 'https://images.unsplash.com/photo-1600566753086-00f18efc2291?auto=format&fit=crop&q=80&w=600',
+    spec_1_id: 'expanded_metal', spec_2_id: 'hollow_galvanis', basePrice: '650.000', unit: 'm¹', popular: true
+  },
+  {
+    id: 4, type: 'pagar', title: 'Pagar Mewah Laser Cut', imgUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&q=80&w=600',
+    spec_1_id: 'laser_cut', spec_2_id: 'hollow_galvanis', basePrice: '1.200.000', unit: 'm²', popular: false
+  }
+]
+
+export default function HomePage() {
+  const [catalogFilter, setCatalogFilter] = useState('semua')
+  const [step, setStep] = useState(1)
+  const [formData, setFormData] = useState({
+    jenis: 'kanopi',
+    panjang: '',
+    lebar_tinggi: '',
+    atap_atau_desain: 'alderon_double',
+    rangka: 'hollow_galvanis',
+    deskripsi: '',
+    nama: '',
+    whatsapp: ''
+  })
+  const [isCalculating, setIsCalculating] = useState(false)
+
+  const totalEstimation = (parseFloat(formData.panjang || '0') * parseFloat(formData.lebar_tinggi || '0') * (formData.jenis === 'kanopi' ? 850000 : 700000)).toLocaleString('id-ID')
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+    const newFormData = { ...formData, [name]: value }
+    if (name === 'jenis') {
+      if (value === 'kanopi') newFormData.atap_atau_desain = 'alderon_double'
+      if (value === 'pagar') newFormData.atap_atau_desain = 'minimalis_hollow'
+    }
+    setFormData(newFormData)
   }
 
+  const handleSelectCatalog = (catalog: typeof CATALOG_DATA[0]) => {
+    setFormData({
+      ...formData,
+      jenis: catalog.type,
+      atap_atau_desain: catalog.spec_1_id,
+      rangka: catalog.spec_2_id,
+    })
+    setStep(1)
+    document.getElementById('kalkulator')?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  const handleNextStep = () => {
+    const isCustomValid = formData.jenis === 'custom'
+    const isStandardValid = formData.jenis !== 'custom' && formData.panjang && formData.lebar_tinggi
+    if (step === 1 && (isStandardValid || isCustomValid)) setStep(2)
+    else if (step === 2 && formData.nama && formData.whatsapp) {
+      setIsCalculating(true)
+      setTimeout(() => { setIsCalculating(false); setStep(3) }, 1500)
+    }
+  }
+
+  const handleWA = () => {
+    const text = formData.jenis === 'custom'
+      ? `Halo tim Kokohin, saya ${formData.nama} ingin konsultasi *Desain Custom*.\n\nCatatan saya: ${formData.deskripsi || '-'}\nMohon info jadwal survei.`
+      : `Halo tim Kokohin, saya ${formData.nama} mau book jadwal survei untuk estimasi pembuatan *${formData.jenis.toUpperCase()}* standar saya.`
+    window.open(`https://wa.me/6281234567890?text=${encodeURIComponent(text)}`, '_blank')
+  }
+
+  const isCustomMode = formData.jenis === 'custom'
+  const isPagar = formData.jenis === 'pagar'
+  const activePrimarySpec = isPagar
+    ? (MATERIAL_SPECS.pagar_desain[formData.atap_atau_desain as keyof typeof MATERIAL_SPECS.pagar_desain] || MATERIAL_SPECS.pagar_desain.minimalis_hollow)
+    : (MATERIAL_SPECS.atap[formData.atap_atau_desain as keyof typeof MATERIAL_SPECS.atap] || MATERIAL_SPECS.atap.alderon_double)
+  const activeRangka = MATERIAL_SPECS.rangka[formData.rangka as keyof typeof MATERIAL_SPECS.rangka] || MATERIAL_SPECS.rangka.hollow_galvanis
+  const filteredCatalogs = catalogFilter === 'semua' ? CATALOG_DATA : CATALOG_DATA.filter(c => c.type === catalogFilter)
+
   return (
-    <>
-      {/* ==================== HERO ==================== */}
-      <section className={styles.hero}>
-        <div className={styles.heroBg} aria-hidden="true">
-          <div className={styles.heroBgOverlay} />
-        </div>
-        <div className={`container ${styles.heroContent}`}>
-          <div className={styles.heroText}>
-            <div className="section-label">⚡ Kontraktor Kanopi Terpercaya</div>
-            <h1 className={styles.heroTitle}>
-              Kanopi Berkualitas untuk<br />
-              <span className={styles.heroAccent}>Hunian Impian</span> Anda
-            </h1>
-            <p className={styles.heroDesc}>
-              Kami menyediakan jasa pemasangan kanopi profesional dengan berbagai pilihan material — baja ringan, polycarbonate, kaca, dan lebih banyak lagi. Gratis survei & estimasi!
-            </p>
-            <div className={styles.heroCtas}>
-              <Link href="/kontak" className="btn btn-primary">
-                🎯 Minta Penawaran Gratis
-              </Link>
-              <Link href="/galeri" className="btn btn-outline">
-                📸 Lihat Galeri
-              </Link>
-            </div>
-          </div>
-        </div>
+    <div className="min-h-screen flex flex-col" style={{ fontFamily: "'Montserrat', sans-serif", backgroundColor: COLORS.light, color: COLORS.dark }}>
+      {/* Font import */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap');
+      `}</style>
 
-        {/* Stats ribbon */}
-        <div className={styles.statsRibbon}>
-          <div className="container">
-            <div className={styles.statsGrid}>
-              {STATS.map(s => (
-                <div key={s.label} className={styles.statItem}>
-                  <span className={styles.statValue}>{s.value}</span>
-                  <span className={styles.statLabel}>{s.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ==================== KEUNGGULAN ==================== */}
-      <section className={`section ${styles.featuresSection}`}>
-        <div className="container">
-          <div className="section-header section-header--center">
-            <div className="section-label">✅ Mengapa Memilih Kami</div>
-            <h2 className="section-title">Keunggulan Kokohin</h2>
-            <div className="divider divider--center" />
-            <p className="section-desc">
-              Kami berkomitmen memberikan layanan terbaik dengan kualitas material dan pengerjaan yang tidak mengecewakan.
-            </p>
-          </div>
-          <div className={`grid-4 ${styles.featuresGrid}`}>
-            {FEATURES.map(f => (
-              <div key={f.title} className={`card ${styles.featureCard}`}>
-                <div className={styles.featureIcon}>{f.icon}</div>
-                <h3 className={styles.featureTitle}>{f.title}</h3>
-                <p className={styles.featureDesc}>{f.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ==================== LAYANAN ==================== */}
-      <section className={`section ${styles.servicesSection}`}>
-        <div className="container">
-          <div className="section-header">
-            <div className="section-label">🔧 Apa Yang Kami Kerjakan</div>
-            <h2 className="section-title">Layanan Kami</h2>
-            <div className="divider" />
-            <p className="section-desc">
-              Berbagai jenis kanopi tersedia untuk memenuhi kebutuhan hunian dan komersial Anda.
-            </p>
-          </div>
-          <div className={`grid-3 ${styles.servicesGrid}`}>
-            {services.map(s => (
-              <Link key={s.id} href="/layanan" className={`card ${styles.serviceCard}`}>
-                <div className={styles.serviceIcon}>{s.icon}</div>
-                <div className={styles.serviceBody}>
-                  <h3 className={styles.serviceTitle}>{s.name}</h3>
-                  <p className={styles.serviceDesc}>{s.short_desc}</p>
-                  <span className={styles.serviceLink}>Selengkapnya →</span>
-                </div>
-              </Link>
-            ))}
-          </div>
-          <div className={styles.servicesCta}>
-            <Link href="/layanan" className="btn btn-outline-dark">
-              Lihat Semua Layanan
+      {/* HERO SECTION */}
+      <section className="relative w-full py-16 md:py-24 flex items-center justify-center overflow-hidden" style={{ backgroundColor: COLORS.dark }}>
+        <div className="absolute inset-0 opacity-10" style={{
+          backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)',
+          backgroundSize: '32px 32px'
+        }} />
+        <div className="relative z-10 max-w-7xl mx-auto px-4 text-center">
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-white mb-6 leading-tight">
+            Bangun Kanopi & Pagar <br className="hidden md:block" /> <span style={{ color: COLORS.primary }}>Tanpa Biaya Siluman.</span>
+          </h1>
+          <p className="text-lg md:text-xl text-gray-300 mb-10 max-w-2xl mx-auto font-medium">Ketelitian struktural, pengerjaan rapi, dan transparan dari awal.</p>
+          <div className="flex flex-col sm:flex-row justify-center gap-4">
+            <Link href="#kalkulator" className="flex items-center justify-center gap-2 text-white font-bold py-4 px-8 rounded-md text-lg" style={{ backgroundColor: COLORS.primary }}>
+              <Calculator size={20} /> Coba Simulasi
+            </Link>
+            <Link href="#pricelist" className="flex items-center justify-center gap-2 bg-white font-bold py-4 px-8 rounded-md text-lg text-[#1D1D1B]">
+              Lihat Pricelist
             </Link>
           </div>
         </div>
       </section>
 
-      {/* ==================== CTA BANNER ==================== */}
-      <section className={styles.ctaBanner}>
-        <div className="container">
-          <div className={styles.ctaContent}>
-            <div>
-              <h2 className={styles.ctaTitle}>Siap Pasang Kanopi?</h2>
-              <p className={styles.ctaDesc}>Dapatkan survei dan estimasi harga gratis. Tim kami siap membantu Anda.</p>
-            </div>
-            <div className={styles.ctaBtns}>
-              <Link href="/kontak" className="btn btn-primary">
-                🎯 Minta Penawaran
-              </Link>
-              <a href="https://wa.me/6281234567890?text=Halo%20Kokohin%2C%20saya%20ingin%20konsultasi%20kanopi" target="_blank" rel="noopener noreferrer" className="btn btn-outline">
-                💬 Chat WhatsApp
-              </a>
+      {/* CATALOG SECTION */}
+      <section id="pricelist" className="py-16 bg-gray-50 border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-extrabold mb-4" style={{ color: COLORS.dark }}>Pricelist & Paket Populer</h2>
+            <p className="text-gray-600 max-w-2xl mx-auto font-medium">Temukan inspirasi kombinasi material terbaik.</p>
+          </div>
+          <div className="flex justify-center mb-10">
+            <div className="inline-flex bg-white p-1 rounded-lg border border-gray-200">
+              {['semua', 'kanopi', 'pagar'].map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setCatalogFilter(tab)}
+                  className={`px-6 py-2.5 rounded-md font-bold text-sm capitalize ${catalogFilter === tab ? 'bg-[#1D1D1B] text-white' : 'text-gray-500'}`}
+                >
+                  {tab}
+                </button>
+              ))}
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* ==================== TESTIMONI ==================== */}
-      <section className={`section ${styles.testiSection}`}>
-        <div className="container">
-          <div className="section-header section-header--center">
-            <div className="section-label">💬 Kata Mereka</div>
-            <h2 className="section-title">Testimoni Pelanggan</h2>
-            <div className="divider divider--center" />
-          </div>
-          <div className={`grid-3 ${styles.testiGrid}`}>
-            {testimonials.map(t => (
-              <div key={t.id} className={`card ${styles.testiCard}`}>
-                <StarRating rating={t.rating ?? 5} />
-                <p className={styles.testiContent}>&quot;{t.content}&quot;</p>
-                <div className={styles.testiAuthor}>
-                  <div className={styles.testiAvatar}>
-                    {(t.name ?? 'A').charAt(0).toUpperCase()}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {filteredCatalogs.map((katalog) => (
+              <div key={katalog.id} className="bg-white rounded-2xl overflow-hidden shadow-lg border border-gray-100 flex flex-col group">
+                <div className="relative h-56 overflow-hidden">
+                  <Image
+                    src={katalog.imgUrl}
+                    alt={katalog.title}
+                    fill
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    className="object-cover group-hover:scale-105 transition-transform duration-700"
+                  />
+                  {katalog.popular && (
+                    <div className="absolute top-4 right-4 bg-yellow-400 text-yellow-900 text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1">
+                      <TrendingUp size={14} /> BEST SELLER
+                    </div>
+                  )}
+                  <div className="absolute bottom-0 w-full bg-gradient-to-t from-black/80 to-transparent p-4">
+                    <span className="inline-block px-2 py-1 bg-[#E30613] text-white text-[10px] font-bold rounded mb-1 uppercase tracking-wider">{katalog.type}</span>
+                    <h3 className="text-white font-bold text-xl">{katalog.title}</h3>
                   </div>
-                  <div>
-                    <div className={styles.testiName}>{t.name}</div>
-                    {t.company && <div className={styles.testiCompany}>{t.company}</div>}
+                </div>
+                <div className="p-6 flex-grow flex flex-col">
+                  <div className="space-y-3 mb-6 flex-grow text-sm">
+                    <div className="flex justify-between border-b pb-2">
+                      <span className="text-gray-500">{katalog.type === 'kanopi' ? 'Atap' : 'Desain'}</span>
+                      <span className="font-bold">
+                        {katalog.type === 'kanopi'
+                          ? MATERIAL_SPECS.atap[katalog.spec_1_id as keyof typeof MATERIAL_SPECS.atap].name
+                          : MATERIAL_SPECS.pagar_desain[katalog.spec_1_id as keyof typeof MATERIAL_SPECS.pagar_desain].name}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-b pb-2">
+                      <span className="text-gray-500">Rangka</span>
+                      <span className="font-bold">{MATERIAL_SPECS.rangka[katalog.spec_2_id as keyof typeof MATERIAL_SPECS.rangka].name}</span>
+                    </div>
                   </div>
+                  <div className="mb-6">
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">Mulai Dari</p>
+                    <span className="text-2xl font-extrabold text-[#E30613]">Rp {katalog.basePrice}</span>
+                    <span className="text-gray-500 text-sm"> / {katalog.unit}</span>
+                  </div>
+                  <button
+                    onClick={() => handleSelectCatalog(katalog)}
+                    className="w-full py-3 border-2 border-[#1D1D1B] text-[#1D1D1B] rounded-lg font-bold flex justify-center gap-2 hover:bg-[#1D1D1B] hover:text-white transition-colors"
+                  >
+                    Hitung Ukuran Saya <ArrowRight size={18} />
+                  </button>
                 </div>
               </div>
             ))}
           </div>
         </div>
       </section>
-    </>
+
+      {/* KALKULATOR FUNNEL */}
+      <section id="kalkulator" className="py-12 md:py-20 px-4 sm:px-6 lg:px-8 bg-white flex-grow">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-extrabold mb-4 text-[#1D1D1B]">Kalkulator Estimasi Biaya</h2>
+            <p className="text-gray-600 font-medium">Hitung perkiraan biaya total konstruksi Anda sebelum melakukan survei lokasi.</p>
+          </div>
+
+          <div className="flex items-center justify-center mb-10">
+            {[1, 2, 3].map((num, i) => (
+              <div key={num} className="flex items-center">
+                <div className={`flex items-center justify-center w-10 h-10 rounded-full font-bold border-2 ${step >= num ? 'border-[#E30613] bg-[#E30613] text-white' : 'border-gray-300 text-gray-400'}`}>
+                  {num}
+                </div>
+                {i < 2 && <div className={`w-12 h-1 ${step > num ? 'bg-[#E30613]' : 'bg-gray-200'}`}></div>}
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-white border shadow-xl rounded-2xl p-6 md:p-10">
+            {/* STEP 1 */}
+            {step === 1 && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div className="lg:col-span-7 flex flex-col justify-center">
+                  <h3 className="text-xl font-bold mb-6 flex items-center gap-2 border-b pb-4">
+                    <Ruler className="text-[#E30613]" /> Detail Konstruksi
+                  </h3>
+                  <div className="mb-6">
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Pilih Jenis Konstruksi</label>
+                    <select
+                      name="jenis"
+                      value={formData.jenis}
+                      onChange={handleInputChange}
+                      className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#E30613] bg-gray-50 font-bold"
+                    >
+                      <option value="kanopi">Kanopi Rumah (Standar)</option>
+                      <option value="pagar">Pagar / Railing (Standar)</option>
+                      <option value="custom">🛠️ Desain Custom / Ide Khusus</option>
+                    </select>
+                  </div>
+                  {!isCustomMode ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div>
+                          <label className="block text-sm font-bold mb-2">Panjang (m)</label>
+                          <input
+                            type="number"
+                            name="panjang"
+                            value={formData.panjang}
+                            onChange={handleInputChange}
+                            placeholder="5"
+                            className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-bold mb-2">{isPagar ? 'Tinggi (m)' : 'Lebar (m)'}</label>
+                          <input
+                            type="number"
+                            name="lebar_tinggi"
+                            value={formData.lebar_tinggi}
+                            onChange={handleInputChange}
+                            placeholder={isPagar ? "1.5" : "4"}
+                            className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 font-medium"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-6 mb-8">
+                        <div>
+                          <label className="block text-sm font-bold mb-2">{isPagar ? 'Desain Pagar' : 'Pilihan Atap'}</label>
+                          <select
+                            name="atap_atau_desain"
+                            value={formData.atap_atau_desain}
+                            onChange={handleInputChange}
+                            className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 font-medium"
+                          >
+                            {isPagar ? (
+                              <>
+                                <option value="minimalis_hollow">Minimalis Hollow</option>
+                                <option value="expanded_metal">Expanded Metal</option>
+                                <option value="laser_cut">Laser Cut</option>
+                              </>
+                            ) : (
+                              <>
+                                <option value="alderon_double">Alderon Double</option>
+                                <option value="alderon_single">Alderon RS</option>
+                                <option value="spandek_pasir">Spandek Pasir</option>
+                              </>
+                            )}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-bold mb-2">Rangka Utama</label>
+                          <select
+                            name="rangka"
+                            value={formData.rangka}
+                            onChange={handleInputChange}
+                            className="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 font-medium"
+                          >
+                            <option value="hollow_galvanis">Hollow Galvanis</option>
+                            {!isPagar && <option value="baja_ringan">Baja Ringan</option>}
+                            <option value="wf">Besi WF</option>
+                          </select>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="mb-8 bg-red-50 p-5 rounded-xl border border-red-100">
+                      <label className="block text-sm font-bold mb-2 flex gap-2">
+                        <PenTool size={16} className="text-[#E30613]" /> Deskripsi Custom (Opsional)
+                      </label>
+                      <textarea
+                        name="deskripsi"
+                        value={formData.deskripsi}
+                        onChange={handleInputChange}
+                        placeholder="Desain impian Anda..."
+                        className="w-full p-4 border rounded-lg h-32"
+                      />
+                    </div>
+                  )}
+                  <button
+                    onClick={handleNextStep}
+                    disabled={!isCustomMode && (!formData.panjang || !formData.lebar_tinggi)}
+                    className="w-full py-4 bg-[#E30613] text-white font-bold rounded-lg flex justify-center gap-2"
+                  >
+                    {isCustomMode ? 'Lanjut Konsultasi' : 'Hitung Estimasi'} <ArrowRight size={20} />
+                  </button>
+                </div>
+
+                {/* VISUALIZER */}
+                <div className="lg:col-span-5 hidden md:flex flex-col bg-gray-50 rounded-xl p-6 border shadow-inner">
+                  {isCustomMode ? (
+                    <div className="h-full flex flex-col items-center justify-center border-2 border-dashed bg-white rounded-xl text-center p-6">
+                      <PenTool size={28} className="text-gray-400 mb-4" />
+                      <h4 className="font-bold">Desain Custom</h4>
+                    </div>
+                  ) : (
+                    <>
+                      <h4 className="text-sm font-bold text-gray-500 mb-4 uppercase flex justify-between">
+                        Preview <span className="text-[#E30613]">{isPagar ? 'PAGAR' : 'KANOPI'}</span>
+                      </h4>
+                      <div className="relative h-48 rounded-xl overflow-hidden mb-4 shadow-md group">
+                        <Image
+                          src={activePrimarySpec.imgUrl}
+                          alt="Material"
+                          fill
+                          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                          className="object-cover group-hover:scale-105 transition-transform"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+                        <div className="absolute bottom-4 left-4">
+                          <span className={`px-2 py-1 text-xs font-bold rounded-full ${activePrimarySpec.color}`}>
+                            {activePrimarySpec.tag}
+                          </span>
+                          <h5 className="text-white font-bold text-lg mt-1">{activePrimarySpec.name}</h5>
+                        </div>
+                      </div>
+                      <div className="bg-white rounded-xl p-4 shadow-sm flex items-center gap-4">
+                        <div className="w-12 h-12 bg-gray-100 flex items-center justify-center rounded-lg">
+                          {activeRangka.icon}
+                        </div>
+                        <div>
+                          <h5 className="font-bold">{activeRangka.name}</h5>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2 */}
+            {step === 2 && (
+              <div className="max-w-md mx-auto text-center">
+                <h3 className="text-xl font-bold mb-2">Sedikit Lagi! 🚀</h3>
+                <div className="space-y-6 mb-8 text-left mt-8">
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Nama Lengkap</label>
+                    <input
+                      type="text"
+                      name="nama"
+                      value={formData.nama}
+                      onChange={handleInputChange}
+                      className="w-full p-4 border rounded-lg font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">WhatsApp</label>
+                    <input
+                      type="tel"
+                      name="whatsapp"
+                      value={formData.whatsapp}
+                      onChange={handleInputChange}
+                      className="w-full p-4 border rounded-lg font-medium"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <button onClick={() => setStep(1)} className="px-6 py-4 bg-gray-100 font-bold rounded-lg">
+                    Kembali
+                  </button>
+                  <button
+                    onClick={handleNextStep}
+                    disabled={!formData.nama || !formData.whatsapp || isCalculating}
+                    className="flex-1 bg-[#1D1D1B] text-white font-bold rounded-lg flex justify-center items-center gap-2"
+                  >
+                    {isCalculating ? 'Loading...' : 'Lihat Hasil'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3 */}
+            {step === 3 && (
+              <div className="max-w-xl mx-auto text-center">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex justify-center items-center mx-auto mb-4">
+                  <CheckCircle className="text-green-600" size={32} />
+                </div>
+                {isCustomMode ? (
+                  <div className="bg-gray-50 border rounded-xl p-8 mb-6">
+                    <h1 className="text-2xl font-extrabold mb-3">Ide Anda Unik! 💡</h1>
+                    <p className="text-sm text-gray-600 mb-6">Tim Engineer kami perlu meninjau material khusus agar kalkulasi harga akurat.</p>
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 border rounded-xl p-8 mb-6">
+                    <p className="text-sm font-bold text-gray-500 uppercase mb-2">Total Estimasi Harga</p>
+                    <h1 className="text-4xl font-extrabold text-[#E30613]">Rp {totalEstimation}*</h1>
+                  </div>
+                )}
+                <div className="bg-yellow-50 p-4 rounded-xl text-left mb-8 flex gap-4">
+                  <ShieldCheck className="text-yellow-600" size={24} />
+                  <div>
+                    <h4 className="font-bold text-yellow-800 text-sm">Harga Transparan</h4>
+                    <p className="text-xs text-yellow-700">Harga final akan dikunci setelah tim kami melakukan survei lokasi.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleWA}
+                  className="w-full py-4 bg-[#25D366] text-white font-bold rounded-lg flex justify-center gap-2 text-lg"
+                >
+                  <Phone size={22} /> Book Jadwal Survei via WA
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+    </div>
   )
 }

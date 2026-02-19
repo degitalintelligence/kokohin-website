@@ -1,93 +1,47 @@
 import Link from 'next/link'
-import styles from './Footer.module.css'
+import { HardHat } from 'lucide-react'
 
 export default function Footer() {
-    const year = new Date().getFullYear()
+  const year = new Date().getFullYear()
 
-    return (
-        <footer className={styles.footer}>
-            <div className={`container ${styles.inner}`}>
-
-                {/* Brand */}
-                <div className={styles.brand}>
-                    <Link href="/" className={styles.logo}>
-                        <span>🏗️</span>
-                        <span>Kokohin</span>
-                    </Link>
-                    <p className={styles.tagline}>
-                        Solusi kanopi berkualitas untuk hunian dan komersial Anda. Berpengalaman, bergaransi, dan terpercaya.
-                    </p>
-                    <div className={styles.socials}>
-                        <a href="https://wa.me/6281234567890" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" className={styles.social}>📱</a>
-                        <a href="https://instagram.com/kokohin" target="_blank" rel="noopener noreferrer" aria-label="Instagram" className={styles.social}>📸</a>
-                        <a href="https://facebook.com/kokohin" target="_blank" rel="noopener noreferrer" aria-label="Facebook" className={styles.social}>📘</a>
-                    </div>
-                </div>
-
-                {/* Links */}
-                <div className={styles.linksGroup}>
-                    <h4 className={styles.groupTitle}>Navigasi</h4>
-                    <ul className={styles.linkList}>
-                        {[
-                            { href: '/', label: 'Beranda' },
-                            { href: '/layanan', label: 'Layanan' },
-                            { href: '/galeri', label: 'Galeri' },
-                            { href: '/tentang', label: 'Tentang Kami' },
-                            { href: '/kontak', label: 'Kontak' },
-                        ].map(l => (
-                            <li key={l.href}><Link href={l.href} className={styles.link}>{l.label}</Link></li>
-                        ))}
-                    </ul>
-                </div>
-
-                {/* Layanan */}
-                <div className={styles.linksGroup}>
-                    <h4 className={styles.groupTitle}>Layanan</h4>
-                    <ul className={styles.linkList}>
-                        {[
-                            'Kanopi Baja Ringan',
-                            'Kanopi Polycarbonate',
-                            'Kanopi Kaca',
-                            'Kanopi Spandek',
-                            'Kanopi Membrane',
-                            'Pergola & Carport',
-                        ].map(s => (
-                            <li key={s}><Link href="/layanan" className={styles.link}>{s}</Link></li>
-                        ))}
-                    </ul>
-                </div>
-
-                {/* Kontak */}
-                <div className={styles.linksGroup}>
-                    <h4 className={styles.groupTitle}>Kontak</h4>
-                    <ul className={styles.contactList}>
-                        <li>
-                            <span className={styles.contactIcon}>📍</span>
-                            <span>Jl. Contoh No. 123, Kota Anda</span>
-                        </li>
-                        <li>
-                            <span className={styles.contactIcon}>📱</span>
-                            <a href="https://wa.me/6281234567890" className={styles.link}>+62 812-3456-7890</a>
-                        </li>
-                        <li>
-                            <span className={styles.contactIcon}>✉️</span>
-                            <a href="mailto:info@kokohin.com" className={styles.link}>info@kokohin.com</a>
-                        </li>
-                        <li>
-                            <span className={styles.contactIcon}>⏰</span>
-                            <span>Senin – Sabtu, 08.00 – 17.00</span>
-                        </li>
-                    </ul>
-                </div>
-
+  return (
+    <footer className="bg-[#1D1D1B] text-white py-12" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-10 h-10 flex items-center justify-center rounded-sm bg-[#E30613]">
+                <HardHat color="white" size={24} />
+              </div>
+              <span className="font-bold text-2xl tracking-tight">Kokohin</span>
             </div>
-
-            <div className={styles.bottom}>
-                <div className="container">
-                    <p>© {year} Kokohin. Semua hak dilindungi.</p>
-                    <p>Dibuat dengan ❤️ untuk kontraktor kanopi terpercaya.</p>
-                </div>
-            </div>
-        </footer>
-    )
+            <p className="text-gray-400 text-sm">
+              Kontraktor kanopi & pagar profesional dengan pengalaman lebih dari 10 tahun. Material berkualitas, pengerjaan rapi, garansi terpercaya.
+            </p>
+          </div>
+          <div>
+            <h4 className="font-bold text-lg mb-4">Layanan</h4>
+            <ul className="space-y-2 text-gray-400">
+              <li><Link href="#" className="hover:text-white">Kanopi Baja Ringan</Link></li>
+              <li><Link href="#" className="hover:text-white">Kanopi Polycarbonate</Link></li>
+              <li><Link href="#" className="hover:text-white">Kanopi Kaca</Link></li>
+              <li><Link href="#" className="hover:text-white">Pagar & Railing</Link></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="font-bold text-lg mb-4">Kontak</h4>
+            <ul className="space-y-2 text-gray-400">
+              <li>📞 0812-3456-7890</li>
+              <li>📧 hello@kokohin.com</li>
+              <li>📍 Jl. Contoh No. 123, Jakarta</li>
+              <li>🕐 Senin - Sabtu: 08:00 - 17:00</li>
+            </ul>
+          </div>
+        </div>
+        <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-500 text-sm">
+          <p>© {year} Kokohin. Hak cipta dilindungi.</p>
+        </div>
+      </div>
+    </footer>
+  )
 }
