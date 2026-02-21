@@ -94,10 +94,16 @@ export default function Sidebar() {
                     Lainnya
                 </div>
                 {role === 'super_admin' && (
-                    <Link href="/admin/settings" className={navItemClass('/admin/settings')}>
-                        <Settings size={18} />
-                        Pengaturan
-                    </Link>
+                    <>
+                        <Link href="/admin/users" className={navItemClass('/admin/users')}>
+                            <Users size={18} />
+                            User Management
+                        </Link>
+                        <Link href="/admin/settings" className={navItemClass('/admin/settings')}>
+                            <Settings size={18} />
+                            Pengaturan
+                        </Link>
+                    </>
                 )}
                 <Link href="/" target="_blank" className={navItemClass('/')}>
                     <ExternalLink size={18} />
