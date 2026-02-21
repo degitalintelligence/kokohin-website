@@ -1,6 +1,7 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { AlertTriangle } from 'lucide-react'
 import { createCatalog } from '@/app/actions/catalogs'
 import styles from '../../page.module.css'
 
@@ -42,8 +43,9 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
           </div>
 
           {errorMessage && (
-            <div className="mx-6 mt-6 p-4 bg-red-50 text-red-700 border border-red-200 rounded-md">
-              ⚠️ {decodeURIComponent(errorMessage)}
+            <div className="mx-6 mt-6 p-4 bg-red-50 text-red-700 border border-red-200 rounded-md flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              {decodeURIComponent(errorMessage)}
             </div>
           )}
 

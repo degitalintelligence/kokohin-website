@@ -1,6 +1,7 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { Boxes, BadgeDollarSign, Ruler } from 'lucide-react'
 import styles from '../page.module.css'
 import ImportCsvForm from './components/ImportCsvForm'
 import { ALLOWED_MATERIALS_ROLES, isRoleAllowed } from '@/lib/rbac'
@@ -227,19 +228,25 @@ export default async function AdminMaterialsPage() {
       {/* Stats */}
       <div className={styles.statsGrid}>
           <div className={`${styles.statCard} ${styles.accentCard}`}>
-            <div className={styles.statIcon}>📦</div>
+            <div className={styles.statIcon}>
+              <Boxes className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>{materials?.length ?? 0}</div>
             <div className={styles.statLabel}>Total Material</div>
           </div>
           <div className={styles.statCard}>
-            <div className={styles.statIcon}>💰</div>
+            <div className={styles.statIcon}>
+              <BadgeDollarSign className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>
               {formatCurrency(materials?.reduce((sum, m) => sum + (m.base_price_per_unit || 0), 0) || 0)}
             </div>
             <div className={styles.statLabel}>Total Nilai Material</div>
           </div>
           <div className={styles.statCard}>
-            <div className={styles.statIcon}>📏</div>
+            <div className={styles.statIcon}>
+              <Ruler className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>
               {materials?.filter(m => m.length_per_unit && m.length_per_unit > 1).length ?? 0}
             </div>

@@ -1,6 +1,7 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { FolderOpen, BadgeDollarSign, BarChart3 } from 'lucide-react'
 import styles from '../page.module.css'
 
 async function importCatalogs(formData: FormData) {
@@ -156,22 +157,27 @@ export default async function AdminCatalogsPage() {
           </div>
         </div>
 
-        {/* Stats */}
         <div className={styles.statsGrid}>
           <div className={`${styles.statCard} ${styles.accentCard}`}>
-            <div className={styles.statIcon}>📁</div>
+            <div className={styles.statIcon}>
+              <FolderOpen className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>{catalogs?.length ?? 0}</div>
             <div className={styles.statLabel}>Total Paket</div>
           </div>
           <div className={styles.statCard}>
-            <div className={styles.statIcon}>💰</div>
+            <div className={styles.statIcon}>
+              <BadgeDollarSign className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>
               {formatCurrency(catalogs?.reduce((sum, c) => sum + (c.base_price_per_m2 || 0), 0) || 0)}
             </div>
             <div className={styles.statLabel}>Total Nilai per m²</div>
           </div>
           <div className={styles.statCard}>
-            <div className={styles.statIcon}>📊</div>
+            <div className={styles.statIcon}>
+              <BarChart3 className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>
               {catalogs?.filter(c => c.is_active).length ?? 0}
             </div>

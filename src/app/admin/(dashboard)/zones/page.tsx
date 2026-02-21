@@ -1,6 +1,7 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { MapPin, TrendingUp, BadgeDollarSign } from 'lucide-react'
 import styles from '../page.module.css'
 
 const escapeCsvValue = (value: string | number | boolean | null | undefined) => {
@@ -85,19 +86,25 @@ export default async function AdminZonesPage() {
         {/* Stats */}
         <div className={styles.statsGrid}>
           <div className={`${styles.statCard} ${styles.accentCard}`}>
-            <div className={styles.statIcon}>🗺️</div>
+            <div className={styles.statIcon}>
+              <MapPin className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>{zones?.length ?? 0}</div>
             <div className={styles.statLabel}>Total Zona</div>
           </div>
           <div className={styles.statCard}>
-            <div className={styles.statIcon}>📈</div>
+            <div className={styles.statIcon}>
+              <TrendingUp className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>
               {formatPercentage(zones?.reduce((sum, z) => sum + (z.markup_percentage || 0), 0) || 0)}
             </div>
             <div className={styles.statLabel}>Total Markup %</div>
           </div>
           <div className={styles.statCard}>
-            <div className={styles.statIcon}>💰</div>
+            <div className={styles.statIcon}>
+              <BadgeDollarSign className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>
               {formatCurrency(zones?.reduce((sum, z) => sum + (z.flat_fee || 0), 0) || 0)}
             </div>

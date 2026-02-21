@@ -2,6 +2,7 @@ import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
+import { AlertTriangle } from 'lucide-react'
 import { updateCatalog } from '@/app/actions/catalogs'
 import styles from '../../page.module.css'
 import DeleteCatalogButton from '../components/DeleteCatalogButton'
@@ -74,8 +75,9 @@ export default async function AdminCatalogDetailPage({
         </div>
         
         {errorMessage && (
-          <div className="mx-6 mt-6 p-4 bg-red-50 text-red-700 border border-red-200 rounded-md">
-            ⚠️ {decodeURIComponent(errorMessage)}
+          <div className="mx-6 mt-6 p-4 bg-red-50 text-red-700 border border-red-200 rounded-md flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            {decodeURIComponent(errorMessage)}
           </div>
         )}
 

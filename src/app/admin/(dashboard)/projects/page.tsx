@@ -1,6 +1,7 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { HardHat, BadgeDollarSign, CheckCircle2, Target } from 'lucide-react'
 import styles from '../page.module.css'
 
 const escapeCsvValue = (value: string | number | boolean | null | undefined) => {
@@ -110,22 +111,30 @@ export default async function AdminProjectsPage() {
         {/* Stats */}
         <div className={styles.statsGrid}>
           <div className={`${styles.statCard} ${styles.accentCard}`}>
-            <div className={styles.statIcon}>🏗️</div>
+            <div className={styles.statIcon}>
+              <HardHat className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>{projects.length}</div>
             <div className={styles.statLabel}>Total Proyek</div>
           </div>
           <div className={styles.statCard}>
-            <div className={styles.statIcon}>💰</div>
+            <div className={styles.statIcon}>
+              <BadgeDollarSign className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>{formatCurrency(totalValue)}</div>
             <div className={styles.statLabel}>Total Nilai Proyek</div>
           </div>
           <div className={styles.statCard}>
-            <div className={styles.statIcon}>✅</div>
+            <div className={styles.statIcon}>
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>{dealCount}</div>
             <div className={styles.statLabel}>Proyek Deal</div>
           </div>
           <div className={styles.statCard}>
-            <div className={styles.statIcon}>🎯</div>
+            <div className={styles.statIcon}>
+              <Target className="w-5 h-5" />
+            </div>
             <div className={styles.statValue}>{manualQuoteCount}</div>
             <div className={styles.statLabel}>Need Manual Quote</div>
           </div>
@@ -262,7 +271,9 @@ export default async function AdminProjectsPage() {
             {/* Escape Hatch Note */}
             <div className="mt-8 p-4 bg-primary/5 border border-primary/20 rounded-lg">
               <div className="flex items-start gap-3">
-                <div className="text-2xl">🎯</div>
+                <div className="text-2xl">
+                  <Target className="w-6 h-6 text-primary" />
+                </div>
                 <div>
                   <h4 className="font-bold text-primary-dark">Escape Hatch (Custom Request)</h4>
                   <p className="text-gray-600 text-sm mt-1">
