@@ -1,7 +1,7 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Users, TrendingUp } from 'lucide-react'
+import { Users, TrendingUp, AlertTriangle } from 'lucide-react'
 
 export default async function AdminDashboardPage() {
     const supabase = await createClient()
@@ -10,10 +10,14 @@ export default async function AdminDashboardPage() {
     if (!user && !bypass) redirect('/admin/login')
 
     // Fetch counts
-    const [{ count: newLeads }, { count: totalLeads }, { count: totalProjects }] = await Promise.all([
+    const [
+        { count: newLeads },
+        { count: totalProjects },
+        { count: manualQuoteLeads },
+    ] = await Promise.all([
         supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'new'),
-        supabase.from('leads').select('*', { count: 'exact', head: true }),
         supabase.from('projects').select('*', { count: 'exact', head: true }),
+        supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'Need Manual Quote'),
     ])
 
     // Fetch recent leads
@@ -25,7 +29,7 @@ export default async function AdminDashboardPage() {
 
     const stats = [
         { label: 'Lead Baru', value: String(newLeads ?? 0), icon: <Users size={24} />, accent: true },
-        { label: 'Total Lead', value: String(totalLeads ?? 0), icon: <Users size={24} />, accent: false },
+        { label: 'Need Manual Quote', value: String(manualQuoteLeads ?? 0), icon: <AlertTriangle size={24} />, accent: false },
         { label: 'Total Proyek', value: String(totalProjects ?? 0), icon: <TrendingUp size={24} />, accent: false },
     ]
 

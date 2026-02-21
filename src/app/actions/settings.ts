@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { ALLOWED_MATERIALS_ROLES, isRoleAllowed } from '@/lib/rbac'
 
 export async function getLogoUrl() {
     const supabase = await createClient()
@@ -17,10 +18,19 @@ export async function getLogoUrl() {
 export async function updateLogoUrl(publicUrl: string) {
     const supabase = await createClient()
     
-    // Check auth
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
         return { error: 'Unauthorized' }
+    }
+
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+    const role = (profile as { role?: string } | null)?.role ?? null
+    if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
+        return { error: 'Forbidden' }
     }
 
     // Update site_settings table
@@ -57,10 +67,19 @@ export async function getLoginBackgroundUrl() {
 export async function updateLoginBackgroundUrl(publicUrl: string) {
     const supabase = await createClient()
     
-    // Check auth
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
         return { error: 'Unauthorized' }
+    }
+
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+    const role = (profile as { role?: string } | null)?.role ?? null
+    if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
+        return { error: 'Forbidden' }
     }
 
     // Update site_settings table

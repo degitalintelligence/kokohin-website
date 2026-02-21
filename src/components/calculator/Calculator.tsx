@@ -610,7 +610,6 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {/* Warnings / Upsell Suggestions */}
                     {(result.warnings && result.warnings.length > 0) && (
                       <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                         <div className="flex items-start gap-3">
@@ -629,7 +628,23 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                       </div>
                     )}
 
-                    {/* Summary */}
+                    {result.suggestedItems && result.suggestedItems.length > 0 && (
+                      <div className="p-4 bg-white/10 border border-white/20 rounded-lg">
+                        <h4 className="font-semibold mb-2 text-white">Item Tambahan yang Direkomendasikan</h4>
+                        <ul className="space-y-2 text-sm">
+                          {result.suggestedItems.map((item, idx) => (
+                            <li key={idx} className="flex flex-col gap-1">
+                              <div className="flex justify-between items-center">
+                                <span className="font-semibold">{item.name}</span>
+                                <span className="text-white/80">{formatRupiah(item.estimatedCost)}</span>
+                              </div>
+                              <p className="text-white/80 text-xs leading-snug">{item.reason}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
                     <div className="space-y-4">
                       <div className="flex justify-between items-center py-3 border-b border-white/20">
                         <span>Luas Area</span>

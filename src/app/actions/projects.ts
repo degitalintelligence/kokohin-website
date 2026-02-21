@@ -3,9 +3,24 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { ALLOWED_ADMIN_ROLES, isRoleAllowed } from '@/lib/rbac'
 
 export async function createProject(formData: FormData) {
   const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return redirect('/admin/login')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_ADMIN_ROLES, user.email)) {
+    return redirect('/admin')
+  }
 
   // 1. Extract Basic Info
   const customerName = formData.get('customer_name') as string
@@ -67,6 +82,20 @@ export async function createProject(formData: FormData) {
 
 export async function updateProject(formData: FormData) {
   const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return redirect('/admin/login')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_ADMIN_ROLES, user.email)) {
+    return redirect('/admin')
+  }
   
   const id = formData.get('id') as string
   const customerName = formData.get('customer_name') as string

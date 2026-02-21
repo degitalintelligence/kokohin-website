@@ -159,6 +159,7 @@ export default async function AdminProjectsPage() {
                   <th>Alamat</th>
                   <th>Zona</th>
                   <th>Total Harga</th>
+                  <th>Versi</th>
                   <th>Status</th>
                   <th>Tanggal</th>
                   <th>Aksi</th>
@@ -193,6 +194,13 @@ export default async function AdminProjectsPage() {
                       </td>
                       <td className={styles.bold}>
                         {totalPrice > 0 ? formatCurrency(totalPrice) : '—'}
+                      </td>
+                      <td>
+                        {project.estimation?.version_number ? (
+                          <span className={`${styles.badge} ${styles.badge_new}`}>
+                            V{project.estimation.version_number}
+                          </span>
+                        ) : '—'}
                       </td>
                       <td>
                         <span className={`${styles.badge} ${styles[statusConfig.color]}`}>

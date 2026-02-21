@@ -6,12 +6,12 @@ import { createClient } from '@/lib/supabase/client'
  * Sesuai aturan: sisa potongan dibebankan ke customer
  */
 export function calculateWasteQuantity(qtyNeeded: number, lengthPerUnit: number): number {
-  if (lengthPerUnit <= 0) return qtyNeeded
-  if (lengthPerUnit === 1) return qtyNeeded
+  const safeLength = lengthPerUnit > 0 ? lengthPerUnit : 1
+  if (safeLength === 1) return qtyNeeded
 
   // Math.ceil() untuk pembulatan ke atas
-  const unitsNeeded = Math.ceil(qtyNeeded / lengthPerUnit)
-  return unitsNeeded * lengthPerUnit
+  const unitsNeeded = Math.ceil(qtyNeeded / safeLength)
+  return unitsNeeded * safeLength
 }
 
 /**

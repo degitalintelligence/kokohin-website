@@ -3,9 +3,24 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { ALLOWED_MATERIALS_ROLES, isRoleAllowed } from '@/lib/rbac'
 
 export async function createZone(formData: FormData) {
   const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return redirect('/admin/login')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
+    return redirect('/admin/leads')
+  }
 
   const name = formData.get('name') as string
   const citiesStr = formData.get('cities') as string
@@ -47,6 +62,20 @@ export async function createZone(formData: FormData) {
 
 export async function updateZone(formData: FormData) {
   const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return redirect('/admin/login')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
+    return redirect('/admin/leads')
+  }
 
   const id = formData.get('id') as string
   const name = formData.get('name') as string
@@ -94,6 +123,20 @@ export async function updateZone(formData: FormData) {
 
 export async function deleteZone(id: string) {
   const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    throw new Error('Unauthorized')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
+    throw new Error('Forbidden')
+  }
 
   const { error } = await supabase.from('zones').delete().eq('id', id)
 

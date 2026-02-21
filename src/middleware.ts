@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { isRoleAllowed, ALLOWED_MATERIALS_ROLES } from '@/lib/rbac'
 
 export async function middleware(request: NextRequest) {
     const nodeMajor = Number(process.versions.node.split('.')[0] ?? 0)
@@ -42,9 +43,23 @@ export async function middleware(request: NextRequest) {
     // Refresh session (keeps it alive)
     const { data: { user } } = await supabase.auth.getUser()
 
+    let userRole: string | null = null
+    let userEmail: string | null = null
+    if (user) {
+        userEmail = user.email ?? null
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle()
+        userRole = (profile as { role?: string } | null)?.role ?? null
+    }
+
+    const pathname = request.nextUrl.pathname
+
     // Protect /admin routes (except /admin/login)
-    const isAdminRoute = request.nextUrl.pathname.startsWith('/admin')
-    const isLoginPage = request.nextUrl.pathname === '/admin/login'
+    const isAdminRoute = pathname.startsWith('/admin')
+    const isLoginPage = pathname === '/admin/login'
 
     // Dev mode bypass: gunakan DEV_MODE (server-only, tanpa prefix NEXT_PUBLIC_)
     // PENTING: Jangan gunakan NEXT_PUBLIC_ agar tidak terekspos ke browser client
@@ -56,6 +71,17 @@ export async function middleware(request: NextRequest) {
         const loginUrl = request.nextUrl.clone()
         loginUrl.pathname = '/admin/login'
         return NextResponse.redirect(loginUrl)
+    }
+
+    // RBAC: restrict sensitive admin routes based on role
+    const isSensitiveAdminRoute =
+        pathname.startsWith('/admin/materials') ||
+        pathname.startsWith('/admin/zones') ||
+        pathname.startsWith('/admin/settings')
+    if (isSensitiveAdminRoute && !isRoleAllowed(userRole, ALLOWED_MATERIALS_ROLES, userEmail)) {
+        const leadsUrl = request.nextUrl.clone()
+        leadsUrl.pathname = '/admin/leads'
+        return NextResponse.redirect(leadsUrl)
     }
 
     // Redirect user yang sudah login dari halaman login

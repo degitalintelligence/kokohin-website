@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import styles from '../page.module.css'
 import ImportCsvForm from './components/ImportCsvForm'
+import { ALLOWED_MATERIALS_ROLES, isRoleAllowed } from '@/lib/rbac'
 
 type MaterialImportData = {
   id?: string
@@ -25,6 +26,17 @@ export async function importMaterials(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
   if (!user && !bypass) redirect('/admin/login')
+  if (user && !bypass) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle()
+    const role = (profile as { role?: string } | null)?.role ?? null
+    if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+      throw new Error('Hanya Super Admin yang boleh mengimport material')
+    }
+  }
   const text = await file.text()
   const rows = parseCsv(text)
   if (rows.length === 0) return

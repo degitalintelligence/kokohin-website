@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { ALLOWED_MATERIALS_ROLES, isRoleAllowed } from '@/lib/rbac'
 
 async function uploadImage(file: File, supabase: SupabaseClient) {
   if (!file || file.size === 0) return null
@@ -34,6 +35,20 @@ async function uploadImage(file: File, supabase: SupabaseClient) {
 
 export async function createCatalog(formData: FormData) {
   const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return redirect('/admin/login')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+    return redirect('/admin/leads')
+  }
 
   const title = formData.get('title') as string
   const basePriceStr = formData.get('base_price_per_m2') as string
@@ -76,6 +91,20 @@ export async function createCatalog(formData: FormData) {
 
 export async function updateCatalog(formData: FormData) {
   const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return redirect('/admin/login')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+    return redirect('/admin/leads')
+  }
 
   const id = formData.get('id') as string
   const title = formData.get('title') as string
@@ -129,6 +158,20 @@ export async function updateCatalog(formData: FormData) {
 export async function deleteCatalog(formData: FormData) {
   const supabase = await createClient()
   const id = formData.get('id') as string
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return redirect('/admin/login')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+    return redirect('/admin/leads')
+  }
 
   if (!id) {
     return redirect('/admin/catalogs?error=ID%20katalog%20tidak%20valid')

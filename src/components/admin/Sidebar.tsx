@@ -2,11 +2,39 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { signOut } from '@/app/actions/auth'
 import { LogOut, LayoutDashboard, Users, Box, BookOpen, Map, Briefcase, Settings, ExternalLink } from 'lucide-react'
 
+type AppRole = 'super_admin' | 'admin_sales' | 'admin_proyek' | null
+
 export default function Sidebar() {
     const pathname = usePathname()
+    const [role, setRole] = useState<AppRole>(null)
+
+    useEffect(() => {
+        const supabase = createClient()
+        supabase.auth.getUser().then(async ({ data }) => {
+            const user = data.user
+            if (!user) {
+                setRole(null)
+                return
+            }
+            const normalizedEmail = user.email?.toLowerCase() ?? ''
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .maybeSingle()
+            const storedRole = (profile as { role?: string } | null)?.role as AppRole ?? null
+            const effectiveRole: AppRole =
+                normalizedEmail === 'dedi.setiadi92@gmail.com' ? 'super_admin' : storedRole
+            setRole(effectiveRole)
+        }).catch(() => {
+            setRole(null)
+        })
+    }, [])
 
     const isActive = (href: string) => {
         if (href === '/admin' && pathname === '/admin') return true
@@ -41,18 +69,22 @@ export default function Sidebar() {
                 <div className="px-6 pt-5 pb-1.5 text-[0.68rem] font-bold text-white/25 uppercase tracking-widest">
                     Mini‑ERP
                 </div>
-                <Link href="/admin/materials" className={navItemClass('/admin/materials')}>
-                    <Box size={18} />
-                    Material
-                </Link>
-                <Link href="/admin/catalogs" className={navItemClass('/admin/catalogs')}>
-                    <BookOpen size={18} />
-                    Katalog
-                </Link>
-                <Link href="/admin/zones" className={navItemClass('/admin/zones')}>
-                    <Map size={18} />
-                    Zona
-                </Link>
+                {role === 'super_admin' && (
+                    <>
+                        <Link href="/admin/materials" className={navItemClass('/admin/materials')}>
+                            <Box size={18} />
+                            Material
+                        </Link>
+                        <Link href="/admin/catalogs" className={navItemClass('/admin/catalogs')}>
+                            <BookOpen size={18} />
+                            Katalog
+                        </Link>
+                        <Link href="/admin/zones" className={navItemClass('/admin/zones')}>
+                            <Map size={18} />
+                            Zona
+                        </Link>
+                    </>
+                )}
                 <Link href="/admin/projects" className={navItemClass('/admin/projects')}>
                     <Briefcase size={18} />
                     Proyek
@@ -61,10 +93,12 @@ export default function Sidebar() {
                 <div className="px-6 pt-5 pb-1.5 text-[0.68rem] font-bold text-white/25 uppercase tracking-widest">
                     Lainnya
                 </div>
-                <Link href="/admin/settings" className={navItemClass('/admin/settings')}>
-                    <Settings size={18} />
-                    Pengaturan
-                </Link>
+                {role === 'super_admin' && (
+                    <Link href="/admin/settings" className={navItemClass('/admin/settings')}>
+                        <Settings size={18} />
+                        Pengaturan
+                    </Link>
+                )}
                 <Link href="/" target="_blank" className={navItemClass('/')}>
                     <ExternalLink size={18} />
                     Lihat Website
