@@ -25,3 +25,10 @@ export async function createClient() {
         }
     )
 }
+
+export async function isDevBypass() {
+    const cookieStore = await cookies()
+    const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === 'true'
+    const hasBypassCookie = cookieStore.get('dev-bypass')?.value === '1'
+    return isDevMode && hasBypassCookie
+}

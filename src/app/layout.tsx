@@ -1,7 +1,12 @@
 import type { Metadata } from 'next'
+import { Montserrat } from 'next/font/google'
 import './globals.css'
-import Navbar from '@/components/layout/Navbar'
-import Footer from '@/components/layout/Footer'
+
+const montserrat = Montserrat({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-montserrat',
+})
 
 export const metadata: Metadata = {
   title: {
@@ -25,11 +30,9 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="id">
-      <body>
-        <Navbar />
-        <main>{children}</main>
-        <Footer />
+    <html lang="id" className={montserrat.variable}>
+      <body className="font-sans">
+        {children}
       </body>
     </html>
   )

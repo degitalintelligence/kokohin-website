@@ -65,8 +65,11 @@ export interface Material {
     name: string
     category: 'atap' | 'frame' | 'aksesoris' | 'lainnya'
     unit: 'batang' | 'lembar' | 'm1' | 'm2' | 'hari' | 'unit'
-    price: number
-    length_per_unit: number
+    base_price_per_unit: number   // kolom DB: base_price_per_unit (bukan 'price')
+    length_per_unit: number | null
+    is_active: boolean
+    is_laser_cut: boolean
+    requires_sealant: boolean
     created_at: string
     updated_at: string
 }
@@ -173,5 +176,11 @@ export interface CalculatorResult {
         unit: string
         pricePerUnit: number
         subtotal: number
+    }[]
+    warnings?: string[]
+    suggestedItems?: {
+        name: string
+        reason: string
+        estimatedCost: number
     }[]
 }

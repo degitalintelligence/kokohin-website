@@ -1,11 +1,25 @@
 'use client'
 
-import { useState } from 'react'
-import { Calculator, Ruler, MapPin, Package, AlertCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Calculator, Ruler, MapPin, Package, AlertCircle, FileDown } from 'lucide-react'
 import { calculateCanopyPrice, formatRupiah, formatNumber } from '@/lib/calculator'
-import type { CalculatorInput, CalculatorResult } from '@/lib/types'
+import type { CalculatorInput, CalculatorResult, Material, Zone, Catalog } from '@/lib/types'
+import { createEstimation } from '@/app/actions/estimations'
+import { createClient } from '@/lib/supabase/client'
+import { useSearchParams } from 'next/navigation'
+import dynamic from 'next/dynamic'
+import QuotationPDF from './QuotationPDF'
 
-export default function CanopyCalculator() {
+const PDFDownloadLink = dynamic(
+  () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
+  {
+    ssr: false,
+    loading: () => <button className="btn btn-outline w-full">Loading PDF...</button>,
+  }
+)
+
+export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: boolean }) {
+  const searchParams = useSearchParams()
   const [input, setInput] = useState<CalculatorInput>({
     panjang: 5,
     lebar: 3,
@@ -13,7 +27,16 @@ export default function CanopyCalculator() {
   })
   
   const [result, setResult] = useState<(CalculatorResult & { isCustom?: boolean }) | null>(null)
+  const [pendingResult, setPendingResult] = useState<(CalculatorResult & { isCustom?: boolean }) | null>(null)
+  const [leadInfo, setLeadInfo] = useState<{ name: string; whatsapp: string }>({ name: '', whatsapp: '' })
+  const [isLeadCaptured, setIsLeadCaptured] = useState(false)
+  const [projectId, setProjectId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [materials, setMaterials] = useState<Material[]>([])
+  const [zones, setZones] = useState<Zone[]>([])
+  const [catalogData, setCatalogData] = useState<Catalog | null>(null)
+  const [dataError, setDataError] = useState<string | null>(null)
+  const [calcError, setCalcError] = useState<string | null>(null)
   
   const handleInputChange = (field: keyof CalculatorInput, value: CalculatorInput[typeof field]) => {
     setInput(prev => ({
@@ -24,10 +47,11 @@ export default function CanopyCalculator() {
   
   const handleCalculate = async () => {
     setLoading(true)
+    setCalcError(null)
     try {
-      // ESCAPE HATCH: Jika custom, langsung set result khusus
+      // ESCAPE HATCH: Jika custom, simpan ke pendingResult untuk lead capture
       if (input.jenis === 'custom') {
-        setResult({
+        setPendingResult({
           luas: input.panjang * input.lebar,
           materialCost: 0,
           wasteCost: 0,
@@ -40,16 +64,122 @@ export default function CanopyCalculator() {
           breakdown: [],
           isCustom: true
         })
+        setIsLeadCaptured(false)
         return
       }
       
       const calculation = await calculateCanopyPrice(input)
-      setResult(calculation)
+      setPendingResult(calculation)
+      setIsLeadCaptured(false)
     } catch (error) {
-      console.error('Calculation error:', error)
+      setCalcError(error instanceof Error ? error.message : 'Gagal menghitung estimasi')
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleLeadSubmit = async () => {
+    if (!leadInfo.name.trim() || !leadInfo.whatsapp.trim()) {
+      setCalcError('Harap isi nama dan nomor WhatsApp')
+      return
+    }
+
+    // Validasi format WhatsApp (Indonesia)
+    const whatsappRegex = /^(\+62|62|0)8[1-9][0-9]{6,9}$/
+    if (!whatsappRegex.test(leadInfo.whatsapp.replace(/\s+/g, ''))) {
+      setCalcError('Format nomor WhatsApp tidak valid. Gunakan format Indonesia (08xxx)')
+      return
+    }
+
+    try {
+      const supabase = createClient()
+      
+      // Simpan lead/project ke Supabase
+      const { data: project, error: projectError } = await supabase
+        .from('erp_projects')
+        .insert({
+          customer_name: leadInfo.name,
+          phone: leadInfo.whatsapp,
+          address: '',
+          zone_id: input.zoneId || null,
+          custom_notes: input.jenis === 'custom' ? input.customNotes || 'Permintaan custom via kalkulator' : null,
+          status: input.jenis === 'custom' ? 'Need Manual Quote' : 'New'
+        })
+        .select()
+        .single()
+
+      if (projectError) throw projectError
+      
+      // Simpan projectId untuk digunakan di CTA
+      setProjectId(project.id)
+
+      // Jika bukan custom, simpan estimation juga
+      if (input.jenis === 'standard' && pendingResult && !pendingResult.isCustom) {
+        await createEstimation(project.id, {
+          total_hpp: pendingResult.totalHpp,
+          margin_percentage: pendingResult.marginPercentage,
+          total_selling_price: pendingResult.totalSellingPrice,
+          status: 'draft'
+        })
+      }
+
+      // Set result untuk ditampilkan ke user
+      setResult(pendingResult)
+      setIsLeadCaptured(true)
+      setCalcError(null)
+    } catch {
+      setCalcError('Gagal menyimpan data. Silakan coba lagi atau hubungi kami langsung.')
+    }
+  }
+
+  const handleLeadChange = (field: 'name' | 'whatsapp', value: string) => {
+    setLeadInfo(prev => ({ ...prev, [field]: value }))
+  }
+
+  const handleBookSurvey = () => {
+    // Nomor WhatsApp admin (bisa diambil dari environment variable atau config)
+    const adminPhone = '6281234567890' // Ganti dengan nomor admin sebenarnya
+    
+    // Buat pesan dengan detail project
+    const area = result ? formatNumber(result.luas) : 'N/A'
+    const price = result ? formatRupiah(result.estimatedPrice) : 'N/A'
+    const customerName = leadInfo.name || 'Customer'
+    
+    let message = `Halo Admin Kokohin, saya mau booking jadwal survei untuk proyek kanopi.%0A%0A`
+    message += `Nama: ${customerName}%0A`
+    message += `Luas Area: ${area} m²%0A`
+    message += `Estimasi Harga: ${price}%0A`
+    
+    if (projectId) {
+      message += `ID Lead: ${projectId}%0A`
+    }
+    
+    message += `%0ASilahkan konfirmasi ketersediaan jadwal survei. Terima kasih!`
+    
+    // Buka WhatsApp
+    window.open(`https://wa.me/${adminPhone}?text=${message}`, '_blank')
+  }
+
+  const handleCustomConsultation = () => {
+    // Nomor WhatsApp admin (bisa diambil dari environment variable atau config)
+    const adminPhone = '6281234567890' // Ganti dengan nomor admin sebenarnya
+    
+    // Buat pesan khusus untuk custom request
+    const customerName = leadInfo.name || 'Customer'
+    const customNotes = input.customNotes || 'Tidak ada catatan spesifik'
+    
+    let message = `Halo Admin Kokohin, saya ingin konsultasi untuk desain custom kanopi.%0A%0A`
+    message += `Nama: ${customerName}%0A`
+    message += `Catatan: ${customNotes}%0A`
+    
+    if (projectId) {
+      message += `ID Lead: ${projectId}%0A`
+    }
+    
+    message += `%0ASilahkan hubungi saya untuk diskusi lebih lanjut. Terima kasih!`
+    
+    // Buka WhatsApp
+    window.open(`https://wa.me/${adminPhone}?text=${message}`, '_blank')
   }
   
   const handleReset = () => {
@@ -59,25 +189,107 @@ export default function CanopyCalculator() {
       jenis: 'standard'
     })
     setResult(null)
+    setPendingResult(null)
+    setLeadInfo({ name: '', whatsapp: '' })
+    setIsLeadCaptured(false)
+    setProjectId(null)
+    setCalcError(null)
   }
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const supabase = createClient()
+        const [{ data: zonesData, error: zonesError }, { data: materialsData, error: materialsError }] = await Promise.all([
+          supabase.from('zones').select('*').order('name'),
+          supabase.from('materials').select('*').eq('category', 'frame').eq('is_active', true).order('name')
+        ])
+        if (zonesError || materialsError) {
+          throw new Error('Gagal memuat data kalkulator')
+        }
+        const safeZones = zonesData ?? []
+        const safeMaterials = materialsData ?? []
+        setZones(safeZones)
+        setMaterials(safeMaterials)
+        if (safeMaterials.length > 0) {
+          setInput((prev) => ({ ...prev, materialId: prev.materialId ?? safeMaterials[0].id }))
+        }
+      } catch (error) {
+        setDataError(error instanceof Error ? error.message : 'Gagal memuat data kalkulator')
+      }
+    }
+    fetchData()
+  }, [])
+
+  useEffect(() => {
+    const catalogParam = searchParams.get('catalog')
+    if (catalogParam) {
+      setInput((prev) => ({ ...prev, catalogId: catalogParam }))
+    }
+  }, [searchParams])
+
+  useEffect(() => {
+    const fetchCatalogData = async () => {
+      if (!input.catalogId) {
+        setCatalogData(null)
+        return
+      }
+
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from('catalogs')
+          .select('*, atap:atap_id(*), rangka:rangka_id(*)')
+          .eq('id', input.catalogId)
+          .eq('is_active', true)
+          .maybeSingle()
+
+        if (error || !data) {
+          setCatalogData(null)
+          return
+        }
+
+        setCatalogData(data)
+
+        // Pre-fill material dropdown dengan rangka_id jika ada
+        if (data.rangka_id) {
+          setInput((prev) => ({ ...prev, materialId: data.rangka_id }))
+        }
+
+        // Smooth scroll ke kalkulator setelah data katalog di-load
+        setTimeout(() => {
+          const calculatorElement = document.getElementById('canopy-calculator')
+          if (calculatorElement) {
+            calculatorElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }
+        }, 100)
+      } catch {
+        setCatalogData(null)
+      }
+    }
+
+    fetchCatalogData()
+  }, [input.catalogId])
   
   return (
-    <div className="max-w-6xl mx-auto p-6 md:p-8">
-      <div className="mb-10">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-3 bg-primary/10 rounded-xl">
-            <Calculator className="w-7 h-7 text-primary" />
-          </div>
-          <div>
-            <h2 className="text-3xl md:text-4xl font-bold text-primary-dark">
-              Kalkulator Harga Kanopi
-            </h2>
-            <p className="text-gray-600 mt-2">
-              Hitung estimasi biaya kanopi Anda secara instan dengan mempertimbangkan waste material dan zona lokasi.
-            </p>
+    <div className="max-w-6xl mx-auto p-6 md:p-8" id="canopy-calculator">
+      {!hideTitle && (
+        <div className="mb-10">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-3 bg-primary/10 rounded-xl">
+              <Calculator className="w-7 h-7 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-3xl md:text-4xl font-bold text-primary-dark">
+                Kalkulator Harga Kanopi
+              </h2>
+              <p className="text-gray-600 mt-2">
+                Hitung estimasi biaya kanopi Anda secara instan dengan mempertimbangkan waste material dan zona lokasi.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Input Section */}
@@ -88,43 +300,45 @@ export default function CanopyCalculator() {
               <h3 className="text-xl font-bold text-primary-dark">Dimensi Kanopi</h3>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="label">
-                  <span className="flex items-center gap-2">
-                    <Ruler className="w-4 h-4" />
-                    Panjang (meter)
-                  </span>
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  step="0.5"
-                  value={input.panjang}
-                  onChange={(e) => handleInputChange('panjang', parseFloat(e.target.value) || 0)}
-                  className="input"
-                  placeholder="Contoh: 5"
-                />
+            {input.jenis !== 'custom' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="label">
+                    <span className="flex items-center gap-2">
+                      <Ruler className="w-4 h-4" />
+                      Panjang (meter)
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.5"
+                    value={input.panjang}
+                    onChange={(e) => handleInputChange('panjang', parseFloat(e.target.value) || 0)}
+                    className="input"
+                    placeholder="Contoh: 5"
+                  />
+                </div>
+                
+                <div>
+                  <label className="label">
+                    <span className="flex items-center gap-2">
+                      <Ruler className="w-4 h-4" />
+                      Lebar (meter)
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.5"
+                    value={input.lebar}
+                    onChange={(e) => handleInputChange('lebar', parseFloat(e.target.value) || 0)}
+                    className="input"
+                    placeholder="Contoh: 3"
+                  />
+                </div>
               </div>
-              
-              <div>
-                <label className="label">
-                  <span className="flex items-center gap-2">
-                    <Ruler className="w-4 h-4" />
-                    Lebar (meter)
-                  </span>
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  step="0.5"
-                  value={input.lebar}
-                  onChange={(e) => handleInputChange('lebar', parseFloat(e.target.value) || 0)}
-                  className="input"
-                  placeholder="Contoh: 3"
-                />
-              </div>
-            </div>
+            )}
             
             <div className="pt-4 border-t border-gray-200">
               <label className="label">
@@ -171,7 +385,7 @@ export default function CanopyCalculator() {
                         onChange={(e) => handleInputChange('customNotes', e.target.value)}
                         className="input mt-3"
                         rows={3}
-                        placeholder="Deskripsikan kebutuhan spesifik Anda (material, desain, dll)..."
+                        placeholder="Deskripsi Ide"
                       />
                     </div>
                   </div>
@@ -179,27 +393,76 @@ export default function CanopyCalculator() {
               )}
             </div>
             
-            <div className="pt-4 border-t border-gray-200">
-              <label className="label">
-                <span className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4" />
-                  Zona Lokasi (Opsional)
-                </span>
-              </label>
-              <select
-                value={input.zoneId || ''}
-                onChange={(e) => handleInputChange('zoneId', e.target.value || undefined)}
-                className="input"
-              >
-                <option value="">Pilih zona lokasi...</option>
-                <option value="jaksel">Jakarta Selatan (+5%)</option>
-                <option value="jaktim">Jakarta Timur (+5%)</option>
-                <option value="jakbar">Jakarta Barat (+5%)</option>
-                <option value="depok">Depok (+0%)</option>
-                <option value="bogor">Bogor (+2%)</option>
-                <option value="bekasi">Bekasi (+3%)</option>
-              </select>
-            </div>
+            {input.jenis !== 'custom' && (
+              <div className="pt-4 border-t border-gray-200">
+                {catalogData && (
+                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 text-blue-800 font-medium">
+                          <Package className="w-4 h-4" />
+                          Material diisi otomatis dari katalog
+                        </div>
+                        <p className="text-sm text-blue-600 mt-1">
+                          Katalog: <span className="font-semibold">{catalogData.title}</span>
+                          {catalogData.atap && ` • Atap: ${catalogData.atap.name}`}
+                          {catalogData.rangka && ` • Rangka: ${catalogData.rangka.name}`}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInput(prev => ({ ...prev, catalogId: undefined, materialId: undefined }))
+                          setCatalogData(null)
+                        }}
+                        className="text-blue-700 hover:text-blue-900 text-sm font-medium"
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <label className="label">
+                  <span className="flex items-center gap-2">
+                    <Package className="w-4 h-4" />
+                    Material Rangka (Opsional)
+                  </span>
+                </label>
+                <select
+                  value={input.materialId || ''}
+                  onChange={(e) => handleInputChange('materialId', e.target.value || undefined)}
+                  className="input mb-4"
+                >
+                  <option value="">Pilih material rangka...</option>
+                  {materials.map((material) => (
+                    <option key={material.id} value={material.id}>
+                      {material.name} ({material.unit})
+                    </option>
+                  ))}
+                </select>
+                <label className="label">
+                  <span className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4" />
+                    Zona Lokasi (Opsional)
+                  </span>
+                </label>
+                <select
+                  value={input.zoneId || ''}
+                  onChange={(e) => handleInputChange('zoneId', e.target.value || undefined)}
+                  className="input"
+                >
+                  <option value="">Pilih zona lokasi...</option>
+                  {zones.map((zone) => (
+                    <option key={zone.id} value={zone.id}>
+                      {zone.name} (+{zone.markup_percentage}%{zone.flat_fee > 0 ? `, +${formatRupiah(zone.flat_fee)}` : ''})
+                    </option>
+                  ))}
+                </select>
+                {dataError && (
+                  <div className="mt-3 text-sm text-red-600">{dataError}</div>
+                )}
+              </div>
+            )}
             
             <div className="flex flex-col sm:flex-row gap-4 pt-6">
               <button
@@ -228,6 +491,9 @@ export default function CanopyCalculator() {
                 Reset
               </button>
             </div>
+            {calcError && (
+              <div className="mt-4 text-sm text-red-600">{calcError}</div>
+            )}
           </div>
           
           {/* Information Panel */}
@@ -262,16 +528,70 @@ export default function CanopyCalculator() {
             <div className="card bg-gradient-to-br from-primary-dark to-primary-dark/90 text-white">
               <h3 className="text-2xl font-bold mb-6">Hasil Perhitungan</h3>
               
-              {result ? (
+              {pendingResult && !isLeadCaptured ? (
+                /* LEAD CAPTURE FORM */
+                <div className="space-y-6">
+                  <div className="p-4 bg-white/10 rounded-xl">
+                    <div className="flex items-center gap-3 mb-4">
+                      <AlertCircle className="w-6 h-6 text-yellow-300" />
+                      <h4 className="text-lg font-bold">Lengkapi Data Anda</h4>
+                    </div>
+                    <p className="text-white/90 mb-4">
+                      Untuk melihat estimasi harga, harap lengkapi data kontak Anda terlebih dahulu.
+                    </p>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-white/80 text-sm mb-2">Nama Lengkap *</label>
+                        <input
+                          type="text"
+                          value={leadInfo.name}
+                          onChange={(e) => handleLeadChange('name', e.target.value)}
+                          className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          placeholder="Nama lengkap Anda"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-white/80 text-sm mb-2">Nomor WhatsApp *</label>
+                        <input
+                          type="tel"
+                          value={leadInfo.whatsapp}
+                          onChange={(e) => handleLeadChange('whatsapp', e.target.value)}
+                          className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          placeholder="08xxx (format Indonesia)"
+                        />
+                        <p className="text-white/60 text-xs mt-2">
+                          Contoh: 081234567890
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={handleLeadSubmit}
+                    disabled={!leadInfo.name.trim() || !leadInfo.whatsapp.trim()}
+                    className="w-full btn bg-primary text-white hover:bg-primary/90 font-bold py-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Lihat Estimasi Harga
+                  </button>
+                  
+                  {calcError && (
+                    <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg">
+                      <p className="text-red-300 text-sm">{calcError}</p>
+                    </div>
+                  )}
+                </div>
+              ) : result ? (
                 result.isCustom ? (
                   <div className="space-y-6">
                     <div className="p-4 bg-white/10 rounded-xl">
                       <div className="flex items-center gap-3 mb-4">
                         <AlertCircle className="w-6 h-6 text-yellow-300" />
-                        <h4 className="text-lg font-bold">Permintaan Custom</h4>
+                        <h4 className="text-lg font-bold">Ide Anda Unik!</h4>
                       </div>
                       <p className="text-white/90">
-                        Tim kami akan menghubungi Anda untuk memberikan penawaran manual berdasarkan spesifikasi yang diminta.
+                        Tim Engineer kami perlu menghitung material secara spesifik. Tim sales akan menghubungi Anda untuk memberikan penawaran manual berdasarkan ide custom yang Anda minta.
                       </p>
                       {input.customNotes && (
                         <div className="mt-4 p-3 bg-white/5 rounded-lg">
@@ -281,55 +601,40 @@ export default function CanopyCalculator() {
                       )}
                     </div>
                     
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center py-3 border-b border-white/20">
-                        <span>Luas Area</span>
-                        <span className="font-bold">{formatNumber(result.luas)} m²</span>
-                      </div>
-                    </div>
-                    
                     <button
-                      onClick={() => window.location.href = '/kontak'}
+                      onClick={handleCustomConsultation}
                       className="w-full btn bg-white text-primary-dark hover:bg-white/90 font-bold py-4"
                     >
-                      Hubungi Tim Sales
+                      Konsultasi Custom
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-6">
+                    {/* Warnings / Upsell Suggestions */}
+                    {(result.warnings && result.warnings.length > 0) && (
+                      <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                          <div>
+                            <h4 className="font-semibold text-yellow-800">Rekomendasi Teknis</h4>
+                            <ul className="mt-2 space-y-1">
+                              {result.warnings.map((warning, idx) => (
+                                <li key={idx} className="text-sm text-yellow-700 list-disc list-inside">
+                                  {warning}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Summary */}
                     <div className="space-y-4">
                       <div className="flex justify-between items-center py-3 border-b border-white/20">
                         <span>Luas Area</span>
                         <span className="font-bold">{formatNumber(result.luas)} m²</span>
                       </div>
-                      
-                      <div className="flex justify-between items-center py-3 border-b border-white/20">
-                        <span>Biaya Material</span>
-                        <span className="font-bold">{formatRupiah(result.materialCost)}</span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center py-3 border-b border-white/20">
-                        <span>Waste Material</span>
-                        <span className="font-bold text-yellow-300">{formatRupiah(result.wasteCost)}</span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center py-3 border-b border-white/20">
-                        <span>Total HPP</span>
-                        <span className="font-bold">{formatRupiah(result.totalHpp)}</span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center py-3 border-b border-white/20">
-                        <span>Margin ({result.marginPercentage}%)</span>
-                        <span className="font-bold">+{formatRupiah(result.totalHpp * (result.marginPercentage / 100))}</span>
-                      </div>
-                      
-                      {result.markupPercentage > 0 && (
-                        <div className="flex justify-between items-center py-3 border-b border-white/20">
-                          <span>Markup Zona ({result.markupPercentage}%)</span>
-                          <span className="font-bold">+{formatRupiah(result.totalHpp * (1 + result.marginPercentage / 100) * (result.markupPercentage / 100))}</span>
-                        </div>
-                      )}
                       
                       <div className="pt-4">
                         <div className="flex justify-between items-center">
@@ -342,43 +647,47 @@ export default function CanopyCalculator() {
                       </div>
                     </div>
                     
-                    {/* Breakdown */}
-                    {result.breakdown.length > 0 && (
-                      <div className="pt-6 border-t border-white/20">
-                        <h4 className="font-bold mb-4">Detail Material</h4>
-                        <div className="space-y-3">
-                          {result.breakdown.map((item, index) => (
-                            <div key={index} className="p-3 bg-white/5 rounded-lg">
-                              <div className="flex justify-between mb-1">
-                                <span className="font-medium">{item.name}</span>
-                                <span className="font-bold">{formatRupiah(item.subtotal)}</span>
-                              </div>
-                              <div className="flex justify-between text-sm text-white/70">
-                                <span>
-                                  {formatNumber(item.qtyNeeded)} → {formatNumber(item.qtyCharged)} {item.unit}
-                                  <span className="ml-2 text-yellow-300">
-                                    (+{formatNumber(item.qtyCharged - item.qtyNeeded)} waste)
-                                  </span>
-                                </span>
-                                <span>{formatRupiah(item.pricePerUnit)}/{item.unit}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                    {/* Disclaimer Text */}
+                    <div className="pt-6 border-t border-white/20">
+                      <div className="p-4 bg-white/5 rounded-lg">
+                        <p className="text-white/80 text-sm italic">
+                          &quot;Estimasi Harga Transparan, Tanpa Biaya Siluman. Angka simulasi di atas adalah perkiraan awal berdasarkan ukuran dan spesifikasi material yang kamu pilih. Harga final yang fixed akan kami kunci ke dalam kontrak kerja setelah tim Kokohin melakukan survei ke lokasimu secara langsung.&quot;
+                        </p>
                       </div>
-                    )}
+                    </div>
                     
                     {/* CTA Buttons */}
                     <div className="space-y-3 pt-6">
                       <button
-                        onClick={() => window.location.href = '/konsultasi'}
+                        onClick={handleBookSurvey}
                         className="w-full btn bg-primary text-white hover:bg-primary/90 font-bold py-4"
                       >
-                        Konsultasi Gratis
+                        Book Jadwal Survei
                       </button>
+
+                      {/* PDF Download Button */}
+                      <PDFDownloadLink
+                        document={
+                          <QuotationPDF 
+                            result={result} 
+                            leadInfo={leadInfo} 
+                            projectId={projectId} 
+                          />
+                        }
+                        fileName={`Penawaran_Kokohin_${leadInfo.name.replace(/\s+/g, '_')}.pdf`}
+                        className="w-full btn bg-white/20 text-white hover:bg-white/30 font-bold py-4 flex items-center justify-center gap-2"
+                      >
+                        {({ loading }) => (
+                          <>
+                            <FileDown className="w-5 h-5" />
+                            {loading ? 'Menyiapkan PDF...' : 'Download Penawaran PDF'}
+                          </>
+                        )}
+                      </PDFDownloadLink>
+
                       <button
                         onClick={() => window.location.href = '/katalog'}
-                        className="w-full btn bg-white/20 text-white hover:bg-white/30 font-bold py-4"
+                        className="w-full btn bg-transparent border border-white/30 text-white hover:bg-white/10 font-bold py-4"
                       >
                         Lihat Katalog Paket
                       </button>

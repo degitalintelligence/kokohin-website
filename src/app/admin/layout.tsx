@@ -1,8 +1,11 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-    title: 'Admin Login | Kokohin',
-    description: 'Admin login Kokohin',
+    title: {
+        default: 'Admin | Kokohin',
+        template: '%s | Admin Kokohin',
+    },
+    description: 'Admin panel Kokohin',
     robots: { index: false, follow: false },
 }
 

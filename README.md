@@ -29,6 +29,30 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Troubleshooting
+
+### Error: controller[kState].transformAlgorithm is not a function
+
+**Repro langkah cepat**
+- Jalankan `npm run dev`
+- Buka `/admin/login`
+- Buka halaman publik seperti `/kontak`
+- Perhatikan terminal menampilkan error di atas setelah request berjalan
+
+**Root cause**
+- Node.js v24 menjalankan Web Streams yang tidak kompatibel dengan Proxy Next.js 16 saat melakukan refresh session cookie.
+
+**Fix permanen**
+- Gunakan Node.js LTS v22 (atau v20) saat menjalankan dev/staging/production.
+- Pastikan versi Node mengikuti `package.json` `engines`.
+
+## Staging Verification
+
+- Gunakan Node.js v22 LTS pada server staging
+- Jalankan `npm run build` lalu `npm run start`
+- Buka `/admin/login` dan `/kontak` untuk memastikan tidak ada error di server logs
+- Akses `/api/test-db` untuk memastikan koneksi dan runtime terlapor dengan benar
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.

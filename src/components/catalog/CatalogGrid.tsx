@@ -1,57 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { Check, Star, Shield, TrendingUp, Package } from 'lucide-react'
 import type { Catalog } from '@/lib/types'
-
-// Dummy data untuk katalog (akan diganti dengan data dari Supabase)
-const dummyCatalogs: Catalog[] = [
-  {
-    id: '1',
-    title: 'Paket Kanopi Baja Ringan Standard',
-    image_url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop',
-    atap_id: 'atap-1',
-    rangka_id: 'frame-1',
-    base_price_per_m2: 450000,
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: '2',
-    title: 'Paket Kanopi Polycarbonate Premium',
-    image_url: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w-800&auto=format&fit=crop',
-    atap_id: 'atap-2',
-    rangka_id: 'frame-1',
-    base_price_per_m2: 650000,
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: '3',
-    title: 'Paket Carport Minimalis',
-    image_url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w-800&auto=format&fit=crop',
-    atap_id: 'atap-3',
-    rangka_id: 'frame-2',
-    base_price_per_m2: 850000,
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: '4',
-    title: 'Paket Pergola Kayu',
-    image_url: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w-800&auto=format&fit=crop',
-    atap_id: null,
-    rangka_id: 'frame-3',
-    base_price_per_m2: 1200000,
-    is_active: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }
-]
+import { createClient } from '@/lib/supabase/client'
 
 const features = [
   { icon: Shield, text: 'Garansi Material 5 Tahun' },
@@ -59,9 +12,41 @@ const features = [
   { icon: Star, text: 'Free Maintenance 1 Tahun' },
   { icon: TrendingUp, text: 'Harga Terjangkau' }
 ]
+const KOKOHIN_WA = process.env.NEXT_PUBLIC_WA_NUMBER ?? '628123456789'
 
 export default function CatalogGrid() {
   const [selectedCatalog, setSelectedCatalog] = useState<string | null>(null)
+  const [catalogs, setCatalogs] = useState<Catalog[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetchCatalogs = async () => {
+      try {
+        const supabase = createClient()
+        const { data, error: fetchError } = await supabase
+          .from('catalogs')
+          .select('*, atap:atap_id(name, category), rangka:rangka_id(name, category)')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+
+        if (fetchError) {
+          setError(fetchError.message)
+          setCatalogs([])
+          return
+        }
+
+        setCatalogs(data ?? [])
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Gagal memuat katalog')
+        setCatalogs([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchCatalogs()
+  }, [])
   
   const formatRupiah = (amount: number) => {
     return new Intl.NumberFormat('id-ID', {
@@ -105,8 +90,15 @@ export default function CatalogGrid() {
       </div>
       
       {/* Catalog Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
-        {dummyCatalogs.map((catalog) => {
+      {loading ? (
+        <div className="text-center text-gray-600 mb-16">Memuat katalog...</div>
+      ) : error ? (
+        <div className="text-center text-red-600 mb-16">Gagal memuat katalog.</div>
+      ) : catalogs.length === 0 ? (
+        <div className="text-center text-gray-600 mb-16">Belum ada paket yang tersedia.</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
+          {catalogs.map((catalog) => {
           const estimatedPrice = calculatePriceForArea(catalog.base_price_per_m2, 10)
           const isSelected = selectedCatalog === catalog.id
           
@@ -145,6 +137,7 @@ export default function CatalogGrid() {
                 <div className="space-y-4 mb-6">
                   <div>
                     <div className="flex items-baseline gap-2">
+                      <span className="text-sm text-gray-500 font-medium">Mulai dari</span>
                       <span className="text-2xl font-bold text-primary">
                         {formatRupiah(catalog.base_price_per_m2)}
                       </span>
@@ -188,7 +181,7 @@ export default function CatalogGrid() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      window.location.href = `/konsultasi?catalog=${catalog.id}`
+                      window.location.href = `/kontak`
                     }}
                     className="w-full btn btn-outline"
                   >
@@ -197,9 +190,10 @@ export default function CatalogGrid() {
                 </div>
               </div>
             </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
       
       {/* CTA Section */}
       <div className="bg-gradient-to-r from-primary-dark to-primary rounded-3xl p-8 md:p-12 text-white">
@@ -221,7 +215,7 @@ export default function CatalogGrid() {
                   Request Custom Quote
                 </button>
                 <button
-                  onClick={() => window.location.href = '/whatsapp'}
+                  onClick={() => window.location.href = `https://wa.me/${KOKOHIN_WA}`}
                   className="btn bg-white/20 text-white hover:bg-white/30 ml-4"
                 >
                   Chat via WhatsApp

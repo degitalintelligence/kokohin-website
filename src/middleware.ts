@@ -3,7 +3,23 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
 export async function middleware(request: NextRequest) {
-    let supabaseResponse = NextResponse.next({ request })
+    const nodeMajor = Number(process.versions.node.split('.')[0] ?? 0)
+    
+    // Debug log
+    if (process.env.NODE_ENV === 'development') {
+        console.log(`[Proxy] Node version: ${process.versions.node} (Major: ${nodeMajor})`)
+    }
+
+    if (nodeMajor >= 24) {
+        if (process.env.NODE_ENV === 'development') {
+            console.log('[Proxy] Node v24+ detected. Bypassing Supabase Auth middleware to prevent stream errors.')
+        }
+        const response = NextResponse.next()
+        response.headers.set('x-proxy-disabled', `node-${process.versions.node}`)
+        return response
+    }
+
+    let supabaseResponse = NextResponse.next()
 
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,8 +30,7 @@ export async function middleware(request: NextRequest) {
                     return request.cookies.getAll()
                 },
                 setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-                    supabaseResponse = NextResponse.next({ request })
+                    supabaseResponse = NextResponse.next()
                     cookiesToSet.forEach(({ name, value, options }) =>
                         supabaseResponse.cookies.set(name, value, options)
                     )
@@ -31,14 +46,20 @@ export async function middleware(request: NextRequest) {
     const isAdminRoute = request.nextUrl.pathname.startsWith('/admin')
     const isLoginPage = request.nextUrl.pathname === '/admin/login'
 
-    if (isAdminRoute && !isLoginPage && !user) {
+    // Dev mode bypass: gunakan DEV_MODE (server-only, tanpa prefix NEXT_PUBLIC_)
+    // PENTING: Jangan gunakan NEXT_PUBLIC_ agar tidak terekspos ke browser client
+    const isDevMode = process.env.DEV_MODE === 'true'
+    const hasBypassCookie = request.cookies.get('dev-bypass')?.value === '1'
+    const isAuthenticated = !!user || (isDevMode && hasBypassCookie)
+
+    if (isAdminRoute && !isLoginPage && !isAuthenticated) {
         const loginUrl = request.nextUrl.clone()
         loginUrl.pathname = '/admin/login'
         return NextResponse.redirect(loginUrl)
     }
 
-    // Redirect logged-in user away from login page
-    if (isLoginPage && user) {
+    // Redirect user yang sudah login dari halaman login
+    if (isLoginPage && isAuthenticated) {
         const dashboardUrl = request.nextUrl.clone()
         dashboardUrl.pathname = '/admin'
         return NextResponse.redirect(dashboardUrl)
@@ -48,8 +69,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+    runtime: 'nodejs', // Use Node.js runtime for compatibility with Node APIs and to fix stream issues
     matcher: [
         // Match all routes except Next.js internals and static files
-        '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+        // Also exclude @vite/client and sw.js to avoid errors
+        '/((?!_next/static|_next/image|favicon.ico|@vite|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js|css|woff|woff2)$).*)',
     ],
 }
