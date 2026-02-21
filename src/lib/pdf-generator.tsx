@@ -17,17 +17,20 @@ const COLORS = {
   gray: '#6B7280'
 } as const
 
-// Register Montserrat font (fallback to Helvetica jika font file tidak ada)
+const fontBase =
+  typeof window !== 'undefined' && window.location.origin
+    ? `${window.location.origin}/fonts`
+    : '/fonts'
+
 Font.register({
   family: 'Montserrat',
   fonts: [
-    { src: '/fonts/Montserrat-Regular.ttf', fontWeight: 'normal' },
-    { src: '/fonts/Montserrat-Bold.ttf', fontWeight: 'bold' },
-    { src: '/fonts/Montserrat-SemiBold.ttf', fontWeight: 'semibold' },
+    { src: `${fontBase}/Montserrat-Regular.ttf`, fontWeight: 'normal' },
+    { src: `${fontBase}/Montserrat-Bold.ttf`, fontWeight: 'bold' },
+    { src: `${fontBase}/Montserrat-SemiBold.ttf`, fontWeight: 'semibold' },
   ],
 })
 
-// Fallback jika font gagal di-load
 Font.registerHyphenationCallback(word => [word])
 
 const styles = StyleSheet.create({

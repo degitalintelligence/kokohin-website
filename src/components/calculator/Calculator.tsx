@@ -37,6 +37,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
   const [catalogData, setCatalogData] = useState<Catalog | null>(null)
   const [dataError, setDataError] = useState<string | null>(null)
   const [calcError, setCalcError] = useState<string | null>(null)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
   
   const handleInputChange = (field: keyof CalculatorInput, value: CalculatorInput[typeof field]) => {
     setInput(prev => ({
@@ -94,7 +95,6 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     try {
       const supabase = createClient()
       
-      // Simpan lead/project ke Supabase
       const { data: project, error: projectError } = await supabase
         .from('erp_projects')
         .insert({
@@ -110,10 +110,8 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
 
       if (projectError) throw projectError
       
-      // Simpan projectId untuk digunakan di CTA
       setProjectId(project.id)
 
-      // Jika bukan custom, simpan estimation juga
       if (input.jenis === 'standard' && pendingResult && !pendingResult.isCustom) {
         await createEstimation(project.id, {
           total_hpp: pendingResult.totalHpp,
@@ -123,12 +121,23 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
         })
       }
 
-      // Set result untuk ditampilkan ke user
       setResult(pendingResult)
       setIsLeadCaptured(true)
       setCalcError(null)
-    } catch {
-      setCalcError('Gagal menyimpan data. Silakan coba lagi atau hubungi kami langsung.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? '')
+      const normalized = message.toLowerCase()
+      const isDuplicateV1 =
+        normalized.includes('estimasi v1 untuk proyek ini sudah ada') ||
+        normalized.includes('unique_estimations_project_version') ||
+        normalized.includes('duplicate key') ||
+        normalized.includes('unique constraint')
+
+      if (isDuplicateV1) {
+        setCalcError('Estimasi V1 untuk proyek ini sudah pernah dibuat. Silakan cek riwayat estimasi di dashboard admin.')
+      } else {
+        setCalcError('Gagal menyimpan data. Silakan coba lagi atau hubungi kami langsung.')
+      }
     }
   }
 
@@ -200,9 +209,14 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     const fetchData = async () => {
       try {
         const supabase = createClient()
-        const [{ data: zonesData, error: zonesError }, { data: materialsData, error: materialsError }] = await Promise.all([
+        const [
+          { data: zonesData, error: zonesError },
+          { data: materialsData, error: materialsError },
+          { data: logoSetting },
+        ] = await Promise.all([
           supabase.from('zones').select('*').order('name'),
-          supabase.from('materials').select('*').eq('category', 'frame').eq('is_active', true).order('name')
+          supabase.from('materials').select('*').eq('category', 'frame').eq('is_active', true).order('name'),
+          supabase.from('site_settings').select('value').eq('key', 'logo_url').maybeSingle(),
         ])
         if (zonesError || materialsError) {
           throw new Error('Gagal memuat data kalkulator')
@@ -211,6 +225,8 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
         const safeMaterials = materialsData ?? []
         setZones(safeZones)
         setMaterials(safeMaterials)
+         const typedLogo = logoSetting as { value?: string } | null
+         setLogoUrl(typedLogo?.value ?? null)
         if (safeMaterials.length > 0) {
           setInput((prev) => ({ ...prev, materialId: prev.materialId ?? safeMaterials[0].id }))
         }
@@ -271,6 +287,9 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     fetchCatalogData()
   }, [input.catalogId])
   
+  const activeZoneName =
+    zones.find((zone) => zone.id === input.zoneId)?.name ?? null
+
   return (
     <div className="max-w-6xl mx-auto p-6 md:p-8" id="canopy-calculator">
       {!hideTitle && (
@@ -686,7 +705,9 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                           <QuotationPDF 
                             result={result} 
                             leadInfo={leadInfo} 
-                            projectId={projectId} 
+                            projectId={projectId}
+                            zoneName={activeZoneName}
+                            logoUrl={logoUrl}
                           />
                         }
                         fileName={`Penawaran_Kokohin_${leadInfo.name.replace(/\s+/g, '_')}.pdf`}

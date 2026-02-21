@@ -2,6 +2,7 @@ import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import styles from '../../page.module.css'
+import GeneratePdfButton from '@/components/admin/GeneratePdfButton'
 
 type EstimationRow = {
   id: string
@@ -153,10 +154,15 @@ export default async function AdminProjectDetailPage({
                     Belum ada estimasi harga.
                   </div>
                 )}
-                <div className="p-4 border-t border-gray-100">
+                <div className="p-4 border-t border-gray-100 space-y-3">
                   <button className="w-full btn btn-outline-dark text-sm" disabled>
                     + Buat Estimasi Baru (Coming Soon)
                   </button>
+                  <GeneratePdfButton
+                    projectId={project.id}
+                    disabled={!project.estimations || project.estimations.length === 0}
+                    className="w-full"
+                  />
                 </div>
               </div>
             </div>

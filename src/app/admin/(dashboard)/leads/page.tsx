@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import type { Material } from '@/lib/types'
 import GeneratePdfButton from '@/components/admin/GeneratePdfButton'
+import CreateEstimationV1Button from '@/components/admin/CreateEstimationV1Button'
 
 type ZoneLookup = {
   id: string
@@ -146,6 +147,7 @@ export default async function AdminLeadsPage({
   )
   const activeProject = activeLead ? projectsByLeadId[String(activeLead.id)] ?? null : null
   const activeEstimationVersion = activeProject?.estimations?.[0]?.version_number ?? 1
+  const activeHasAnyEstimation = (activeProject?.estimations?.length ?? 0) > 0
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -504,11 +506,20 @@ export default async function AdminLeadsPage({
                     </div>
                     <div className="p-4 bg-gray-900">
                       {activeProject ? (
-                        <GeneratePdfButton
-                          projectId={activeProject.id}
-                          disabled={false}
-                          className="w-full"
-                        />
+                        <div className="space-y-3">
+                          <CreateEstimationV1Button
+                            projectId={activeProject.id}
+                            totalHpp={totalHpp}
+                            marginPercentage={marginSetting}
+                            totalSellingPrice={totalSellingPrice}
+                            disabled={activeHasAnyEstimation}
+                          />
+                          <GeneratePdfButton
+                            projectId={activeProject.id}
+                            disabled={false}
+                            className="w-full"
+                          />
+                        </div>
                       ) : (
                         <button
                           disabled

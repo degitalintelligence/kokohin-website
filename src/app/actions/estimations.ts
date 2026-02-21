@@ -8,8 +8,22 @@ export async function createEstimation(
   data: Omit<Estimation, 'id' | 'project_id' | 'version_number' | 'created_at' | 'updated_at'>
 ) {
   const supabase = await createClient()
-  
-  // 1. Get the latest version number for this project
+
+  const { count: existingV1Count, error: existingV1Error } = await supabase
+    .from('estimations')
+    .select('*', { count: 'exact', head: true })
+    .eq('project_id', projectId)
+    .eq('version_number', 1)
+
+  if (existingV1Error) {
+    console.error('Error checking existing V1 estimation:', existingV1Error)
+    throw new Error('Failed to check existing estimations')
+  }
+
+  if ((existingV1Count ?? 0) > 0) {
+    throw new Error('Estimasi V1 untuk proyek ini sudah ada')
+  }
+
   const { data: existingEstimations, error: fetchError } = await supabase
     .from('estimations')
     .select('version_number')

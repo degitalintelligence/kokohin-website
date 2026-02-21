@@ -1,118 +1,169 @@
 import React from 'react';
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
-import { formatRupiah } from '@/lib/calculator';
+import { Document, Page, Text, View, StyleSheet, Image as PdfImage, Font } from '@react-pdf/renderer';
+import { format } from 'date-fns';
+import { id } from 'date-fns/locale';
 import type { CalculatorResult } from '@/lib/types';
 
-// Register font (optional, using standard Helvetica for now to be safe)
-// Font.register({ family: 'Montserrat', src: '...' });
+const fontBase =
+  typeof window !== 'undefined' && window.location.origin
+    ? `${window.location.origin}/fonts`
+    : '/fonts';
 
+Font.register({
+  family: 'Montserrat',
+  fonts: [
+    { src: `${fontBase}/Montserrat-Regular.ttf`, fontWeight: 400 },
+    { src: `${fontBase}/Montserrat-Bold.ttf`, fontWeight: 700 },
+  ],
+});
+
+// 2. STYLING KELAS ATAS (Mirip Tailwind tapi untuk React PDF)
 const styles = StyleSheet.create({
   page: {
-    flexDirection: 'column',
-    backgroundColor: '#FFFFFF',
     padding: 40,
-    fontFamily: 'Helvetica',
+    fontFamily: 'Montserrat',
+    backgroundColor: '#FFFFFF',
+    color: '#1D1D1B',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    alignItems: 'flex-start',
+    marginBottom: 40,
+    paddingBottom: 20,
     borderBottomWidth: 2,
     borderBottomColor: '#E30613',
-    paddingBottom: 10,
+  },
+  logoInfo: {
+    flexDirection: 'column',
+    width: '50%',
   },
   logo: {
     width: 120,
-    height: 40, // Adjust aspect ratio as needed
+    height: 'auto',
+    marginBottom: 10,
   },
-  companyInfo: {
+  companyName: {
+    fontSize: 14,
+    fontWeight: 700,
+    marginBottom: 4,
+  },
+  companyDetails: {
+    fontSize: 9,
+    color: '#666666',
+    lineHeight: 1.4,
+  },
+  docInfo: {
+    width: '40%',
     textAlign: 'right',
+  },
+  docTitle: {
+    fontSize: 24,
+    fontWeight: 700,
+    color: '#E30613',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  docMeta: {
     fontSize: 10,
     color: '#1D1D1B',
+    marginBottom: 4,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#E30613',
-    marginBottom: 10,
-    marginTop: 10,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#666666',
-    marginBottom: 20,
-  },
-  section: {
-    margin: 10,
-    padding: 10,
-    flexGrow: 1,
-  },
-  row: {
+  customerSection: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 30,
+    padding: 15,
+    backgroundColor: '#F8F8F8',
+    borderRadius: 8,
+  },
+  customerBox: {
+    width: '50%',
+  },
+  sectionTitle: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: '#E30613',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  customerText: {
+    fontSize: 11,
+    lineHeight: 1.5,
+  },
+  table: {
+    width: '100%',
+    marginBottom: 30,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#1D1D1B',
+    color: '#FFFFFF',
+    padding: 10,
+    fontSize: 10,
+    fontWeight: 700,
+  },
+  tableRow: {
+    flexDirection: 'row',
     borderBottomWidth: 1,
     borderBottomColor: '#EEEEEE',
-    paddingBottom: 4,
+    padding: 10,
+    fontSize: 10,
+    alignItems: 'center',
   },
-  label: {
-    fontSize: 12,
-    color: '#333333',
+  col1: { width: '5%', textAlign: 'center' },
+  col2: { width: '45%' },
+  col3: { width: '15%', textAlign: 'center' },
+  col4: { width: '35%', textAlign: 'right' },
+  totalsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 40,
   },
-  value: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#1D1D1B',
+  totalsBox: {
+    width: '50%',
   },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 20,
-    paddingTop: 10,
-    borderTopWidth: 2,
-    borderTopColor: '#E30613',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+    fontSize: 11,
   },
-  totalLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#E30613',
-  },
-  totalValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  totalRowFinal: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: '#1D1D1B',
+    fontSize: 14,
+    fontWeight: 700,
     color: '#E30613',
   },
   footer: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 40,
     left: 40,
     right: 40,
-    textAlign: 'center',
-    fontSize: 10,
-    color: '#999999',
-    borderTopWidth: 1,
-    borderTopColor: '#EEEEEE',
-    paddingTop: 10,
   },
   disclaimer: {
-    fontSize: 9,
-    fontStyle: 'italic',
+    fontSize: 8,
     color: '#666666',
-    marginTop: 20,
+    lineHeight: 1.5,
     padding: 10,
-    backgroundColor: '#F9FAFB',
-  },
-  customerInfo: {
-    marginBottom: 20,
-    padding: 15,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 4,
-  },
-  customerText: {
-    fontSize: 12,
-    marginBottom: 4,
+    backgroundColor: '#FFF5F5',
+    borderLeftWidth: 3,
+    borderLeftColor: '#E30613',
   },
 });
+
+// TYPE DEFINITIONS
+interface EstimationItem {
+  name: string;
+  qty: number | string;
+  unit: string;
+  subtotal: number;
+}
 
 interface QuotationPDFProps {
   result: CalculatorResult;
@@ -120,85 +171,142 @@ interface QuotationPDFProps {
     name: string;
     whatsapp: string;
   };
-  projectId?: string | null;
+  projectId: string | null;
+  zoneName?: string | null;
+  logoUrl?: string | null;
 }
 
-const QuotationPDF = ({ result, leadInfo, projectId }: QuotationPDFProps) => {
-  const today = new Date().toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+// 3. MAIN COMPONENT
+export const QuotationPDF: React.FC<QuotationPDFProps> = ({
+  result,
+  leadInfo,
+  projectId,
+  zoneName,
+  logoUrl,
+}) => {
+  const estimationNumber = projectId ? `WEB-${projectId.slice(0, 8).toUpperCase()}` : 'WEB-PREVIEW';
+  const customerName = leadInfo.name || 'Customer';
+  const customerPhone = leadInfo.whatsapp || '-';
+  const projectType = 'Kanopi / Pagar Rumah';
+  const areaLabel = `${result.luas.toFixed(1)} m²`;
+  const zoneLabel = zoneName || 'Belum dipilih';
+
+  const items: EstimationItem[] =
+    result.breakdown && result.breakdown.length > 0
+      ? result.breakdown.map((b) => ({
+          name: b.name,
+          qty: b.qtyCharged,
+          unit: b.unit,
+          subtotal: b.subtotal,
+        }))
+      : [
+          {
+            name: 'Paket Pekerjaan Kanopi',
+            qty: `${result.luas.toFixed(1)} m²`,
+            unit: 'm²',
+            subtotal: result.estimatedPrice,
+          },
+        ];
+
+  const totalPrice = result.estimatedPrice;
+  const companyName = 'KOKOHIN';
+  const companyAddress = process.env.NEXT_PUBLIC_CONTACT_ADDRESS || 'Tangerang, Indonesia';
+  const companyPhone =
+    process.env.NEXT_PUBLIC_CONTACT_PHONE ||
+    process.env.NEXT_PUBLIC_WA_NUMBER ||
+    '-';
+  const companyEmail = process.env.NEXT_PUBLIC_CONTACT_EMAIL || '-';
+  const companyHours = process.env.NEXT_PUBLIC_CONTACT_HOURS || '';
+  const companyLogo =
+    logoUrl ||
+    process.env.NEXT_PUBLIC_COMPANY_LOGO_URL ||
+    'https://via.placeholder.com/150x50.png?text=LOGO';
+
+  const currentDate = format(new Date(), 'dd MMMM yyyy', { locale: id });
 
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Header */}
+        
+        {/* HEADER: LOGO & INFO KANTOR vs INFO DOKUMEN */}
         <View style={styles.header}>
-          <View>
-            <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#E30613' }}>KOKOHIN</Text>
-            <Text style={{ fontSize: 10, color: '#666666' }}>Kanopi & Konstruksi</Text>
+          <View style={styles.logoInfo}>
+            <PdfImage src={companyLogo} style={styles.logo} />
+            <Text style={styles.companyName}>{companyName}</Text>
+            <Text style={styles.companyDetails}>{companyAddress}</Text>
+            <Text style={styles.companyDetails}>Telp: {companyPhone}</Text>
+            <Text style={styles.companyDetails}>Email: {companyEmail}</Text>
+            {companyHours && (
+              <Text style={styles.companyDetails}>Jam Operasional: {companyHours}</Text>
+            )}
           </View>
-          <View style={styles.companyInfo}>
-            <Text>Kokohin Construction</Text>
-            <Text>Jakarta, Indonesia</Text>
-            <Text>WA: 0812-3456-7890</Text>
-            <Text>www.kokohin.com</Text>
+          <View style={styles.docInfo}>
+            <Text style={styles.docTitle}>QUOTATION</Text>
+            <Text style={styles.docMeta}>No. Estimasi: {estimationNumber}</Text>
+            <Text style={styles.docMeta}>Tanggal: {currentDate}</Text>
           </View>
         </View>
 
-        <Text style={styles.title}>PENAWARAN HARGA</Text>
-        <Text style={styles.subtitle}>Tanggal: {today} | No. Ref: {projectId ? projectId.substring(0, 8).toUpperCase() : 'DRAFT'}</Text>
-
-        {/* Customer Info */}
-        <View style={styles.customerInfo}>
-          <Text style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 8, color: '#1D1D1B' }}>Informasi Pelanggan</Text>
-          <Text style={styles.customerText}>Nama: {leadInfo.name}</Text>
-          <Text style={styles.customerText}>WhatsApp: {leadInfo.whatsapp}</Text>
+        {/* CUSTOMER INFO BLOCK */}
+        <View style={styles.customerSection}>
+          <View style={styles.customerBox}>
+            <Text style={styles.sectionTitle}>Estimasi Untuk:</Text>
+            <Text style={[styles.customerText, { fontWeight: 700 }]}>{customerName}</Text>
+            <Text style={styles.customerText}>Telp / WA: {customerPhone}</Text>
+          </View>
+          <View style={styles.customerBox}>
+            <Text style={styles.sectionTitle}>Detail Proyek:</Text>
+            <Text style={[styles.customerText, { fontWeight: 700 }]}>{projectType}</Text>
+            <Text style={styles.customerText}>Luas Area: {areaLabel}</Text>
+            <Text style={styles.customerText}>Zona Lokasi: {zoneLabel}</Text>
+          </View>
         </View>
 
-        {/* Details */}
-        <View style={styles.section}>
-          <Text style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 15, color: '#1D1D1B' }}>Detail Estimasi</Text>
+        {/* ITEMS TABLE */}
+        <View style={styles.table}>
+          {/* Table Header */}
+          <View style={styles.tableHeader}>
+            <Text style={styles.col1}>No</Text>
+            <Text style={styles.col2}>Deskripsi Material / Pekerjaan</Text>
+            <Text style={styles.col3}>Qty</Text>
+            <Text style={styles.col4}>Subtotal</Text>
+          </View>
           
-          <View style={styles.row}>
-            <Text style={styles.label}>Luas Area</Text>
-            <Text style={styles.value}>{result.luas} m²</Text>
-          </View>
+          {/* Table Rows */}
+          {items.map((item, index) => (
+            <View style={styles.tableRow} key={index}>
+              <Text style={styles.col1}>{index + 1}</Text>
+              <Text style={styles.col2}>{item.name}</Text>
+              <Text style={styles.col3}>{item.qty} {item.unit}</Text>
+              <Text style={styles.col4}>
+                Rp {item.subtotal.toLocaleString('id-ID')}
+              </Text>
+            </View>
+          ))}
+        </View>
 
-          {/* We hide the detailed breakdown here as well, per PRD */}
-          <View style={styles.row}>
-            <Text style={styles.label}>Kategori Pekerjaan</Text>
-            <Text style={styles.value}>Pemasangan Kanopi</Text>
-          </View>
-
-          <View style={styles.row}>
-            <Text style={styles.label}>Material & Jasa</Text>
-            <Text style={styles.value}>Included</Text>
-          </View>
-
-          {/* Total */}
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>ESTIMASI TOTAL</Text>
-            <Text style={styles.totalValue}>{formatRupiah(result.estimatedPrice)}</Text>
+        {/* TOTALS SECTION */}
+        <View style={styles.totalsContainer}>
+          <View style={styles.totalsBox}>
+            <View style={styles.totalRowFinal}>
+              <Text>TOTAL ESTIMASI</Text>
+              <Text>Rp {totalPrice.toLocaleString('id-ID')}</Text>
+            </View>
           </View>
         </View>
 
-        {/* Disclaimer */}
-        <View style={styles.disclaimer}>
-          <Text>
-            Catatan: Harga ini adalah estimasi awal berdasarkan input mandiri. Harga final yang mengikat akan diberikan setelah tim Kokohin melakukan survei lokasi untuk pengukuran presisi. Harga sudah termasuk PPN 11%.
-          </Text>
-        </View>
-
-        {/* Footer */}
+        {/* FOOTER & DISCLAIMER */}
         <View style={styles.footer}>
-          <Text>Terima kasih telah mempercayakan kebutuhan konstruksi Anda kepada Kokohin.</Text>
-          <Text>© {new Date().getFullYear()} Kokohin. All rights reserved.</Text>
+          <View style={styles.disclaimer}>
+            <Text style={{ fontWeight: 700, marginBottom: 4 }}>SYARAT & KETENTUAN (WAJIB DIBACA):</Text>
+            <Text>1. Harga di atas adalah ESTIMASI AWAL berdasarkan ukuran yang diberikan melalui sistem.</Text>
+            <Text>2. Harga final / harga kontrak dapat berubah setelah tim Kokohin melakukan SURVEI LOKASI aktual.</Text>
+            <Text>3. Penawaran ini berlaku selama 14 hari sejak tanggal diterbitkan.</Text>
+          </View>
         </View>
+
       </Page>
     </Document>
   );
 };
-
 export default QuotationPDF;

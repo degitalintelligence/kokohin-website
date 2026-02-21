@@ -64,10 +64,6 @@ export default function GeneratePdfButton({ projectId, disabled = false, classNa
         throw new Error(`Gagal mengambil item estimasi: ${itemsError.message}`)
       }
 
-      if (!items || items.length === 0) {
-        throw new Error('Tidak ada item estimasi ditemukan')
-      }
-
       // 4. Fetch payment terms for this estimation
       const { data: paymentTermsData, error: paymentTermsError } = await supabase
         .from('payment_terms')
@@ -95,7 +91,7 @@ export default function GeneratePdfButton({ projectId, disabled = false, classNa
       const pdfData: PdfQuotationData = {
         project,
         estimation,
-        items,
+        items: items ?? [],
         paymentTerms
       }
 

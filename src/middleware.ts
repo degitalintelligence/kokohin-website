@@ -6,7 +6,6 @@ import { isRoleAllowed, ALLOWED_MATERIALS_ROLES } from '@/lib/rbac'
 export async function middleware(request: NextRequest) {
     const nodeMajor = Number(process.versions.node.split('.')[0] ?? 0)
     
-    // Debug log
     if (process.env.NODE_ENV === 'development') {
         console.log(`[Proxy] Node version: ${process.versions.node} (Major: ${nodeMajor})`)
     }
@@ -40,29 +39,40 @@ export async function middleware(request: NextRequest) {
         }
     )
 
-    // Refresh session (keeps it alive)
     const { data: { user } } = await supabase.auth.getUser()
 
-    let userRole: string | null = null
+    const roleCookie = request.cookies.get('user-role')?.value ?? null
+
+    let userRole: string | null = roleCookie
     let userEmail: string | null = null
+
     if (user) {
         userEmail = user.email ?? null
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', user.id)
-            .maybeSingle()
-        userRole = (profile as { role?: string } | null)?.role ?? null
+
+        if (!userRole) {
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .maybeSingle()
+            userRole = (profile as { role?: string } | null)?.role ?? null
+
+            if (userRole) {
+                supabaseResponse.cookies.set('user-role', userRole, {
+                    path: '/',
+                    httpOnly: true,
+                    sameSite: 'lax',
+                    secure: process.env.NODE_ENV === 'production',
+                })
+            }
+        }
     }
 
     const pathname = request.nextUrl.pathname
 
-    // Protect /admin routes (except /admin/login)
     const isAdminRoute = pathname.startsWith('/admin')
     const isLoginPage = pathname === '/admin/login'
 
-    // Dev mode bypass: gunakan DEV_MODE (server-only, tanpa prefix NEXT_PUBLIC_)
-    // PENTING: Jangan gunakan NEXT_PUBLIC_ agar tidak terekspos ke browser client
     const isDevMode = process.env.DEV_MODE === 'true'
     const hasBypassCookie = request.cookies.get('dev-bypass')?.value === '1'
     const isAuthenticated = !!user || (isDevMode && hasBypassCookie)
@@ -73,7 +83,6 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(loginUrl)
     }
 
-    // RBAC: restrict sensitive admin routes based on role
     const isSensitiveAdminRoute =
         pathname.startsWith('/admin/materials') ||
         pathname.startsWith('/admin/zones') ||
@@ -84,7 +93,6 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(leadsUrl)
     }
 
-    // Redirect user yang sudah login dari halaman login
     if (isLoginPage && isAuthenticated) {
         const dashboardUrl = request.nextUrl.clone()
         dashboardUrl.pathname = '/admin'
@@ -95,10 +103,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-    runtime: 'nodejs', // Use Node.js runtime for compatibility with Node APIs and to fix stream issues
+    runtime: 'nodejs',
     matcher: [
-        // Match all routes except Next.js internals and static files
-        // Also exclude @vite/client and sw.js to avoid errors
         '/((?!_next/static|_next/image|favicon.ico|@vite|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|js|css|woff|woff2)$).*)',
     ],
 }
