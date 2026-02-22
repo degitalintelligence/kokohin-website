@@ -9,7 +9,7 @@ Dokumen ini mencatat history perubahan yang dilakukan berdasarkan hasil audit PR
 - **Kategori**: Medium (Konfigurasi)
 - **Deskripsi**: Nomor WhatsApp admin untuk CTA "Book Jadwal Survei" dan "Konsultasi Custom" sebelumnya hardcoded di komponen kalkulator publik.
 - **Perubahan**:
-  - Menambahkan konstanta `KOKOHIN_WA` yang membaca `process.env.NEXT_PUBLIC_WA_NUMBER` dengan fallback default.
+-  - Menambahkan konstanta `KOKOHIN_WA` yang membaca nomor WA dari `site_settings` (key `wa_number`) dengan fallback default aman jika belum terisi.
   - Mengganti penggunaan nomor WA hardcoded di fungsi `handleBookSurvey` dan `handleCustomConsultation` agar selalu menggunakan `KOKOHIN_WA`.
 - **File Terkait**:
   - `src/components/calculator/Calculator.tsx`

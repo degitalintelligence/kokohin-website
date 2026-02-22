@@ -18,6 +18,7 @@ const navLinks = [
 
 export default function Navbar({ logoUrl, backgroundUrl }: { logoUrl?: string | null, backgroundUrl?: string | null }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [isNavigating, setIsNavigating] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
 
@@ -61,8 +62,19 @@ export default function Navbar({ logoUrl, backgroundUrl }: { logoUrl?: string | 
     })
   }, [router])
 
+  useEffect(() => {
+    if (!isNavigating) return
+    const clear = setTimeout(() => setIsNavigating(false), 1200)
+    return () => clearTimeout(clear)
+  }, [isNavigating])
+
+  // Navigation completion handled by timeout; pathname change auto re-renders
+
   return (
     <nav className="sticky top-0 z-50 bg-white shadow-sm border-b border-gray-100 font-sans relative overflow-hidden">
+      <div className={`absolute top-0 left-0 h-0.5 bg-[#E30613] transition-opacity duration-200 ${isNavigating ? 'opacity-100 w-full' : 'opacity-0 w-0'}`}>
+        <div className="h-full w-full bg-gradient-to-r from-[#E30613] via-red-400 to-[#E30613] animate-pulse" />
+      </div>
       {backgroundUrl && (
         <div className="absolute inset-0 z-0 pointer-events-none">
             <Image
@@ -114,6 +126,7 @@ export default function Navbar({ logoUrl, backgroundUrl }: { logoUrl?: string | 
                   className={`transition-colors ${
                     isActive ? 'text-primary' : 'hover:text-primary text-gray-600'
                   }`}
+                  onClick={() => setIsNavigating(true)}
                 >
                   {link.label}
                 </Link>
@@ -122,6 +135,7 @@ export default function Navbar({ logoUrl, backgroundUrl }: { logoUrl?: string | 
             <Link
               href="/kalkulator"
               className="text-white px-5 py-2.5 rounded-md shadow-sm bg-primary hover:bg-primary/90 transition-colors"
+              onClick={() => setIsNavigating(true)}
             >
               Simulasi Harga
             </Link>
@@ -150,7 +164,7 @@ export default function Navbar({ logoUrl, backgroundUrl }: { logoUrl?: string | 
                     className={`font-semibold py-2 transition-colors ${
                       isActive ? 'text-primary' : 'hover:text-primary text-gray-600'
                     }`}
-                    onClick={() => setIsMenuOpen(false)}
+                    onClick={() => { setIsMenuOpen(false); setIsNavigating(true) }}
                   >
                     {link.label}
                   </Link>
@@ -159,7 +173,7 @@ export default function Navbar({ logoUrl, backgroundUrl }: { logoUrl?: string | 
               <Link
                 href="/kalkulator"
                 className="text-white px-5 py-2.5 rounded-md shadow-sm text-center font-semibold bg-primary hover:bg-primary/90 transition-colors"
-                onClick={() => setIsMenuOpen(false)}
+                onClick={() => { setIsMenuOpen(false); setIsNavigating(true) }}
               >
                 Simulasi Harga
               </Link>

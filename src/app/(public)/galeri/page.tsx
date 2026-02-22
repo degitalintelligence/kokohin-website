@@ -1,8 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
-import GalleryGrid from '@/components/gallery/GalleryGrid'
+import { Suspense } from 'react'
+import dynamic from 'next/dynamic'
 import { Camera } from 'lucide-react'
 
 export const revalidate = 3600 // Revalidate every hour (ISR)
+const GalleryGrid = dynamic(() => import('@/components/gallery/GalleryGrid'))
 
 type GalleryProject = {
     id: string
@@ -24,12 +26,13 @@ type ProjectRow = {
 
 export default async function GaleriPage() {
     const supabase = await createClient()
-    const { data } = await supabase
+    const { data: curated } = await supabase
         .from('projects')
         .select('id, title, location, year, featured, service:service_id(name)')
+        .eq('is_public', true)
         .order('created_at', { ascending: false })
 
-    const projects: GalleryProject[] = ((data ?? []) as ProjectRow[]).map((item) => {
+    const projects: GalleryProject[] = ((curated ?? []) as ProjectRow[]).map((item) => {
         const serviceData = item.service
         const serviceName = Array.isArray(serviceData)
             ? serviceData[0]?.name ?? null
@@ -69,7 +72,9 @@ export default async function GaleriPage() {
             {/* Gallery */}
             <section className="section">
                 <div className="container">
-                    <GalleryGrid projects={projects} categories={categories} />
+                    <Suspense fallback={<div className="text-center text-gray-600">Memuat galeri proyek...</div>}>
+                        <GalleryGrid projects={projects} categories={categories} />
+                    </Suspense>
                 </div>
             </section>
 

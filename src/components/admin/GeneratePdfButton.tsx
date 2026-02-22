@@ -67,6 +67,7 @@ export default function GeneratePdfButton({ projectId, disabled = false, classNa
       const [
         { data: paymentTermsData, error: paymentTermsError },
         { data: logoSetting },
+        { data: companySettings },
       ] = await Promise.all([
         supabase
           .from('payment_terms')
@@ -78,6 +79,10 @@ export default function GeneratePdfButton({ projectId, disabled = false, classNa
           .select('value')
           .eq('key', 'logo_url')
           .maybeSingle(),
+          supabase
+            .from('site_settings')
+            .select('key,value')
+            .in('key', ['site_name','support_email','support_phone','contact_address','contact_hours','company_website'])
       ])
 
       if (paymentTermsError) {
@@ -96,13 +101,23 @@ export default function GeneratePdfButton({ projectId, disabled = false, classNa
           ]
 
       const typedLogo = logoSetting as { value?: string } | null
+      const companyMap: Record<string, string> = {}
+      ;((companySettings as Array<{ key?: string; value?: string }> | null) ?? []).forEach((row) => { if (row && row.key) companyMap[row.key] = row.value ?? '' })
 
       const pdfData: PdfQuotationData = {
         project,
         estimation,
         items: items ?? [],
         paymentTerms,
-        logoUrl: typedLogo?.value ?? null
+        logoUrl: typedLogo?.value ?? null,
+        company: {
+          name: companyMap['site_name'] || null,
+          email: companyMap['support_email'] || null,
+          phone: companyMap['support_phone'] || null,
+          address: companyMap['contact_address'] || null,
+          hours: companyMap['contact_hours'] || null,
+          website: companyMap['company_website'] || null
+        }
       }
 
       // 5. Generate and download PDF

@@ -1,14 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Calculator, Ruler, MapPin, Package, AlertCircle, FileDown } from 'lucide-react'
+import { useEffect, useReducer, useState } from 'react'
+import { Calculator, Ruler, MapPin, Package, AlertCircle } from 'lucide-react'
 import { calculateCanopyPrice, formatRupiah, formatNumber } from '@/lib/calculator'
 import type { CalculatorInput, CalculatorResult, Material, Zone, Catalog, CatalogAddon } from '@/lib/types'
-import { createEstimation } from '@/app/actions/estimations'
+import { createProjectWithEstimation } from '@/app/actions/createProjectWithEstimation'
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
-import dynamic from 'next/dynamic'
-import QuotationPDF from './QuotationPDF'
+import { generateWhatsAppLink } from '@/utils/generateWhatsAppLink'
+import LeadForm from './LeadForm'
+import ResultPanel from './ResultPanel'
 
 function getFriendlySupabaseError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : ''
@@ -25,18 +26,17 @@ function getFriendlySupabaseError(error: unknown, fallback: string): string {
   return fallback
 }
 
-const PDFDownloadLink = dynamic(
-  () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
-  {
-    ssr: false,
-    loading: () => <button className="btn btn-outline w-full">Loading PDF...</button>,
-  }
-)
-
-const KOKOHIN_WA = process.env.NEXT_PUBLIC_WA_NUMBER ?? '6281234567890'
+const FALLBACK_WA = '628000000000'
 
 export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: boolean }) {
   const searchParams = useSearchParams()
+  type LeadState = { name: string; whatsapp: string }
+  type LeadAction = { type: 'name'; value: string } | { type: 'whatsapp'; value: string } | { type: 'reset' }
+  const leadReducer = (state: LeadState, action: LeadAction): LeadState => {
+    if (action.type === 'name') return { ...state, name: action.value }
+    if (action.type === 'whatsapp') return { ...state, whatsapp: action.value }
+    return { name: '', whatsapp: '' }
+  }
   const [input, setInput] = useState<CalculatorInput>({
     panjang: 5,
     lebar: 3,
@@ -45,7 +45,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
   
   const [result, setResult] = useState<(CalculatorResult & { isCustom?: boolean }) | null>(null)
   const [pendingResult, setPendingResult] = useState<(CalculatorResult & { isCustom?: boolean }) | null>(null)
-  const [leadInfo, setLeadInfo] = useState<{ name: string; whatsapp: string }>({ name: '', whatsapp: '' })
+  const [leadInfo, dispatchLead] = useReducer(leadReducer, { name: '', whatsapp: '' })
   const [isLeadCaptured, setIsLeadCaptured] = useState(false)
   const [projectId, setProjectId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -57,6 +57,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
   const [dataError, setDataError] = useState<string | null>(null)
   const [calcError, setCalcError] = useState<string | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [waNumber, setWaNumber] = useState<string>(FALLBACK_WA)
   
   const handleInputChange = (field: keyof CalculatorInput, value: CalculatorInput[typeof field]) => {
     setInput(prev => ({
@@ -109,128 +110,71 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
       setCalcError('Harap isi nama dan nomor WhatsApp')
       return
     }
-
-    // Validasi format WhatsApp (Indonesia)
     const whatsappRegex = /^(\+62|62|0)8[1-9][0-9]{6,9}$/
     if (!whatsappRegex.test(leadInfo.whatsapp.replace(/\s+/g, ''))) {
       setCalcError('Format nomor WhatsApp tidak valid. Gunakan format Indonesia (08xxx)')
       return
     }
-
-    const supabase = createClient()
-    let projectIdForRollback: string | null = null
-    
     try {
-      const { data: project, error: projectError } = await supabase
-        .from('erp_projects')
-        .insert({
-          customer_name: leadInfo.name,
-          phone: leadInfo.whatsapp,
-          address: '',
-          zone_id: input.zoneId || null,
-          custom_notes: input.jenis === 'custom' ? input.customNotes || 'Permintaan custom via kalkulator' : null,
-          status: input.jenis === 'custom' ? 'Need Manual Quote' : 'New'
-        })
-        .select()
-        .single()
-
-      if (projectError) throw projectError
-      
-      projectIdForRollback = project.id
-      setProjectId(project.id)
-
-      if (input.jenis === 'standard' && pendingResult && !pendingResult.isCustom) {
-        await createEstimation(project.id, {
+      const dto = {
+        customer_name: leadInfo.name,
+        phone: leadInfo.whatsapp,
+        address: '',
+        zone_id: input.zoneId || null,
+        custom_notes: input.jenis === 'custom' ? (input.customNotes || 'Permintaan custom via kalkulator') : null,
+        status: input.jenis === 'custom' ? 'Need Manual Quote' as const : 'New' as const,
+        estimation: (input.jenis === 'standard' && pendingResult && !pendingResult.isCustom) ? {
           total_hpp: pendingResult.totalHpp,
           margin_percentage: pendingResult.marginPercentage,
           total_selling_price: pendingResult.totalSellingPrice,
-          status: 'draft'
-        })
+          status: 'draft' as const
+        } : null
       }
-
+      const res = await createProjectWithEstimation(dto)
+      setProjectId(res.project_id)
       setResult(pendingResult)
       setIsLeadCaptured(true)
       setCalcError(null)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? '')
-      const normalized = message.toLowerCase()
-      const isDuplicateV1 =
-        normalized.includes('estimasi v1 untuk proyek ini sudah ada') ||
-        normalized.includes('unique_estimations_project_version') ||
-        normalized.includes('duplicate key') ||
-        normalized.includes('unique constraint')
-
-      // Rollback: hapus project yang sudah dibuat jika estimation gagal (kecuali duplicate V1)
-      if (projectIdForRollback && !isDuplicateV1) {
-        try {
-          await supabase.from('erp_projects').delete().eq('id', projectIdForRollback)
-          console.log('Rollback: deleted orphan project', projectIdForRollback)
-        } catch (rollbackError) {
-          console.error('Gagal melakukan rollback (menghapus project):', rollbackError)
-        }
-      }
-
+      const fallback = 'Gagal menyimpan data ke sistem. Silakan coba beberapa saat lagi atau hubungi kami via WhatsApp.'
+      const code = (error as { code?: unknown } | null)?.code
+      const isDuplicateV1 = String(code) === '23505'
       if (isDuplicateV1) {
-        setCalcError('Estimasi V1 untuk proyek ini sudah pernah dibuat. Silakan cek riwayat estimasi di dashboard admin.')
-        return
+        setCalcError('Data penawaran Anda sudah tersimpan sebelumnya. Silakan buka rincian estimasi atau cek riwayat penawaran.')
+      } else {
+        const friendly = getFriendlySupabaseError(error, fallback)
+        setCalcError(friendly)
       }
-
-      console.error('Error menyimpan lead atau estimasi:', error)
-      const fallback =
-        'Gagal menyimpan data ke sistem. Silakan coba beberapa saat lagi atau hubungi kami via WhatsApp.'
-      const friendly = getFriendlySupabaseError(error, fallback)
-      setCalcError(friendly)
     }
   }
 
   const handleLeadChange = (field: 'name' | 'whatsapp', value: string) => {
-    setLeadInfo(prev => ({ ...prev, [field]: value }))
+    dispatchLead({ type: field, value })
   }
 
   const handleBookSurvey = () => {
-    // Nomor WhatsApp admin (bisa diambil dari environment variable atau config)
-    const adminPhone = KOKOHIN_WA
-    
-    // Buat pesan dengan detail project
-    const area = result ? formatNumber(result.luas) : 'N/A'
-    const price = result ? formatRupiah(result.estimatedPrice) : 'N/A'
-    const customerName = leadInfo.name || 'Customer'
-    
-    let message = `Halo Admin Kokohin, saya mau booking jadwal survei untuk proyek kanopi.%0A%0A`
-    message += `Nama: ${customerName}%0A`
-    message += `Luas Area: ${area} m²%0A`
-    message += `Estimasi Harga: ${price}%0A`
-    
-    if (projectId) {
-      message += `ID Lead: ${projectId}%0A`
-    }
-    
-    message += `%0ASilahkan konfirmasi ketersediaan jadwal survei. Terima kasih!`
-    
-    // Buka WhatsApp
-    window.open(`https://wa.me/${adminPhone}?text=${message}`, '_blank')
+    const adminPhone = waNumber
+    const area = result ? formatNumber(result.luas) : null
+    const price = result ? formatRupiah(result.estimatedPrice) : null
+    const url = generateWhatsAppLink('survey', {
+      adminPhone,
+      customerName: leadInfo.name || 'Customer',
+      area,
+      price,
+      projectId
+    })
+    window.open(url, '_blank')
   }
 
   const handleCustomConsultation = () => {
-    // Nomor WhatsApp admin (bisa diambil dari environment variable atau config)
-    const adminPhone = KOKOHIN_WA
-    
-    // Buat pesan khusus untuk custom request
-    const customerName = leadInfo.name || 'Customer'
-    const customNotes = input.customNotes || 'Tidak ada catatan spesifik'
-    
-    let message = `Halo Admin Kokohin, saya ingin konsultasi untuk desain custom kanopi.%0A%0A`
-    message += `Nama: ${customerName}%0A`
-    message += `Catatan: ${customNotes}%0A`
-    
-    if (projectId) {
-      message += `ID Lead: ${projectId}%0A`
-    }
-    
-    message += `%0ASilahkan hubungi saya untuk diskusi lebih lanjut. Terima kasih!`
-    
-    // Buka WhatsApp
-    window.open(`https://wa.me/${adminPhone}?text=${message}`, '_blank')
+    const adminPhone = waNumber
+    const url = generateWhatsAppLink('consultation', {
+      adminPhone,
+      customerName: leadInfo.name || 'Customer',
+      customNotes: input.customNotes || 'Tidak ada catatan spesifik',
+      projectId
+    })
+    window.open(url, '_blank')
   }
   
   const handleReset = () => {
@@ -241,7 +185,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     })
     setResult(null)
     setPendingResult(null)
-    setLeadInfo({ name: '', whatsapp: '' })
+    dispatchLead({ type: 'reset' })
     setIsLeadCaptured(false)
     setProjectId(null)
     setCalcError(null)
@@ -271,6 +215,15 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
          setLogoUrl(typedLogo?.value ?? null)
         if (safeMaterials.length > 0) {
           setInput((prev) => ({ ...prev, materialId: prev.materialId ?? safeMaterials[0].id }))
+        }
+        try {
+          const res = await fetch('/api/site-settings/wa-number', { cache: 'no-store' })
+          if (res.ok) {
+            const json = await res.json() as { wa_number?: string | null }
+            if (json.wa_number) setWaNumber(json.wa_number)
+          }
+        } catch {
+          // ignore
         }
       } catch (error) {
         console.error('Error memuat data kalkulator:', error)
@@ -653,192 +606,26 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
               <h3 className="text-2xl font-bold mb-6">Hasil Perhitungan</h3>
               
               {pendingResult && !isLeadCaptured ? (
-                /* LEAD CAPTURE FORM */
-                <div className="space-y-6">
-                  <div className="p-4 bg-white/10 rounded-xl">
-                    <div className="flex items-center gap-3 mb-4">
-                      <AlertCircle className="w-6 h-6 text-yellow-300" />
-                      <h4 className="text-lg font-bold">Lengkapi Data Anda</h4>
-                    </div>
-                    <p className="text-white/90 mb-4">
-                      Untuk melihat estimasi harga, harap lengkapi data kontak Anda terlebih dahulu.
-                    </p>
-                    
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-white/80 text-sm mb-2">Nama Lengkap *</label>
-                        <input
-                          type="text"
-                          value={leadInfo.name}
-                          onChange={(e) => handleLeadChange('name', e.target.value)}
-                          className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                          placeholder="Nama lengkap Anda"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-white/80 text-sm mb-2">Nomor WhatsApp *</label>
-                        <input
-                          type="tel"
-                          value={leadInfo.whatsapp}
-                          onChange={(e) => handleLeadChange('whatsapp', e.target.value)}
-                          className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                          placeholder="08xxx (format Indonesia)"
-                        />
-                        <p className="text-white/60 text-xs mt-2">
-                          Contoh: 081234567890
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <button
-                    onClick={handleLeadSubmit}
-                    disabled={!leadInfo.name.trim() || !leadInfo.whatsapp.trim()}
-                    className="w-full btn bg-primary text-white hover:bg-primary/90 font-bold py-4 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Lihat Estimasi Harga
-                  </button>
-                  
-                  {calcError && (
-                    <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg">
-                      <p className="text-red-300 text-sm">{calcError}</p>
-                    </div>
-                  )}
-                </div>
+                <LeadForm
+                  name={leadInfo.name}
+                  whatsapp={leadInfo.whatsapp}
+                  onNameChange={(v) => handleLeadChange('name', v)}
+                  onWhatsappChange={(v) => handleLeadChange('whatsapp', v)}
+                  onSubmit={handleLeadSubmit}
+                  error={calcError}
+                  submitDisabled={!leadInfo.name.trim() || !leadInfo.whatsapp.trim()}
+                  areaM2={pendingResult.luas}
+                />
               ) : result ? (
-                result.isCustom ? (
-                  <div className="space-y-6">
-                    <div className="p-4 bg-white/10 rounded-xl">
-                      <div className="flex items-center gap-3 mb-4">
-                        <AlertCircle className="w-6 h-6 text-yellow-300" />
-                        <h4 className="text-lg font-bold">Ide Anda Unik!</h4>
-                      </div>
-                      <p className="text-white/90">
-                        Tim Engineer kami perlu menghitung material secara spesifik. Tim sales akan menghubungi Anda untuk memberikan penawaran manual berdasarkan ide custom yang Anda minta.
-                      </p>
-                      {input.customNotes && (
-                        <div className="mt-4 p-3 bg-white/5 rounded-lg">
-                          <p className="text-sm font-medium mb-1">Catatan Anda:</p>
-                          <p className="text-white/80 text-sm">{input.customNotes}</p>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <button
-                      onClick={handleCustomConsultation}
-                      className="w-full btn bg-white text-primary-dark hover:bg-white/90 font-bold py-4"
-                    >
-                      Konsultasi Custom
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {(result.warnings && result.warnings.length > 0) && (
-                      <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <div className="flex items-start gap-3">
-                          <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
-                          <div>
-                            <h4 className="font-semibold text-yellow-800">Rekomendasi Teknis</h4>
-                            <ul className="mt-2 space-y-1">
-                              {result.warnings.map((warning, idx) => (
-                                <li key={idx} className="text-sm text-yellow-700 list-disc list-inside">
-                                  {warning}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {result.suggestedItems && result.suggestedItems.length > 0 && (
-                      <div className="p-4 bg-white/10 border border-white/20 rounded-lg">
-                        <h4 className="font-semibold mb-2 text-white">Item Tambahan yang Direkomendasikan</h4>
-                        <ul className="space-y-2 text-sm">
-                          {result.suggestedItems.map((item, idx) => (
-                            <li key={idx} className="flex flex-col gap-1">
-                              <div className="flex justify-between items-center">
-                                <span className="font-semibold">{item.name}</span>
-                                <span className="text-white/80">{formatRupiah(item.estimatedCost)}</span>
-                              </div>
-                              <p className="text-white/80 text-xs leading-snug">{item.reason}</p>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center py-3 border-b border-white/20">
-                        <span>Luas Area</span>
-                        <span className="font-bold">{formatNumber(result.luas)} m²</span>
-                      </div>
-                      
-                      <div className="pt-4">
-                        <div className="flex justify-between items-center">
-                          <span className="text-lg">Estimasi Harga</span>
-                          <span className="text-2xl font-bold">{formatRupiah(result.estimatedPrice)}</span>
-                        </div>
-                        <p className="text-white/70 text-sm mt-2">
-                          *Harga sudah termasuk PPN 11%
-                        </p>
-                      </div>
-                    </div>
-                    
-                    {/* Disclaimer Text */}
-                    <div className="pt-6 border-t border-white/20">
-                      <div className="p-4 bg-white/5 rounded-lg">
-                        <p className="text-white/80 text-sm italic">
-                          &quot;Estimasi Harga Transparan, Tanpa Biaya Siluman. Angka simulasi di atas adalah perkiraan awal berdasarkan ukuran dan spesifikasi material yang kamu pilih. Harga final yang fixed akan kami kunci ke dalam kontrak kerja setelah tim Kokohin melakukan survei ke lokasimu secara langsung.&quot;
-                        </p>
-                      </div>
-                    </div>
-                    
-                    {/* CTA Buttons */}
-                    <div className="space-y-3 pt-6">
-                      <button
-                        onClick={handleBookSurvey}
-                        className="w-full btn bg-primary text-white hover:bg-primary/90 font-bold py-4"
-                      >
-                        Book Jadwal Survei
-                      </button>
-
-                      {/* PDF Download Button */}
-                      <PDFDownloadLink
-                        document={
-                          <QuotationPDF 
-                            result={result} 
-                            leadInfo={leadInfo} 
-                            projectId={projectId}
-                            zoneName={activeZoneName}
-                            logoUrl={logoUrl}
-                            specifications={result.breakdown?.map(item => item.name).join(', ') || 'Paket Pekerjaan Kanopi'}
-                            projectArea={result.luas}
-                            projectType={'Pekerjaan Pembuatan Kanopi'}
-                            areaUnit="m²"
-                          />
-                        }
-                        fileName={`Penawaran_Kokohin_${leadInfo.name.replace(/\s+/g, '_')}.pdf`}
-                        className="w-full btn bg-white/20 text-white hover:bg-white/30 font-bold py-4 flex items-center justify-center gap-2"
-                      >
-                        {({ loading }) => (
-                          <>
-                            <FileDown className="w-5 h-5" />
-                            {loading ? 'Menyiapkan PDF...' : 'Download Penawaran PDF'}
-                          </>
-                        )}
-                      </PDFDownloadLink>
-
-                      <button
-                        onClick={() => window.location.href = '/katalog'}
-                        className="w-full btn bg-transparent border border-white/30 text-white hover:bg-white/10 font-bold py-4"
-                      >
-                        Lihat Katalog Paket
-                      </button>
-                    </div>
-                  </div>
-                )
+                <ResultPanel
+                  result={result}
+                  leadName={leadInfo.name}
+                  projectId={projectId}
+                  zoneName={activeZoneName}
+                  logoUrl={logoUrl}
+                  customNotes={input.customNotes || null}
+                  onBookSurvey={result.isCustom ? handleCustomConsultation : handleBookSurvey}
+                />
               ) : (
                 <div className="text-center py-12">
                   <div className="w-16 h-16 mx-auto mb-6 bg-white/10 rounded-full flex items-center justify-center">

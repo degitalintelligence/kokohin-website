@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { signOut } from '@/app/actions/auth'
-import { LogOut, LayoutDashboard, Users, Box, BookOpen, Map, Briefcase, Settings, ExternalLink } from 'lucide-react'
+import { LogOut, LayoutDashboard, Users, Box, BookOpen, Map, Briefcase, Settings, ExternalLink, Wrench, Camera } from 'lucide-react'
 
 type AppRole = 'super_admin' | 'admin_sales' | 'admin_proyek' | null
 
@@ -99,12 +99,20 @@ export default function Sidebar() {
                             <Users size={18} />
                             User Management
                         </Link>
+                        <Link href="/admin/services" className={navItemClass('/admin/services')}>
+                            <Wrench size={18} />
+                            Layanan
+                        </Link>
                         <Link href="/admin/settings" className={navItemClass('/admin/settings')}>
                             <Settings size={18} />
                             Pengaturan
                         </Link>
                     </>
                 )}
+                <Link href="/admin/gallery" className={navItemClass('/admin/gallery')}>
+                    <Camera size={18} />
+                    Kurasi Galeri
+                </Link>
                 <Link href="/" target="_blank" className={navItemClass('/')}>
                     <ExternalLink size={18} />
                     Lihat Website

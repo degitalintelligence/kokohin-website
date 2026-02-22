@@ -195,13 +195,10 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
 
   const totalPrice = result.estimatedPrice;
   const companyName = 'KOKOHIN';
-  const companyAddress = process.env.NEXT_PUBLIC_CONTACT_ADDRESS || 'Tangerang, Indonesia';
-  const companyPhone =
-    process.env.NEXT_PUBLIC_CONTACT_PHONE ||
-    process.env.NEXT_PUBLIC_WA_NUMBER ||
-    '-';
-  const companyEmail = process.env.NEXT_PUBLIC_CONTACT_EMAIL || '-';
-  const companyHours = process.env.NEXT_PUBLIC_CONTACT_HOURS || '';
+  const companyAddress = 'Tangerang, Indonesia';
+  const companyPhone = '-';
+  const companyEmail = '-';
+  const companyHours = '';
   const companyLogo =
     logoUrl ||
     process.env.NEXT_PUBLIC_COMPANY_LOGO_URL ||

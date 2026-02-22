@@ -1,18 +1,30 @@
 import type { Metadata } from 'next'
-import CatalogGrid from '@/components/catalog/CatalogGrid'
+import { Suspense } from 'react'
+import dynamic from 'next/dynamic'
 import { ShieldCheck, Ruler, Zap, Tag } from 'lucide-react'
+import { createClient } from '@/lib/supabase/server'
 
 export const metadata: Metadata = {
   title: 'Katalog Paket Kanopi | Kokohin',
   description: 'Pilihan paket kanopi terbaik dari Kokohin: baja ringan, polycarbonate, kaca, spandek, dan pergola. Harga transparan, garansi terjamin.',
   keywords: ['katalog kanopi', 'paket kanopi', 'harga kanopi', 'kanopi baja ringan', 'kanopi polycarbonate', 'carport', 'pergola'],
 }
-const KOKOHIN_WA = process.env.NEXT_PUBLIC_WA_NUMBER ?? '628123456789'
+export const revalidate = 600
+
+const CatalogGrid = dynamic(() => import('@/components/catalog/CatalogGrid'))
 
 export default async function KatalogPage() {
+  const supabase = await createClient()
+  const { data: waSetting } = await supabase
+    .from('site_settings')
+    .select('value')
+    .eq('key', 'wa_number')
+    .maybeSingle()
+  const KOKOHIN_WA = (waSetting as { value?: string } | null)?.value ?? '628000000000'
 
   return (
     <div className="min-h-screen bg-white">
+      {/* Hero Section */}
       {/* Hero Section */}
       <div className="relative overflow-hidden bg-gradient-to-br from-primary-dark via-primary-dark to-primary">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_2px_2px,_white_1px,_transparent_0)] bg-[length:32px_32px] opacity-10"></div>
@@ -45,7 +57,30 @@ export default async function KatalogPage() {
       
       {/* Catalog Section */}
       <div className="py-16">
-        <CatalogGrid />
+        <Suspense fallback={
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
+                <div className="h-48 bg-gray-200 animate-pulse" />
+                <div className="p-6 space-y-4">
+                  <div className="h-4 bg-gray-200 rounded w-3/4 animate-pulse" />
+                  <div className="h-3 bg-gray-200 rounded w-1/2 animate-pulse" />
+                  <div className="pt-4 border-t border-gray-100 space-y-2">
+                    <div className="h-3 bg-gray-200 rounded w-full animate-pulse" />
+                    <div className="h-3 bg-gray-200 rounded w-5/6 animate-pulse" />
+                    <div className="h-3 bg-gray-200 rounded w-4/6 animate-pulse" />
+                  </div>
+                  <div className="space-y-2 pt-2">
+                    <div className="h-10 bg-gray-200 rounded-md animate-pulse" />
+                    <div className="h-10 bg-gray-200 rounded-md animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        }>
+          <CatalogGrid />
+        </Suspense>
       </div>
       
       

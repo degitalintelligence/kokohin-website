@@ -1,13 +1,16 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import dynamic from 'next/dynamic'
 import { Calculator, MapPin, AlertTriangle, CheckCircle } from 'lucide-react'
-import CanopyCalculator from '@/components/calculator/Calculator'
+
+const CanopyCalculator = dynamic(() => import('@/components/calculator/Calculator'))
 
 export const metadata: Metadata = {
   title: 'Kalkulator Harga Kanopi | Kokohin',
   description: 'Hitung estimasi biaya kanopi Anda secara instan dengan kalkulator cerdas kami. Pertimbangkan waste material, zona lokasi, dan margin bisnis.',
   keywords: ['kalkulator kanopi', 'hitung harga kanopi', 'estimasi biaya kanopi', 'kalkulator baja ringan'],
 }
+export const revalidate = 3600
 
 export default function KalkulatorPage() {
   return (

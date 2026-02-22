@@ -1,7 +1,7 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Users, TrendingUp, AlertTriangle } from 'lucide-react'
+import { Users, TrendingUp, AlertTriangle, Camera } from 'lucide-react'
 
 export default async function AdminDashboardPage() {
     const supabase = await createClient()
@@ -46,8 +46,14 @@ export default async function AdminDashboardPage() {
                     <h1 className="text-3xl font-extrabold text-primary-dark tracking-tight leading-tight m-0">Dashboard</h1>
                     <p className="text-gray-400 text-xs mt-0.5">{user?.email ?? 'Admin'}</p>
                 </div>
-                <div className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-500 font-medium shadow-sm">
-                    {today}
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-500 font-medium shadow-sm">
+                        {today}
+                    </div>
+                    <Link href="/admin/gallery" className="btn btn-primary inline-flex items-center gap-2">
+                        <Camera size={16} />
+                        Kurasi Galeri
+                    </Link>
                 </div>
             </div>
 

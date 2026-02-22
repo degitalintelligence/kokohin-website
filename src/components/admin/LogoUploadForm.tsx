@@ -15,11 +15,64 @@ export default function LogoUploadForm({ currentLogoUrl }: LogoUploadFormProps) 
     const [previewUrl, setPreviewUrl] = useState<string | null>(null)
     const [isLoading, setIsLoading] = useState(false)
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+    const [urlInput, setUrlInput] = useState<string>('')
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
         if (file) {
             setPreviewUrl(URL.createObjectURL(file))
+        }
+    }
+
+    const normalizeUrl = (value: string) => {
+        let v = String(value || '').trim()
+        try {
+            const u = new URL(v, window.location.origin)
+            if (u.pathname.startsWith('/_next/image') && u.searchParams.has('url')) {
+                const inner = u.searchParams.get('url') || ''
+                if (inner) v = decodeURIComponent(inner)
+            }
+        } catch {
+        }
+        return v
+    }
+
+    const handleUrlClick = async () => {
+        setIsLoading(true)
+        setMessage(null)
+        try {
+            const raw = urlInput.trim()
+            if (!raw) {
+                setMessage({ type: 'error', text: 'Masukkan URL logo terlebih dahulu.' })
+                setIsLoading(false)
+                return
+            }
+            const normalized = normalizeUrl(raw)
+            if (!/^https?:\/\//.test(normalized) && !normalized.startsWith('/')) {
+                setMessage({ type: 'error', text: 'URL tidak valid.' })
+                setIsLoading(false)
+                return
+            }
+            const cleanPath = normalized.split('?')[0].toLowerCase()
+            const extOk = /\.(png|jpg|jpeg|webp|svg|gif)$/.test(cleanPath)
+            if (!extOk) {
+                setMessage({ type: 'error', text: 'Format gambar harus png, jpg, jpeg, webp, svg, atau gif.' })
+                setIsLoading(false)
+                return
+            }
+            const result = await updateLogoUrl(normalized)
+            if (result.error) {
+                setMessage({ type: 'error', text: result.error })
+            } else if (result.success) {
+                setLogoUrl(normalized)
+                setPreviewUrl(null)
+                setMessage({ type: 'success', text: 'Logo berhasil diperbarui dari URL!' })
+                setUrlInput('')
+            }
+        } catch {
+            setMessage({ type: 'error', text: 'Terjadi kesalahan saat menyimpan URL.' })
+        } finally {
+            setIsLoading(false)
         }
     }
 
@@ -147,6 +200,28 @@ export default function LogoUploadForm({ currentLogoUrl }: LogoUploadFormProps) 
                         />
                     </div>
 
+                    <div className="mb-4">
+                        <div className="text-xs text-gray-400 uppercase font-semibold mb-2">Atau</div>
+                        <label htmlFor="logo-url" className="block text-sm font-medium text-gray-700 mb-2">
+                            Tempel URL Logo
+                        </label>
+                        <input
+                            id="logo-url"
+                            type="url"
+                            placeholder="https://... atau /_next/image?url=..."
+                            value={urlInput}
+                            onChange={(e) => setUrlInput(e.target.value)}
+                            className="input input-bordered w-full"
+                        />
+                        <button
+                            onClick={() => {}}
+                            className="sr-only"
+                            aria-hidden="true"
+                            tabIndex={-1}
+                            type="button"
+                        />
+                    </div>
+
                     {message && (
                         <div className={`p-3 rounded-lg text-sm mb-4 ${
                             message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
@@ -172,6 +247,25 @@ export default function LogoUploadForm({ currentLogoUrl }: LogoUploadFormProps) 
                             </>
                         )}
                     </button>
+                    <div className="mt-2 grid grid-cols-2 gap-3">
+                        <button
+                            onClick={handleUrlClick}
+                            disabled={isLoading}
+                            className="btn btn-outline-dark w-full"
+                        >
+                            Simpan URL
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const n = normalizeUrl(urlInput)
+                                if (n) setLogoUrl(n)
+                            }}
+                            className="btn btn-outline w-full"
+                        >
+                            Preview URL
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>

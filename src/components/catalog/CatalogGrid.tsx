@@ -12,7 +12,7 @@ const features = [
   { icon: Star, text: 'Free Maintenance 1 Tahun' },
   { icon: TrendingUp, text: 'Harga Terjangkau' }
 ]
-const KOKOHIN_WA = process.env.NEXT_PUBLIC_WA_NUMBER ?? '628123456789'
+const FALLBACK_WA = '628000000000'
 
 export default function CatalogGrid() {
   const [selectedCatalog, setSelectedCatalog] = useState<string | null>(null)
@@ -22,6 +22,7 @@ export default function CatalogGrid() {
   const [category, setCategory] = useState<'all' | 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya'>('all')
   const [sort, setSort] = useState<'price_asc' | 'price_desc' | 'name_asc'>('price_asc')
   const [q, setQ] = useState('')
+  const [waNumber, setWaNumber] = useState(FALLBACK_WA)
 
   useEffect(() => {
     const fetchCatalogs = async () => {
@@ -49,6 +50,21 @@ export default function CatalogGrid() {
     }
 
     fetchCatalogs()
+  }, [])
+  
+  useEffect(() => {
+    const fetchWa = async () => {
+      try {
+        const res = await fetch('/api/site-settings/wa-number', { cache: 'no-store' })
+        if (res.ok) {
+          const json = await res.json() as { wa_number?: string | null }
+          if (json.wa_number) setWaNumber(json.wa_number)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    fetchWa()
   }, [])
   
   const presentCategories = Array.from(
@@ -160,7 +176,26 @@ export default function CatalogGrid() {
       
       {/* Catalog Grid */}
       {loading ? (
-        <div className="text-center text-gray-600 mb-16">Memuat katalog...</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
+              <div className="h-48 bg-gray-200 animate-pulse" />
+              <div className="p-6 space-y-4">
+                <div className="h-4 bg-gray-200 rounded w-3/4 animate-pulse" />
+                <div className="h-3 bg-gray-200 rounded w-1/2 animate-pulse" />
+                <div className="pt-4 border-t border-gray-100 space-y-2">
+                  <div className="h-3 bg-gray-200 rounded w-full animate-pulse" />
+                  <div className="h-3 bg-gray-200 rounded w-5/6 animate-pulse" />
+                  <div className="h-3 bg-gray-200 rounded w-4/6 animate-pulse" />
+                </div>
+                <div className="space-y-2 pt-2">
+                  <div className="h-10 bg-gray-200 rounded-md animate-pulse" />
+                  <div className="h-10 bg-gray-200 rounded-md animate-pulse" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : error ? (
         <div className="text-center text-red-600 mb-16">Gagal memuat katalog.</div>
       ) : catalogs.length === 0 ? (
@@ -284,7 +319,7 @@ export default function CatalogGrid() {
                   Request Custom Quote
                 </button>
                 <button
-                  onClick={() => window.location.href = `https://wa.me/${KOKOHIN_WA}`}
+                  onClick={() => window.location.href = `https://wa.me/${waNumber}`}
                   className="btn bg-white/20 text-white hover:bg-white/30 ml-4"
                 >
                   Chat via WhatsApp

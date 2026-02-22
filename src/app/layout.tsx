@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Montserrat } from 'next/font/google'
 import './globals.css'
 import { Toaster } from '@/components/ui/toaster'
+import { getLogoUrl } from '@/app/actions/settings'
 
 const montserrat = Montserrat({
   subsets: ['latin'],
@@ -25,14 +26,15 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const logoUrl = await getLogoUrl()
   return (
     <html lang="id" className={montserrat.variable}>
-      <body className="font-sans">
+      <body className="font-sans" data-logo-url={logoUrl ?? ''}>
         {children}
         <Toaster />
       </body>

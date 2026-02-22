@@ -206,4 +206,59 @@
   .animation-fill-forwards {
     animation-fill-mode: forwards;
   }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  .animate-shimmer {
+    animation: shimmer 1.25s linear infinite;
+    background: linear-gradient(90deg, rgba(229,231,235,0.6) 25%, rgba(243,244,246,0.9) 50%, rgba(229,231,235,0.6) 75%);
+    background-size: 200% 100%;
+  }
+
+  @keyframes spin-slow {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .animate-spin-slow {
+    animation: spin-slow 1.6s linear infinite;
+  }
+
+  @keyframes sheen {
+    0% {
+      transform: translateX(-150%);
+    }
+    100% {
+      transform: translateX(150%);
+    }
+  }
+
+  .sheen-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .sheen-bar {
+    position: absolute;
+    top: 0;
+    left: -50%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(110deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.7) 50%, rgba(255,255,255,0) 100%);
+    mix-blend-mode: overlay;
+    animation: sheen 1.25s linear infinite;
+  }
 }

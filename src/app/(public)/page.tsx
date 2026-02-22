@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, Suspense } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import {
@@ -8,11 +8,13 @@ import {
   Calculator, Layers, PenTool, Lightbulb, Rocket
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import dynamic from 'next/dynamic'
+
+const HomePricelist = dynamic(() => import('@/components/home/HomePricelist'))
 
 // ⚠️ GANTI dengan nomor WhatsApp Kokohin yang sebenarnya!
 // Format: kode negara + nomor (tanpa +), contoh: 628123456789
-// Bisa juga di-set via env var NEXT_PUBLIC_WA_NUMBER
-const KOKOHIN_WA = process.env.NEXT_PUBLIC_WA_NUMBER ?? '628123456789'
+const FALLBACK_WA = '628000000000'
 
 
 type HomeCatalog = {
@@ -22,15 +24,13 @@ type HomeCatalog = {
   atap_id: string | null
   rangka_id: string | null
   base_price_per_m2: number
+  category?: 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya'
   atap?: { name: string | null } | null
   rangka?: { name: string | null } | null
 }
 
 export default function HomePage() {
-  const [catalogFilter, setCatalogFilter] = useState('semua')
   const [catalogs, setCatalogs] = useState<HomeCatalog[]>([])
-  const [catalogLoading, setCatalogLoading] = useState(true)
-  const [catalogError, setCatalogError] = useState<string | null>(null)
   const [step, setStep] = useState(1)
   const [formData, setFormData] = useState({
     jenis: 'kanopi',
@@ -44,6 +44,7 @@ export default function HomePage() {
   })
   const [isCalculating, setIsCalculating] = useState(false)
   const [heroBgUrl, setHeroBgUrl] = useState<string | null>(null)
+  const [waNumber, setWaNumber] = useState<string>(FALLBACK_WA)
 
   useEffect(() => {
     // Fetch hero background
@@ -61,6 +62,21 @@ export default function HomePage() {
       }
     }
     fetchHeroBg()
+  }, [])
+
+  useEffect(() => {
+    const fetchWa = async () => {
+      try {
+        const res = await fetch('/api/site-settings/wa-number', { cache: 'no-store' })
+        if (res.ok) {
+          const json = await res.json() as { wa_number?: string | null }
+          if (json.wa_number) setWaNumber(json.wa_number)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    fetchWa()
   }, [])
 
   const pricePerM2 = useMemo(() => {
@@ -84,15 +100,11 @@ export default function HomePage() {
         const supabase = createClient()
         const { data, error: fetchError } = await supabase
           .from('catalogs')
-          .select('id, title, image_url, atap_id, rangka_id, base_price_per_m2, atap:atap_id(name), rangka:rangka_id(name)')
+          .select('id, title, image_url, category, atap_id, rangka_id, base_price_per_m2, atap:atap_id(name), rangka:rangka_id(name)')
           .eq('is_active', true)
           .order('created_at', { ascending: false })
 
-        if (fetchError) {
-          setCatalogError(fetchError.message)
-          setCatalogs([])
-          return
-        }
+        if (fetchError) return setCatalogs([])
 
         const items: HomeCatalog[] = (data ?? []).map((item) => {
           const atap = Array.isArray(item.atap) ? item.atap[0] ?? null : item.atap ?? null
@@ -101,6 +113,7 @@ export default function HomePage() {
             id: item.id,
             title: item.title,
             image_url: item.image_url ?? null,
+            category: item.category ?? undefined,
             atap_id: item.atap_id ?? null,
             rangka_id: item.rangka_id ?? null,
             base_price_per_m2: item.base_price_per_m2 ?? 0,
@@ -109,11 +122,8 @@ export default function HomePage() {
           }
         })
         setCatalogs(items)
-      } catch (err) {
-        setCatalogError(err instanceof Error ? err.message : 'Gagal memuat katalog')
+      } catch {
         setCatalogs([])
-      } finally {
-        setCatalogLoading(false)
       }
     }
 
@@ -159,18 +169,22 @@ export default function HomePage() {
   }, [rangkaOptions])
 
   useEffect(() => {
-    if (formData.jenis === 'custom') return
-    setFormData((prev) => {
-      const atapList = prev.jenis === 'pagar' ? pagarOptions : atapOptions
-      const validAtap = atapList.some((option) => option.id === prev.atap_atau_desain)
-      const validRangka = rangkaOptions.some((option) => option.id === prev.rangka)
-      if (validAtap && validRangka) return prev
-      const next = { ...prev }
-      if (!validAtap) next.atap_atau_desain = getDefaultAtapValue(prev.jenis)
-      if (!validRangka) next.rangka = getDefaultRangkaValue()
-      return next
-    })
-  }, [atapOptions, pagarOptions, rangkaOptions, formData.jenis, getDefaultAtapValue, getDefaultRangkaValue])
+    const t = setTimeout(() => {
+      setFormData((prev) => {
+        if (prev.jenis === 'custom') return prev
+        const atapList = prev.jenis === 'pagar' ? pagarOptions : atapOptions
+        const validAtap = atapList.some((option) => option.id === prev.atap_atau_desain)
+        const validRangka = rangkaOptions.some((option) => option.id === prev.rangka)
+        if (validAtap && validRangka) return prev
+        return {
+          ...prev,
+          atap_atau_desain: validAtap ? prev.atap_atau_desain : getDefaultAtapValue(prev.jenis),
+          rangka: validRangka ? prev.rangka : getDefaultRangkaValue(),
+        }
+      })
+    }, 0)
+    return () => clearTimeout(t)
+  }, [atapOptions, pagarOptions, rangkaOptions, getDefaultAtapValue, getDefaultRangkaValue])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -209,7 +223,7 @@ export default function HomePage() {
     const text = formData.jenis === 'custom'
     ? `Halo tim Kokohin, saya ${formData.nama} ingin konsultasi *Desain Custom*.\n\nCatatan saya: ${formData.deskripsi || '-'}\nMohon info jadwal survei.`
     : `Halo tim Kokohin, saya ${formData.nama} mau book jadwal survei untuk estimasi pembuatan *${formData.jenis.toUpperCase()}* standar saya.`
-    window.open(`https://wa.me/${KOKOHIN_WA}?text=${encodeURIComponent(text)}`, '_blank')
+    window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank')
   }
 
   const isCustomMode = formData.jenis === 'custom'
@@ -224,19 +238,7 @@ export default function HomePage() {
   const previewTitle = isPagar ? (selectedPagar?.title ?? 'Pagar') : (selectedAtap?.name ?? 'Kanopi')
   const previewBadge = isPagar ? 'Desain Pagar' : 'Atap Pilihan'
   const previewRangkaName = selectedRangka?.name ?? 'Rangka'
-  const formatRupiah = (amount: number) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount)
-  }
-
-  const filteredCatalogs = useMemo(() => {
-    if (catalogFilter === 'semua') return catalogs
-    return catalogs.filter((c) => (c.atap_id ? 'kanopi' : 'pagar') === catalogFilter)
-  }, [catalogFilter, catalogs])
+  // removed local pricelist helpers (moved into HomePricelist)
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 text-primary-dark font-sans">
@@ -278,79 +280,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* CATALOG SECTION */}
-      <section id="pricelist" className="py-16 bg-gray-50 border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-8">
-            <h2 className="text-3xl font-extrabold mb-4 text-primary-dark">Pricelist & Paket Populer</h2>
-            <p className="text-gray-600 max-w-2xl mx-auto font-medium">Temukan inspirasi kombinasi material terbaik.</p>
-          </div>
-          <div className="flex justify-center mb-10">
-            <div className="inline-flex bg-white p-1 rounded-lg border border-gray-200">
-              {['semua', 'kanopi', 'pagar'].map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setCatalogFilter(tab)}
-                  className={`px-6 py-2.5 rounded-md font-bold text-sm capitalize transition-colors ${catalogFilter === tab ? 'bg-primary-dark text-white' : 'text-gray-500 hover:text-primary-dark'}`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-          </div>
-          {catalogLoading ? (
-            <div className="text-center text-gray-600">Memuat katalog...</div>
-          ) : catalogError ? (
-            <div className="text-center text-red-600">Gagal memuat katalog.</div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {filteredCatalogs.map((katalog) => {
-                const catalogType = katalog.atap_id ? 'kanopi' : 'pagar'
-                return (
-                  <div key={katalog.id} className="bg-white rounded-2xl overflow-hidden shadow-lg border border-gray-100 flex flex-col group hover:shadow-xl transition-shadow">
-                    <div className="relative h-56 overflow-hidden">
-                      <Image
-                        src={katalog.image_url ?? 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop'}
-                        alt={katalog.title}
-                        fill
-                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                        className="object-cover group-hover:scale-105 transition-transform duration-700"
-                      />
-                      <div className="absolute bottom-0 w-full bg-gradient-to-t from-black/80 to-transparent p-4">
-                        <span className="inline-block px-2 py-1 bg-primary text-white text-[10px] font-bold rounded mb-1 uppercase tracking-wider">{catalogType}</span>
-                        <h3 className="text-white font-bold text-xl">{katalog.title}</h3>
-                      </div>
-                    </div>
-                    <div className="p-6 flex-grow flex flex-col">
-                      <div className="space-y-3 mb-6 flex-grow text-sm">
-                        <div className="flex justify-between border-b border-gray-100 pb-2">
-                          <span className="text-gray-500">{catalogType === 'kanopi' ? 'Atap' : 'Desain'}</span>
-                          <span className="font-bold">{katalog.atap?.name ?? 'Custom'}</span>
-                        </div>
-                        <div className="flex justify-between border-b border-gray-100 pb-2">
-                          <span className="text-gray-500">Rangka</span>
-                          <span className="font-bold">{katalog.rangka?.name ?? 'Rangka'}</span>
-                        </div>
-                      </div>
-                      <div className="mb-6">
-                        <p className="text-xs font-bold text-gray-400 uppercase mb-1">Mulai Dari</p>
-                        <span className="text-2xl font-extrabold text-primary">{formatRupiah(katalog.base_price_per_m2)}</span>
-                        <span className="text-gray-500 text-sm"> / m²</span>
-                      </div>
-                      <button
-                        onClick={() => handleSelectCatalog(catalogType)}
-                        className="w-full py-3 border-2 border-primary-dark text-primary-dark rounded-lg font-bold flex justify-center gap-2 hover:bg-primary-dark hover:text-white transition-colors"
-                      >
-                        Hitung Ukuran Saya <ArrowRight size={18} />
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </section>
+      {/* CATALOG SECTION (Lazy-loaded) */}
+      <Suspense fallback={<div className="text-center py-12 text-gray-600">Memuat paket populer...</div>}>
+        <HomePricelist onSelectType={handleSelectCatalog} />
+      </Suspense>
 
       {/* KALKULATOR FUNNEL */}
       <section id="kalkulator" className="py-12 md:py-20 px-4 sm:px-6 lg:px-8 bg-white flex-grow">

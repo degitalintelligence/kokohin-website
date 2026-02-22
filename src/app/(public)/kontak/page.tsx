@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import ContactForm from '@/components/contact/ContactForm'
+import { Suspense } from 'react'
+import dynamic from 'next/dynamic'
 import { MapPin, Phone, Mail, Clock, MessageCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 
@@ -7,6 +8,8 @@ export const metadata: Metadata = {
     title: 'Kontak Kami',
     description: 'Hubungi Kokohin untuk konsultasi gratis mengenai kebutuhan kanopi Anda. Kami siap melayani area Jabodetabek.',
 }
+export const revalidate = 600
+const ContactForm = dynamic(() => import('@/components/contact/ContactForm'))
 
 export default async function KontakPage() {
     const supabase = await createClient()
@@ -14,6 +17,9 @@ export default async function KontakPage() {
         .from('services')
         .select('id, name')
         .order('name', { ascending: true })
+    const { data: contactRows } = await supabase.from('site_settings').select('key,value').in('key',['support_email','support_phone','contact_address','contact_hours'])
+    const contactMap: Record<string,string> = {}
+    ;((contactRows as Array<{ key?: string; value?: string }> | null) ?? []).forEach((row) => { if (row && row.key) contactMap[row.key] = row.value ?? '' })
 
     const services = (servicesRows || [])
         .filter(s => {
@@ -29,22 +35,22 @@ export default async function KontakPage() {
         { 
             icon: MapPin, 
             title: 'Alamat Workshop', 
-            desc: process.env.NEXT_PUBLIC_CONTACT_ADDRESS || 'Jl. Raya Bogor KM 30, Cimanggis, Depok, Jawa Barat 16451' 
+            desc: contactMap['contact_address'] || 'Jl. Raya Bogor KM 30, Cimanggis, Depok, Jawa Barat 16451' 
         },
         { 
             icon: Phone, 
             title: 'Telepon / WhatsApp', 
-            desc: `${process.env.NEXT_PUBLIC_CONTACT_PHONE || '0812-3456-7890'} (Respon Cepat)` 
+            desc: `${contactMap['support_phone'] || '0812-3456-7890'} (Respon Cepat)` 
         },
         { 
             icon: Mail, 
             title: 'Email', 
-            desc: process.env.NEXT_PUBLIC_CONTACT_EMAIL || 'halo@kokohin.com' 
+            desc: contactMap['support_email'] || 'halo@kokohin.com' 
         },
         { 
             icon: Clock, 
             title: 'Jam Operasional', 
-            desc: process.env.NEXT_PUBLIC_CONTACT_HOURS || 'Senin - Sabtu: 08:00 - 17:00 WIB' 
+            desc: contactMap['contact_hours'] || 'Senin - Sabtu: 08:00 - 17:00 WIB' 
         },
     ]
 
@@ -106,7 +112,38 @@ export default async function KontakPage() {
                         {/* Form Column */}
                         <div className="card">
                             <h2 className="text-2xl font-bold mb-6 text-primary-dark">Kirim Pesan</h2>
-                            <ContactForm services={services} />
+                            <Suspense fallback={
+                                <div className="animate-fade-in-up">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="mb-4">
+                                            <div className="h-4 w-32 bg-gray-200 rounded mb-2 animate-pulse" />
+                                            <div className="h-10 w-full bg-gray-200 rounded animate-pulse" />
+                                        </div>
+                                        <div className="mb-4">
+                                            <div className="h-4 w-48 bg-gray-200 rounded mb-2 animate-pulse" />
+                                            <div className="h-10 w-full bg-gray-200 rounded animate-pulse" />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="mb-4">
+                                            <div className="h-4 w-32 bg-gray-200 rounded mb-2 animate-pulse" />
+                                            <div className="h-10 w-full bg-gray-200 rounded animate-pulse" />
+                                        </div>
+                                        <div className="mb-4">
+                                            <div className="h-4 w-40 bg-gray-200 rounded mb-2 animate-pulse" />
+                                            <div className="h-10 w-full bg-gray-200 rounded animate-pulse" />
+                                        </div>
+                                    </div>
+                                    <div className="mb-4">
+                                        <div className="h-4 w-48 bg-gray-200 rounded mb-2 animate-pulse" />
+                                        <div className="h-32 w-full bg-gray-200 rounded animate-pulse" />
+                                    </div>
+                                    <div className="h-12 w-full bg-gray-200 rounded animate-pulse" />
+                                    <p className="text-xs text-gray-400 text-center mt-2">Memuat formulir...</p>
+                                </div>
+                            }>
+                                <ContactForm services={services} />
+                            </Suspense>
                         </div>
                     </div>
                 </div>

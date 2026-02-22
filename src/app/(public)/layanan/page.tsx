@@ -1,5 +1,9 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
+import * as LucideIcons from 'lucide-react'
+import type { ComponentType } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import type { Service } from '@/lib/types'
 import { CheckCircle, ShieldCheck, Clock, Users, Wrench, Hammer, Warehouse, CloudSun, Blinds } from 'lucide-react'
@@ -8,6 +12,7 @@ export const metadata: Metadata = {
     title: 'Layanan Kanopi',
     description: 'Berbagai jenis layanan pemasangan kanopi profesional: baja ringan, polycarbonate, kaca, spandek, pergola, dan carport.',
 }
+export const dynamic = 'force-dynamic'
 
 const BENEFITS = [
     { text: 'Garansi konstruksi 1 tahun', icon: ShieldCheck },
@@ -17,7 +22,15 @@ const BENEFITS = [
     { text: 'Tim berpengalaman & profesional', icon: Users },
     { text: 'Harga transparan tanpa biaya tersembunyi', icon: CheckCircle },
 ]
-const KOKOHIN_WA = process.env.NEXT_PUBLIC_WA_NUMBER ?? '628123456789'
+async function getWaNumber() {
+  try {
+    const supabase = await createClient()
+    const { data } = await supabase.from('site_settings').select('value').eq('key', 'wa_number').maybeSingle()
+    return (data as { value?: string } | null)?.value ?? '628000000000'
+  } catch {
+    return '628000000000'
+  }
+}
 
 // Helper to map service names to Lucide icons
 const getServiceIcon = (name: string) => {
@@ -31,24 +44,114 @@ const getServiceIcon = (name: string) => {
     return Wrench // Default fallback
 }
 
+type IconComponent = ComponentType<{ size?: number; strokeWidth?: number }>
+type IconMap = Record<string, IconComponent>
+
+const getIconByLucideName = (iconName?: string) => {
+    if (!iconName) return null
+    const pascal = iconName
+        .trim()
+        .split(/[\s-_]+/)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join('')
+    const Comp = (LucideIcons as unknown as IconMap)[pascal]
+    return typeof Comp === 'function' ? (Comp as IconComponent) : null
+}
+
+async function ServicesSection() {
+    const supabase = await createClient()
+    const { data } = await supabase
+        .from('services')
+        .select('*')
+        .or('is_active.is.null,is_active.eq.true')
+        .order('order', { ascending: true })
+    const services: Service[] = (data ?? []) as Service[]
+    const visible = services.filter((s) => {
+        const n = (s.name || '').toLowerCase()
+        return !(n.includes('membrane') || n.includes('membran'))
+    })
+
+    return (
+        <div className="flex flex-col gap-16">
+            {visible.length > 0 ? (
+                visible.map((s, idx) => {
+                    const Icon = getIconByLucideName(s.icon) || getServiceIcon(s.name || '')
+                    return (
+                    <div key={s.id} id={String(s.slug || s.id)} className={`grid grid-cols-1 lg:grid-cols-[1fr_1.8fr] gap-12 items-center scroll-mt-28 ${idx % 2 === 1 ? 'lg:grid-cols-[1.8fr_1fr]' : ''}`}>
+                        <div className={`relative aspect-video lg:aspect-square max-w-full lg:max-w-xs rounded-2xl bg-gradient-to-br from-primary to-primary-light flex items-center justify-center shadow-xl overflow-hidden ${idx % 2 === 1 ? 'lg:order-2' : ''}`}>
+                            {s.image_url ? (
+                                <>
+                                    <Image
+                                        src={s.image_url}
+                                        alt={s.name || 'Layanan'}
+                                        fill
+                                        className="object-cover"
+                                        sizes="(max-width: 1024px) 100vw, 320px"
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-br from-black/10 to-black/30" />
+                                    <div className="absolute -bottom-3 -right-3 text-9xl font-extrabold text-white/20 leading-none select-none">0{idx + 1}</div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="text-9xl relative z-10 text-white opacity-90">
+                                        <Icon size={120} strokeWidth={1} />
+                                    </div>
+                                    <div className="absolute -bottom-3 -right-3 text-9xl font-extrabold text-white/10 leading-none select-none">0{idx + 1}</div>
+                                </>
+                            )}
+                        </div>
+                        <div className="flex flex-col gap-5">
+                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-semibold w-fit">
+                                <Icon size={16} />
+                                {s.name}
+                            </div>
+                            <h2 className="text-3xl font-bold text-primary leading-tight">{s.name}</h2>
+                            <p className="text-base text-gray-600 leading-relaxed">{s.description}</p>
+                            <Link href="/kontak" className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-primary rounded-full hover:bg-primary/90 shadow-lg w-fit transition-all">
+                                Minta Penawaran →
+                            </Link>
+                        </div>
+                    </div>
+                    )
+                })
+            ) : (
+                <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-200 text-center">
+                    <h2 className="text-2xl font-bold text-primary-dark mb-3">Belum ada layanan tersedia</h2>
+                    <p className="text-gray-600 mb-6">Tim kami siap membantu kebutuhan Anda secara custom.</p>
+                    <Link href="/kontak" className="inline-flex items-center justify-center gap-2 px-6 py-3 font-semibold text-white bg-primary rounded-full hover:bg-primary/90 shadow-lg transition-all">Konsultasi Gratis</Link>
+                </div>
+            )}
+        </div>
+    )
+}
+
+function ServicesSkeleton() {
+    return (
+        <div className="flex flex-col gap-16">
+            {Array.from({ length: 4 }).map((_, idx) => (
+                <div key={idx} className={`grid grid-cols-1 lg:grid-cols-[1fr_1.8fr] gap-12 items-center ${idx % 2 === 1 ? 'lg:grid-cols-[1.8fr_1fr]' : ''}`}>
+                    <div className={`relative aspect-video lg:aspect-square max-w-full lg:max-w-xs rounded-2xl bg-gray-200 animate-pulse ${idx % 2 === 1 ? 'lg:order-2' : ''}`} />
+                    <div className="flex flex-col gap-5">
+                        <div className="h-6 w-40 bg-gray-200 rounded animate-pulse" />
+                        <div className="h-8 w-64 bg-gray-200 rounded animate-pulse" />
+                        <div className="space-y-2">
+                            <div className="h-3 w-full bg-gray-200 rounded animate-pulse" />
+                            <div className="h-3 w-5/6 bg-gray-200 rounded animate-pulse" />
+                            <div className="h-3 w-4/6 bg-gray-200 rounded animate-pulse" />
+                        </div>
+                        <div className="h-9 w-44 bg-gray-200 rounded-full animate-pulse" />
+                    </div>
+                </div>
+            ))}
+        </div>
+    )
+}
+
 export default async function LayananPage() {
-    let services: Partial<Service>[] = []
-    try {
-        const supabase = await createClient()
-        const { data } = await supabase.from('services').select('*').order('order')
-        if (data && data.length > 0) {
-            services = data.filter((s) => {
-                const n = (s.name || '').toLowerCase()
-                return !(n.includes('membrane') || n.includes('membran'))
-            })
-        }
-    } catch {
-        services = []
-    }
+    const KOKOHIN_WA = await getWaNumber()
 
     return (
         <>
-            {/* Page Header */}
             <section className="pt-32 pb-12 bg-gradient-to-br from-primary-dark to-primary text-white">
                 <div className="container">
                     <div className="section-label text-white/90">
@@ -62,47 +165,14 @@ export default async function LayananPage() {
                 </div>
             </section>
 
-            {/* Services Detail */}
             <section className="section">
                 <div className="container">
-                    <div className="flex flex-col gap-16">
-                        {services.length > 0 ? (
-                            services.map((s, idx) => {
-                                const Icon = getServiceIcon(s.name || '')
-                                return (
-                                <div key={s.id} className={`grid grid-cols-1 lg:grid-cols-[1fr_1.8fr] gap-12 items-center ${idx % 2 === 1 ? 'lg:grid-cols-[1.8fr_1fr]' : ''}`}>
-                                    <div className={`relative aspect-video lg:aspect-square max-w-full lg:max-w-xs rounded-2xl bg-gradient-to-br from-primary to-primary-light flex items-center justify-center shadow-xl overflow-hidden ${idx % 2 === 1 ? 'lg:order-2' : ''}`}>
-                                        <div className="text-9xl relative z-10 text-white opacity-90">
-                                            <Icon size={120} strokeWidth={1} />
-                                        </div>
-                                        <div className="absolute -bottom-3 -right-3 text-9xl font-extrabold text-white/10 leading-none select-none">0{idx + 1}</div>
-                                    </div>
-                                    <div className="flex flex-col gap-5">
-                                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-semibold w-fit">
-                                            <Icon size={16} />
-                                            {s.name}
-                                        </div>
-                                        <h2 className="text-3xl font-bold text-primary leading-tight">{s.name}</h2>
-                                        <p className="text-base text-gray-600 leading-relaxed">{s.description}</p>
-                                        <Link href="/kontak" className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-primary rounded-full hover:bg-primary/90 shadow-lg w-fit transition-all">
-                                            Minta Penawaran →
-                                        </Link>
-                                    </div>
-                                </div>
-                                )
-                            })
-                        ) : (
-                            <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-200 text-center">
-                                <h2 className="text-2xl font-bold text-primary-dark mb-3">Belum ada layanan tersedia</h2>
-                                <p className="text-gray-600 mb-6">Tim kami siap membantu kebutuhan Anda secara custom.</p>
-                                <Link href="/kontak" className="inline-flex items-center justify-center gap-2 px-6 py-3 font-semibold text-white bg-primary rounded-full hover:bg-primary/90 shadow-lg transition-all">Konsultasi Gratis</Link>
-                            </div>
-                        )}
-                    </div>
+                    <Suspense fallback={<ServicesSkeleton />}>
+                        <ServicesSection />
+                    </Suspense>
                 </div>
             </section>
 
-            {/* Benefits section */}
             <section className="section bg-gray-50">
                 <div className="container">
                     <div className="grid lg:grid-cols-2 gap-16 items-center">

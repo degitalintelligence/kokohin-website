@@ -6,6 +6,7 @@ export const metadata: Metadata = {
     title: 'Tentang Kami',
     description: 'Kenali lebih dekat Kokohin — kontraktor kanopi profesional dengan pengalaman lebih dari 10 tahun.',
 }
+export const revalidate = 86400
 
 const TIMELINE = [
     { year: '2014', event: 'Kokohin berdiri dengan 3 orang tim kecil di Depok.' },

@@ -1,0 +1,155 @@
+{
+  "tables": {
+    "services": {
+      "id": "uuid",
+      "name": "text",
+      "slug": "text",
+      "short_desc": "text",
+      "description": "text",
+      "icon": "text",
+      "image_url": "text",
+      "order": "integer",
+      "created_at": "timestamp with time zone",
+      "is_active": "boolean",
+      "meta_title": "text",
+      "meta_description": "text",
+      "meta_keywords": "text"
+    },
+    "site_settings": {
+      "key": "text",
+      "value": "text",
+      "description": "text",
+      "created_at": "timestamp with time zone",
+      "updated_at": "timestamp with time zone"
+    },
+    "erp_projects": {
+      "id": "uuid",
+      "customer_name": "text",
+      "phone": "text",
+      "address": "text",
+      "zone_id": "uuid",
+      "custom_notes": "text",
+      "status": "text",
+      "created_at": "timestamp with time zone",
+      "updated_at": "timestamp with time zone"
+    },
+    "estimations": {
+      "id": "uuid",
+      "project_id": "uuid",
+      "version_number": "integer",
+      "total_hpp": "numeric",
+      "margin_percentage": "numeric",
+      "total_selling_price": "numeric",
+      "status": "text",
+      "created_at": "timestamp with time zone",
+      "updated_at": "timestamp with time zone"
+    }
+  },
+  "foreignKeys": {
+    "services": [],
+    "site_settings": [],
+    "erp_projects": [
+      {
+        "constraint_name": "erp_projects_zone_id_fkey",
+        "column_name": "zone_id",
+        "foreign_table": "zones",
+        "foreign_column": "id"
+      }
+    ],
+    "estimations": [
+      {
+        "constraint_name": "estimations_project_id_fkey",
+        "column_name": "project_id",
+        "foreign_table": "erp_projects",
+        "foreign_column": "id"
+      }
+    ]
+  },
+  "checks": [
+    {
+      "table": "services",
+      "column": "id",
+      "ok": true
+    },
+    {
+      "table": "services",
+      "column": "name",
+      "ok": true
+    },
+    {
+      "table": "services",
+      "column": "slug",
+      "ok": true
+    },
+    {
+      "table": "services",
+      "column": "description",
+      "ok": true
+    },
+    {
+      "table": "services",
+      "column": "image_url",
+      "ok": true
+    },
+    {
+      "table": "services",
+      "column": "icon",
+      "ok": true
+    },
+    {
+      "table": "services",
+      "column": "order",
+      "ok": true
+    },
+    {
+      "table": "services",
+      "column": "is_active",
+      "ok": true
+    },
+    {
+      "table": "services",
+      "column": "meta_title",
+      "ok": true
+    },
+    {
+      "table": "services",
+      "column": "meta_description",
+      "ok": true
+    },
+    {
+      "table": "services",
+      "column": "meta_keywords",
+      "ok": true
+    },
+    {
+      "table": "site_settings",
+      "column": "key",
+      "ok": true
+    },
+    {
+      "table": "site_settings",
+      "column": "value",
+      "ok": true
+    },
+    {
+      "table": "erp_projects",
+      "column": "id",
+      "ok": true
+    },
+    {
+      "table": "estimations",
+      "column": "id",
+      "ok": true
+    },
+    {
+      "table": "estimations",
+      "column": "project_id",
+      "ok": true
+    },
+    {
+      "table": "estimations",
+      "column": "version_number",
+      "ok": true
+    }
+  ]
+}

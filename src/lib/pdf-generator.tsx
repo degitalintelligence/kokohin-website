@@ -9,6 +9,14 @@ export interface PdfQuotationData {
   items: EstimationItem[]
   paymentTerms?: string[]
   logoUrl?: string | null
+  company?: {
+    name?: string | null
+    phone?: string | null
+    email?: string | null
+    address?: string | null
+    website?: string | null
+    hours?: string | null
+  }
 }
 
 const COLORS = {
@@ -19,18 +27,11 @@ const COLORS = {
 } as const
 
 const COMPANY_NAME = 'KOKOHIN'
-const COMPANY_ADDRESS =
-  process.env.NEXT_PUBLIC_CONTACT_ADDRESS || 'Tangerang, Indonesia'
-const COMPANY_PHONE =
-  process.env.NEXT_PUBLIC_CONTACT_PHONE ||
-  process.env.NEXT_PUBLIC_WA_NUMBER ||
-  '-'
-const COMPANY_EMAIL =
-  process.env.NEXT_PUBLIC_CONTACT_EMAIL || '-'
-const COMPANY_HOURS =
-  process.env.NEXT_PUBLIC_CONTACT_HOURS || ''
-const COMPANY_WEBSITE =
-  process.env.NEXT_PUBLIC_COMPANY_WEBSITE || 'www.kokohin.com'
+const COMPANY_ADDRESS = 'Tangerang, Indonesia'
+const COMPANY_PHONE = '-'
+const COMPANY_EMAIL = '-'
+const COMPANY_HOURS = ''
+const COMPANY_WEBSITE = 'www.kokohin.com'
 
 // Determine font base URL - prefer environment variable for server-side rendering
 const fontBase = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' && window.location.origin ? window.location.origin : '');
@@ -271,6 +272,12 @@ const QuotationDocument = (data: PdfQuotationData) => {
     data.logoUrl ||
     process.env.NEXT_PUBLIC_COMPANY_LOGO_URL ||
     'https://via.placeholder.com/150x50.png?text=LOGO'
+  const companyName = data.company?.name || COMPANY_NAME
+  const companyAddress = data.company?.address || COMPANY_ADDRESS
+  const companyPhone = data.company?.phone || COMPANY_PHONE
+  const companyEmail = data.company?.email || COMPANY_EMAIL
+  const companyHours = data.company?.hours || COMPANY_HOURS
+  const companyWebsite = data.company?.website || COMPANY_WEBSITE
 
   // Default payment terms
   const defaultPaymentTerms = [
@@ -291,13 +298,13 @@ const QuotationDocument = (data: PdfQuotationData) => {
           <View style={styles.logoSection}>
             <PdfImage src={companyLogo} style={styles.logoImage} />
             <View style={styles.companyInfo}>
-              <Text style={styles.companyName}>{COMPANY_NAME}</Text>
+              <Text style={styles.companyName}>{companyName}</Text>
               <Text style={styles.companyTagline}>Kontraktor Kanopi & Pagar Profesional</Text>
-              <Text style={styles.companyTagline}>{COMPANY_ADDRESS}</Text>
-              <Text style={styles.companyTagline}>Telp: {COMPANY_PHONE}</Text>
-              <Text style={styles.companyTagline}>Email: {COMPANY_EMAIL}</Text>
-              {COMPANY_HOURS && (
-                <Text style={styles.companyTagline}>Jam Operasional: {COMPANY_HOURS}</Text>
+              <Text style={styles.companyTagline}>{companyAddress}</Text>
+              <Text style={styles.companyTagline}>Telp: {companyPhone}</Text>
+              <Text style={styles.companyTagline}>Email: {companyEmail}</Text>
+              {companyHours && (
+                <Text style={styles.companyTagline}>Jam Operasional: {companyHours}</Text>
               )}
             </View>
           </View>
@@ -408,7 +415,7 @@ const QuotationDocument = (data: PdfQuotationData) => {
         {/* Footer */}
         <View style={styles.footer}>
           <Text>
-            {COMPANY_NAME} • {COMPANY_ADDRESS} • WhatsApp: {COMPANY_PHONE} • {COMPANY_WEBSITE}
+            {companyName} • {companyAddress} • WhatsApp: {companyPhone} • {companyWebsite}
           </Text>
           <Text>Quotation ini dibuat secara otomatis oleh sistem Kokohin Mini‑ERP. Harap simpan untuk referensi.</Text>
         </View>

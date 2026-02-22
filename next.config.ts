@@ -3,14 +3,20 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Required for Docker/Coolify deployment
   output: "standalone",
+  compress: true,
+  poweredByHeader: false,
 
   experimental: {
     serverActions: {
       bodySizeLimit: '50mb',
     },
   },
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production',
+  },
 
   images: {
+    formats: ['image/avif', 'image/webp'],
     dangerouslyAllowSVG: true,
     remotePatterns: [
       {
@@ -33,6 +39,12 @@ const nextConfig: NextConfig = {
         hostname: "ui-avatars.com",
       },
     ],
+  },
+  async rewrites() {
+    return [
+      { source: '/kebijakan-privasi', destination: '/privacy.html' },
+      { source: '/privacy', destination: '/privacy.html' },
+    ]
   },
 };
 

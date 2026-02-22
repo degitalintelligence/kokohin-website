@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Menu } from 'lucide-react'
+import { Menu, Camera } from 'lucide-react'
+import Link from 'next/link'
 import Sidebar from '@/components/admin/Sidebar'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -73,6 +74,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <Menu className="w-6 h-6" />
           </button>
           <div className="ml-2 text-sm font-extrabold tracking-tight text-[#1D1D1B]">Kokohin Admin</div>
+          <Link href="/admin/gallery" className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#E30613] text-white hover:bg-[#c0000f]">
+            <Camera className="w-4 h-4" />
+            Kurasi Galeri
+          </Link>
         </div>
         {children}
       </div>

@@ -3,6 +3,10 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { isRoleAllowed, ALLOWED_MATERIALS_ROLES } from '@/lib/rbac'
 
+type CacheEntry = { role: string | null; email: string | null; exp: number }
+const ROLE_CACHE = new Map<string, CacheEntry>()
+const TTL_MS = 60_000
+
 export async function middleware(request: NextRequest) {
     const nodeMajor = Number(process.versions.node.split('.')[0] ?? 0)
     
@@ -10,10 +14,11 @@ export async function middleware(request: NextRequest) {
         console.log(`[Proxy] Node version: ${process.versions.node} (Major: ${nodeMajor})`)
     }
 
-    if (nodeMajor >= 24) {
-        if (process.env.NODE_ENV === 'development') {
-            console.log('[Proxy] Node v24+ detected. Bypassing Supabase Auth middleware to prevent stream errors.')
-        }
+    const pathname = request.nextUrl.pathname
+    const isAdminRoute = pathname.startsWith('/admin')
+    const isLoginPage = pathname === '/admin/login'
+
+    if (nodeMajor >= 24 && !isAdminRoute) {
         const response = NextResponse.next()
         response.headers.set('x-proxy-disabled', `node-${process.versions.node}`)
         return response
@@ -41,37 +46,29 @@ export async function middleware(request: NextRequest) {
 
     const { data: { user } } = await supabase.auth.getUser()
 
-    const roleCookie = request.cookies.get('user-role')?.value ?? null
-
-    let userRole: string | null = roleCookie
+    let userRole: string | null = null
     let userEmail: string | null = null
 
     if (user) {
-        userEmail = user.email ?? null
-
-        if (!userRole) {
+        const userId = user.id
+        const now = Date.now()
+        const cached = ROLE_CACHE.get(userId)
+        if (cached && cached.exp > now) {
+            userRole = cached.role
+            userEmail = cached.email
+        } else {
             const { data: profile } = await supabase
                 .from('profiles')
-                .select('role')
-                .eq('id', user.id)
+                .select('role, email')
+                .eq('id', userId)
                 .maybeSingle()
-            userRole = (profile as { role?: string } | null)?.role ?? null
-
-            if (userRole) {
-                supabaseResponse.cookies.set('user-role', userRole, {
-                    path: '/',
-                    httpOnly: true,
-                    sameSite: 'lax',
-                    secure: process.env.NODE_ENV === 'production',
-                })
-            }
+            const role = (profile as { role?: string } | null)?.role ?? null
+            const email = (profile as { email?: string } | null)?.email ?? user.email ?? null
+            userRole = role
+            userEmail = email
+            ROLE_CACHE.set(userId, { role, email, exp: now + TTL_MS })
         }
     }
-
-    const pathname = request.nextUrl.pathname
-
-    const isAdminRoute = pathname.startsWith('/admin')
-    const isLoginPage = pathname === '/admin/login'
 
     const isDevMode = process.env.DEV_MODE === 'true'
     const hasBypassCookie = request.cookies.get('dev-bypass')?.value === '1'
