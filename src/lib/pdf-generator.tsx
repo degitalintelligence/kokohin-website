@@ -33,9 +33,7 @@ const COMPANY_EMAIL = '-'
 const COMPANY_HOURS = ''
 const COMPANY_WEBSITE = 'www.kokohin.com'
 
-// Determine font base URL - prefer environment variable for server-side rendering
-const fontBase = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' && window.location.origin ? window.location.origin : '');
-const fontPath = fontBase ? `${fontBase}/fonts` : '/fonts';
+const fontPath = '/fonts';
 
 Font.register({
   family: 'Montserrat',

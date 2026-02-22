@@ -45,8 +45,77 @@ export async function createProjectWithEstimationWithRpc(
 
 export async function createProjectWithEstimation(dto: CreateProjectDTO): Promise<CreateProjectResult> {
   const supabase = await createClient()
-  return createProjectWithEstimationWithRpc(
-    async (fn, args) => await supabase.rpc(fn, args),
-    dto
-  )
+  try {
+    return await createProjectWithEstimationWithRpc(
+      async (fn, args) => await supabase.rpc(fn, args),
+      dto
+    )
+  } catch (e) {
+    const msg = (e as Error)?.message ?? ''
+    const notFound =
+      msg.includes('Could not find the function') ||
+      msg.includes('does not exist') ||
+      msg.includes('schema cache') ||
+      msg.includes('rpc') && msg.includes('not found')
+
+    if (!notFound) {
+      throw e
+    }
+
+    // Fallback path: create rows manually without RPC
+    const { data: project, error: insertProjectError } = await supabase
+      .from('erp_projects')
+      .insert({
+        customer_name: dto.customer_name,
+        phone: dto.phone,
+        address: dto.address,
+        zone_id: dto.zone_id,
+        custom_notes: dto.custom_notes,
+        status: dto.status ?? 'New',
+      })
+      .select('id')
+      .single()
+
+    if (insertProjectError || !project?.id) {
+      const reason = insertProjectError?.message ?? 'Unknown error'
+      throw new Error(`Gagal membuat proyek: ${reason}`)
+    }
+
+    let estimationId: string | null = null
+    if (dto.estimation) {
+      // Determine next version number
+      const { data: latest, error: fetchErr } = await supabase
+        .from('estimations')
+        .select('version_number')
+        .eq('project_id', project.id)
+        .order('version_number', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (fetchErr) {
+        throw new Error(`Gagal membaca versi estimasi: ${fetchErr.message}`)
+      }
+      const nextVersion = (latest?.version_number ?? 0) + 1
+
+      const { data: est, error: insertEstErr } = await supabase
+        .from('estimations')
+        .insert({
+          project_id: project.id,
+          version_number: nextVersion,
+          total_hpp: dto.estimation.total_hpp,
+          margin_percentage: dto.estimation.margin_percentage,
+          total_selling_price: dto.estimation.total_selling_price,
+          status: dto.estimation.status,
+        })
+        .select('id')
+        .single()
+
+      if (insertEstErr) {
+        throw new Error(`Gagal membuat estimasi: ${insertEstErr.message}`)
+      }
+      estimationId = est?.id ?? null
+    }
+
+    return { project_id: project.id, estimation_id: estimationId }
+  }
 }

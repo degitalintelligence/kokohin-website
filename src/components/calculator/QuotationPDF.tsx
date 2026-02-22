@@ -8,8 +8,7 @@ let fontsRegistered = false
 function ensureFontsRegistered() {
   if (fontsRegistered) return
   if (typeof window === 'undefined') return
-  const base = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin || ''
-  const path = base ? `${base}/fonts` : '/fonts'
+  const path = '/fonts'
   try {
     Font.register({ family: 'Montserrat', src: `${path}/Montserrat-Regular.ttf` })
     Font.register({ family: 'Montserrat', src: `${path}/Montserrat-Bold.ttf`, fontWeight: 700 })
