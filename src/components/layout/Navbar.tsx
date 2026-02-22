@@ -72,9 +72,6 @@ export default function Navbar({ logoUrl, backgroundUrl }: { logoUrl?: string | 
 
   return (
     <nav className="sticky top-0 z-50 bg-white shadow-sm border-b border-gray-100 font-sans relative overflow-hidden">
-      <div className={`absolute top-0 left-0 h-0.5 bg-[#E30613] transition-opacity duration-200 ${isNavigating ? 'opacity-100 w-full' : 'opacity-0 w-0'}`}>
-        <div className="h-full w-full bg-gradient-to-r from-[#E30613] via-red-400 to-[#E30613] animate-pulse" />
-      </div>
       {backgroundUrl && (
         <div className="absolute inset-0 z-0 pointer-events-none">
             <Image

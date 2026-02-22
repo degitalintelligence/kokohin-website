@@ -3,6 +3,8 @@ import { Montserrat } from 'next/font/google'
 import './globals.css'
 import { Toaster } from '@/components/ui/toaster'
 import { getLogoUrl } from '@/app/actions/settings'
+import RouteProgress from '@/components/layout/RouteProgress'
+import PageTransition from '@/components/layout/PageTransition'
 
 const montserrat = Montserrat({
   subsets: ['latin'],
@@ -35,7 +37,8 @@ export default async function RootLayout({
   return (
     <html lang="id" className={montserrat.variable}>
       <body className="font-sans" data-logo-url={logoUrl ?? ''}>
-        {children}
+        <RouteProgress />
+        <PageTransition>{children}</PageTransition>
         <Toaster />
       </body>
     </html>
