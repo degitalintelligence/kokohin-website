@@ -62,6 +62,7 @@ export default async function AdminProjectsPage() {
     `)
     .order('created_at', { ascending: false })
     .order('version_number', { ascending: false, foreignTable: 'estimations' })
+    .limit(100)
 
   if (error) {
     console.error('Error fetching projects:', error)

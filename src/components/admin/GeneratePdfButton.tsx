@@ -64,18 +64,26 @@ export default function GeneratePdfButton({ projectId, disabled = false, classNa
         throw new Error(`Gagal mengambil item estimasi: ${itemsError.message}`)
       }
 
-      // 4. Fetch payment terms for this estimation
-      const { data: paymentTermsData, error: paymentTermsError } = await supabase
-        .from('payment_terms')
-        .select('*')
-        .eq('estimation_id', estimation.id)
-        .order('created_at', { ascending: true })
+      const [
+        { data: paymentTermsData, error: paymentTermsError },
+        { data: logoSetting },
+      ] = await Promise.all([
+        supabase
+          .from('payment_terms')
+          .select('*')
+          .eq('estimation_id', estimation.id)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('site_settings')
+          .select('value')
+          .eq('key', 'logo_url')
+          .maybeSingle(),
+      ])
 
       if (paymentTermsError) {
         console.warn('Gagal mengambil payment terms, menggunakan default:', paymentTermsError.message)
       }
 
-      // Convert payment terms to string array for PDF
       const paymentTerms = paymentTermsData && paymentTermsData.length > 0
         ? paymentTermsData.map(term => `${term.term_name} ${term.percentage}%: ${formatRupiah(term.amount_due)}`)
         : [
@@ -87,12 +95,14 @@ export default function GeneratePdfButton({ projectId, disabled = false, classNa
             'Garansi konstruksi 2 tahun, material 5 tahun'
           ]
 
-      // 5. Prepare data for PDF generation
+      const typedLogo = logoSetting as { value?: string } | null
+
       const pdfData: PdfQuotationData = {
         project,
         estimation,
         items: items ?? [],
-        paymentTerms
+        paymentTerms,
+        logoUrl: typedLogo?.value ?? null
       }
 
       // 5. Generate and download PDF

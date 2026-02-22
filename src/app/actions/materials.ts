@@ -53,6 +53,11 @@ export async function createMaterial(formData: FormData) {
   }
 
   revalidatePath('/admin/materials')
+  revalidatePath('/kalkulator')
+  revalidatePath('/admin/catalogs')
+  revalidatePath('/admin/catalogs/new')
+  revalidatePath('/admin/catalogs/[id]')
+  revalidatePath('/katalog')
   redirect('/admin/materials')
 }
 
@@ -107,6 +112,11 @@ export async function updateMaterial(formData: FormData) {
 
   revalidatePath('/admin/materials')
   revalidatePath(`/admin/materials/${id}`)
+  revalidatePath('/kalkulator')
+  revalidatePath('/admin/catalogs')
+  revalidatePath('/admin/catalogs/new')
+  revalidatePath('/admin/catalogs/[id]')
+  revalidatePath('/katalog')
   redirect('/admin/materials')
 }
 
@@ -137,4 +147,9 @@ export async function deleteMaterial(id: string) {
   }
 
   revalidatePath('/admin/materials')
+  revalidatePath('/kalkulator')
+  revalidatePath('/admin/catalogs')
+  revalidatePath('/admin/catalogs/new')
+  revalidatePath('/admin/catalogs/[id]')
+  revalidatePath('/katalog')
 }

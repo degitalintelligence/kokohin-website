@@ -10,6 +10,21 @@ import { useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import QuotationPDF from './QuotationPDF'
 
+function getFriendlySupabaseError(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : ''
+  const lower = message.toLowerCase()
+
+  if (lower.includes('failed to fetch') || lower.includes('network')) {
+    return 'Kalkulator tidak dapat terhubung ke server data. Periksa koneksi internet Anda atau coba beberapa saat lagi.'
+  }
+
+  if (lower.includes('supabase') || lower.includes('fetch')) {
+    return 'Terjadi gangguan pada koneksi ke server data. Silakan coba beberapa saat lagi atau hubungi tim Kokohin.'
+  }
+
+  return fallback
+}
+
 const PDFDownloadLink = dynamic(
   () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
   {
@@ -17,6 +32,8 @@ const PDFDownloadLink = dynamic(
     loading: () => <button className="btn btn-outline w-full">Loading PDF...</button>,
   }
 )
+
+const KOKOHIN_WA = process.env.NEXT_PUBLIC_WA_NUMBER ?? '6281234567890'
 
 export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: boolean }) {
   const searchParams = useSearchParams()
@@ -73,7 +90,13 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
       setPendingResult(calculation)
       setIsLeadCaptured(false)
     } catch (error) {
-      setCalcError(error instanceof Error ? error.message : 'Gagal menghitung estimasi')
+      console.error('Error menghitung estimasi:', error)
+      const fallback = 'Gagal menghitung estimasi. Silakan coba beberapa saat lagi.'
+      const friendly = getFriendlySupabaseError(
+        error,
+        error instanceof Error ? error.message : fallback
+      )
+      setCalcError(friendly)
     } finally {
       setLoading(false)
     }
@@ -92,9 +115,10 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
       return
     }
 
+    const supabase = createClient()
+    let projectIdForRollback: string | null = null
+    
     try {
-      const supabase = createClient()
-      
       const { data: project, error: projectError } = await supabase
         .from('erp_projects')
         .insert({
@@ -110,6 +134,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
 
       if (projectError) throw projectError
       
+      projectIdForRollback = project.id
       setProjectId(project.id)
 
       if (input.jenis === 'standard' && pendingResult && !pendingResult.isCustom) {
@@ -133,11 +158,26 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
         normalized.includes('duplicate key') ||
         normalized.includes('unique constraint')
 
+      // Rollback: hapus project yang sudah dibuat jika estimation gagal (kecuali duplicate V1)
+      if (projectIdForRollback && !isDuplicateV1) {
+        try {
+          await supabase.from('erp_projects').delete().eq('id', projectIdForRollback)
+          console.log('Rollback: deleted orphan project', projectIdForRollback)
+        } catch (rollbackError) {
+          console.error('Gagal melakukan rollback (menghapus project):', rollbackError)
+        }
+      }
+
       if (isDuplicateV1) {
         setCalcError('Estimasi V1 untuk proyek ini sudah pernah dibuat. Silakan cek riwayat estimasi di dashboard admin.')
-      } else {
-        setCalcError('Gagal menyimpan data. Silakan coba lagi atau hubungi kami langsung.')
+        return
       }
+
+      console.error('Error menyimpan lead atau estimasi:', error)
+      const fallback =
+        'Gagal menyimpan data ke sistem. Silakan coba beberapa saat lagi atau hubungi kami via WhatsApp.'
+      const friendly = getFriendlySupabaseError(error, fallback)
+      setCalcError(friendly)
     }
   }
 
@@ -147,7 +187,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
 
   const handleBookSurvey = () => {
     // Nomor WhatsApp admin (bisa diambil dari environment variable atau config)
-    const adminPhone = '6281234567890' // Ganti dengan nomor admin sebenarnya
+    const adminPhone = KOKOHIN_WA
     
     // Buat pesan dengan detail project
     const area = result ? formatNumber(result.luas) : 'N/A'
@@ -171,7 +211,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
 
   const handleCustomConsultation = () => {
     // Nomor WhatsApp admin (bisa diambil dari environment variable atau config)
-    const adminPhone = '6281234567890' // Ganti dengan nomor admin sebenarnya
+    const adminPhone = KOKOHIN_WA
     
     // Buat pesan khusus untuk custom request
     const customerName = leadInfo.name || 'Customer'
@@ -231,7 +271,10 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
           setInput((prev) => ({ ...prev, materialId: prev.materialId ?? safeMaterials[0].id }))
         }
       } catch (error) {
-        setDataError(error instanceof Error ? error.message : 'Gagal memuat data kalkulator')
+        console.error('Error memuat data kalkulator:', error)
+        const fallback = 'Gagal memuat data kalkulator. Silakan coba beberapa saat lagi.'
+        const friendly = getFriendlySupabaseError(error, fallback)
+        setDataError(friendly)
       }
     }
     fetchData()
@@ -478,7 +521,9 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                   ))}
                 </select>
                 {dataError && (
-                  <div className="mt-3 text-sm text-red-600">{dataError}</div>
+                  <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+                    {dataError}
+                  </div>
                 )}
               </div>
             )}
@@ -511,7 +556,9 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
               </button>
             </div>
             {calcError && (
-              <div className="mt-4 text-sm text-red-600">{calcError}</div>
+              <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+                {calcError}
+              </div>
             )}
           </div>
           

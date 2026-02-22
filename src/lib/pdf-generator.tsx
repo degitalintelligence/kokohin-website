@@ -1,4 +1,4 @@
-import { pdf, Document, Page, Text, View, StyleSheet, Font } from '@react-pdf/renderer'
+import { pdf, Document, Page, Text, View, StyleSheet, Font, Image as PdfImage } from '@react-pdf/renderer'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
 import type { Estimation, EstimationItem, ErpProject } from '@/lib/types'
@@ -8,6 +8,7 @@ export interface PdfQuotationData {
   estimation: Estimation
   items: EstimationItem[]
   paymentTerms?: string[]
+  logoUrl?: string | null
 }
 
 const COLORS = {
@@ -17,17 +18,30 @@ const COLORS = {
   gray: '#6B7280'
 } as const
 
-const fontBase =
-  typeof window !== 'undefined' && window.location.origin
-    ? `${window.location.origin}/fonts`
-    : '/fonts'
+const COMPANY_NAME = 'KOKOHIN'
+const COMPANY_ADDRESS =
+  process.env.NEXT_PUBLIC_CONTACT_ADDRESS || 'Tangerang, Indonesia'
+const COMPANY_PHONE =
+  process.env.NEXT_PUBLIC_CONTACT_PHONE ||
+  process.env.NEXT_PUBLIC_WA_NUMBER ||
+  '-'
+const COMPANY_EMAIL =
+  process.env.NEXT_PUBLIC_CONTACT_EMAIL || '-'
+const COMPANY_HOURS =
+  process.env.NEXT_PUBLIC_CONTACT_HOURS || ''
+const COMPANY_WEBSITE =
+  process.env.NEXT_PUBLIC_COMPANY_WEBSITE || 'www.kokohin.com'
+
+// Determine font base URL - prefer environment variable for server-side rendering
+const fontBase = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' && window.location.origin ? window.location.origin : '');
+const fontPath = fontBase ? `${fontBase}/fonts` : '/fonts';
 
 Font.register({
   family: 'Montserrat',
   fonts: [
-    { src: `${fontBase}/Montserrat-Regular.ttf`, fontWeight: 'normal' },
-    { src: `${fontBase}/Montserrat-Bold.ttf`, fontWeight: 'bold' },
-    { src: `${fontBase}/Montserrat-SemiBold.ttf`, fontWeight: 'semibold' },
+    { src: `${fontPath}/Montserrat-Regular.ttf`, fontWeight: 'normal' },
+    { src: `${fontPath}/Montserrat-Bold.ttf`, fontWeight: 'bold' },
+    { src: `${fontPath}/Montserrat-SemiBold.ttf`, fontWeight: 'semibold' },
   ],
 })
 
@@ -52,6 +66,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12
+  },
+  logoImage: {
+    width: 60,
+    height: 60,
+    objectFit: 'contain'
   },
   logoPlaceholder: {
     width: 60,
@@ -203,6 +222,24 @@ const styles = StyleSheet.create({
     color: COLORS.dark,
     flex: 1
   },
+  disclaimerBox: {
+    marginTop: 16,
+    padding: 10,
+    backgroundColor: '#FFF5F5',
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.primary
+  },
+  disclaimerTitle: {
+    fontSize: 10,
+    color: COLORS.dark,
+    fontWeight: 'bold',
+    marginBottom: 4
+  },
+  disclaimerText: {
+    fontSize: 9,
+    color: COLORS.gray,
+    lineHeight: 1.4
+  },
   footer: {
     position: 'absolute',
     bottom: 40,
@@ -230,6 +267,10 @@ const formatCurrency = (amount: number): string => {
 const QuotationDocument = (data: PdfQuotationData) => {
   const formattedDate = format(new Date(), 'dd MMMM yyyy', { locale: id })
   const quotationNumber = `KOK-${data.project.id.slice(0, 8).toUpperCase()}-V${data.estimation.version_number}`
+  const companyLogo =
+    data.logoUrl ||
+    process.env.NEXT_PUBLIC_COMPANY_LOGO_URL ||
+    'https://via.placeholder.com/150x50.png?text=LOGO'
 
   // Default payment terms
   const defaultPaymentTerms = [
@@ -246,15 +287,18 @@ const QuotationDocument = (data: PdfQuotationData) => {
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoSection}>
-            <View style={styles.logoPlaceholder}>
-              <Text style={styles.logoText}>K</Text>
-            </View>
+            <PdfImage src={companyLogo} style={styles.logoImage} />
             <View style={styles.companyInfo}>
-              <Text style={styles.companyName}>KOKOHIN</Text>
+              <Text style={styles.companyName}>{COMPANY_NAME}</Text>
               <Text style={styles.companyTagline}>Kontraktor Kanopi & Pagar Profesional</Text>
+              <Text style={styles.companyTagline}>{COMPANY_ADDRESS}</Text>
+              <Text style={styles.companyTagline}>Telp: {COMPANY_PHONE}</Text>
+              <Text style={styles.companyTagline}>Email: {COMPANY_EMAIL}</Text>
+              {COMPANY_HOURS && (
+                <Text style={styles.companyTagline}>Jam Operasional: {COMPANY_HOURS}</Text>
+              )}
             </View>
           </View>
           <View>
@@ -348,9 +392,24 @@ const QuotationDocument = (data: PdfQuotationData) => {
           ))}
         </View>
 
+        <View style={styles.disclaimerBox}>
+          <Text style={styles.disclaimerTitle}>SYARAT & KETENTUAN (WAJIB DIBACA)</Text>
+          <Text style={styles.disclaimerText}>
+            1. Harga di atas adalah estimasi awal berdasarkan data yang tercatat di sistem.
+          </Text>
+          <Text style={styles.disclaimerText}>
+            2. Harga final atau harga kontrak dapat berubah setelah tim Kokohin melakukan survei lokasi aktual.
+          </Text>
+          <Text style={styles.disclaimerText}>
+            3. Penawaran ini berlaku selama 14 hari sejak tanggal diterbitkan atau sesuai kesepakatan tertulis.
+          </Text>
+        </View>
+
         {/* Footer */}
         <View style={styles.footer}>
-          <Text>KOKOHIN • Jl. Contoh No. 123, Depok, Jawa Barat • WhatsApp: +62 812-3456-7890 • www.kokohin.com</Text>
+          <Text>
+            {COMPANY_NAME} • {COMPANY_ADDRESS} • WhatsApp: {COMPANY_PHONE} • {COMPANY_WEBSITE}
+          </Text>
           <Text>Quotation ini dibuat secara otomatis oleh sistem Kokohin Mini‑ERP. Harap simpan untuk referensi.</Text>
         </View>
       </Page>

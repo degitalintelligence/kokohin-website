@@ -4,16 +4,15 @@ import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import type { CalculatorResult } from '@/lib/types';
 
-const fontBase =
-  typeof window !== 'undefined' && window.location.origin
-    ? `${window.location.origin}/fonts`
-    : '/fonts';
+// Determine font base URL - prefer environment variable for server-side rendering
+const fontBase = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' && window.location.origin ? window.location.origin : '');
+const fontPath = fontBase ? `${fontBase}/fonts` : '/fonts';
 
 Font.register({
   family: 'Montserrat',
   fonts: [
-    { src: `${fontBase}/Montserrat-Regular.ttf`, fontWeight: 400 },
-    { src: `${fontBase}/Montserrat-Bold.ttf`, fontWeight: 700 },
+    { src: `${fontPath}/Montserrat-Regular.ttf`, fontWeight: 400 },
+    { src: `${fontPath}/Montserrat-Bold.ttf`, fontWeight: 700 },
   ],
 });
 

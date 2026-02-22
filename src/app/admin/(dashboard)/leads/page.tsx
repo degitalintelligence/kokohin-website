@@ -98,6 +98,7 @@ export default async function AdminLeadsPage({
     .from('leads')
     .select('*, service:service_id(name)')
     .order('created_at', { ascending: false })
+    .limit(100)
   const { data: projects } = await supabase
     .from('erp_projects')
     .select('id, status, lead_id, estimations(total_selling_price, created_at, version_number)')
@@ -163,7 +164,7 @@ export default async function AdminLeadsPage({
             <div className="w-10 h-10 rounded-full bg-gray-200 border-2 border-white shadow-sm overflow-hidden">
               <Image
                 src="https://ui-avatars.com/api/?name=Admin+Proyek&background=1D1D1B&color=fff"
-                alt="User"
+                alt="Avatar Admin Proyek"
                 width={40}
                 height={40}
                 className="w-full h-full object-cover"
