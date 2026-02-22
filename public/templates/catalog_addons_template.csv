@@ -1,0 +1,5 @@
+material_id,basis,qty_per_basis,is_optional
+<uuid-material>,m2,1,true
+<uuid-material>,m1,0.5,false
+<uuid-material>,unit,2,true
+

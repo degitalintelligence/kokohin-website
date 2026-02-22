@@ -279,7 +279,7 @@ const QuotationDocument = (data: PdfQuotationData) => {
     'Pembayaran via transfer bank (BCA/Mandiri/BNI)',
     'Quotation berlaku 14 hari dari tanggal diterbitkan',
     'Harga sudah termasuk PPN 11%',
-    'Garansi konstruksi 2 tahun, material 5 tahun'
+    'Garansi konstruksi 1 tahun, material 1 tahun'
   ]
 
   const paymentTerms = data.paymentTerms || defaultPaymentTerms

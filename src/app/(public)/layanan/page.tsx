@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 }
 
 const BENEFITS = [
-    { text: 'Garansi konstruksi 2 tahun', icon: ShieldCheck },
+    { text: 'Garansi konstruksi 1 tahun', icon: ShieldCheck },
     { text: 'Material berkualitas & berstandar SNI', icon: CheckCircle },
     { text: 'Pengerjaan rapih & tepat waktu', icon: Clock },
     { text: 'Survei & estimasi GRATIS', icon: Wrench },

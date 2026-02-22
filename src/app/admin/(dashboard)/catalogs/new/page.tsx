@@ -4,6 +4,9 @@ import Link from 'next/link'
 import { AlertTriangle } from 'lucide-react'
 import { createCatalog } from '@/app/actions/catalogs'
 import styles from '../../page.module.css'
+import CatalogAddonsEditor from '../components/CatalogAddonsEditor'
+import CatalogBaseFields from '../components/CatalogBaseFields'
+import CatalogEstimatePreview from '../components/CatalogEstimatePreview'
 
 export default async function AdminCatalogNewPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error: errorMessage } = await searchParams
@@ -13,9 +16,10 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
   if (!user && !bypass) redirect('/admin/login')
 
   // Fetch materials for dropdowns
-  const [{ data: atapList }, { data: rangkaList }] = await Promise.all([
+  const [{ data: atapList }, { data: rangkaList }, { data: allMaterials }] = await Promise.all([
     supabase.from('materials').select('id, name').eq('category', 'atap').eq('is_active', true).order('name'),
-    supabase.from('materials').select('id, name').eq('category', 'frame').eq('is_active', true).order('name')
+    supabase.from('materials').select('id, name').eq('category', 'frame').eq('is_active', true).order('name'),
+    supabase.from('materials').select('id, name, category, base_price_per_unit, unit').eq('is_active', true).order('name')
   ])
 
   return (
@@ -49,7 +53,7 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
             </div>
           )}
 
-          <form id="newCatalogForm" action={createCatalog} className="p-6 space-y-6">
+          <form id="newCatalogForm" action={createCatalog} className="p-6 space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-2">Nama Paket *</label>
@@ -62,41 +66,74 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Material Atap</label>
-                <select name="atap_id" className="w-full px-4 py-2 border rounded-md">
-                  <option value="">Pilih Atap...</option>
-                  {atapList?.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
+              <CatalogBaseFields atapList={atapList ?? []} rangkaList={rangkaList ?? []} />
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium mb-2">Harga Dasar (Rp) *</label>
+                  <input
+                    type="number"
+                    name="base_price_per_m2"
+                    className="w-full px-4 py-2 border rounded-md"
+                    placeholder="0"
+                    min="0"
+                    step="1000"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Satuan</label>
+                  <select name="base_price_unit" className="w-full px-4 py-2 border rounded-md">
+                    <option value="m2">m²</option>
+                    <option value="m1">m¹</option>
+                    <option value="unit">unit</option>
+                  </select>
+                </div>
+                <p className="text-sm text-gray-500 col-span-3">Harga sebelum markup zona</p>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Material Rangka</label>
-                <select name="rangka_id" className="w-full px-4 py-2 border rounded-md">
-                  <option value="">Pilih Rangka...</option>
-                  {rangkaList?.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-1">
+                  <label className="block text-sm font-medium mb-2">Tenaga Kerja (Rp)</label>
+                  <input
+                    type="number"
+                    name="labor_cost"
+                    className="w-full px-4 py-2 border rounded-md"
+                    placeholder="0"
+                    min="0"
+                    step="1000"
+                    defaultValue={0}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Mengikuti satuan harga dasar</p>
+                </div>
+                <div className="col-span-1">
+                  <label className="block text-sm font-medium mb-2">Transport (Rp)</label>
+                  <input
+                    type="number"
+                    name="transport_cost"
+                    className="w-full px-4 py-2 border rounded-md"
+                    placeholder="0"
+                    min="0"
+                    step="1000"
+                    defaultValue={0}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Biaya flat sekali proyek</p>
+                </div>
+                <div className="col-span-1">
+                  <label className="block text-sm font-medium mb-2">Margin (%)</label>
+                  <input
+                    type="number"
+                    name="margin_percentage"
+                    className="w-full px-4 py-2 border rounded-md"
+                    placeholder="0"
+                    min="0"
+                    step="1"
+                    defaultValue={0}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-2">Harga Dasar per m² (Rp) *</label>
-                <input
-                  type="number"
-                  name="base_price_per_m2"
-                  className="w-full px-4 py-2 border rounded-md"
-                  placeholder="0"
-                  min="0"
-                  step="1000"
-                  required
-                />
-                <p className="text-sm text-gray-500 mt-1">Harga belum termasuk markup zona</p>
-              </div>
-
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-2">Upload Gambar (Opsional)</label>
                 <input
                   type="file"
@@ -120,6 +157,15 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                 </label>
               </div>
             </div>
+
+            <div className="pt-6 border-t">
+              <CatalogAddonsEditor materials={allMaterials ?? []} />
+              <p className="text-xs text-gray-500 mt-2">
+                Item bertanda opsional dapat dicentang oleh sales/customer di kalkulator.
+              </p>
+            </div>
+
+            <CatalogEstimatePreview formId="newCatalogForm" />
           </form>
         </div>
     </div>

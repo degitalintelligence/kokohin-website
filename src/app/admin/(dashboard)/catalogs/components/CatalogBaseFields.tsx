@@ -1,0 +1,94 @@
+'use client'
+
+import { useMemo, useState } from 'react'
+
+type Option = { id: string; name: string }
+type Category = '' | 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya'
+
+export default function CatalogBaseFields({
+  atapList,
+  rangkaList,
+  initialCategory = '',
+  initialAtapId = '',
+  initialRangkaId = ''
+}: {
+  atapList: Option[]
+  rangkaList: Option[]
+  initialCategory?: Category
+  initialAtapId?: string
+  initialRangkaId?: string
+}) {
+  const [category, setCategory] = useState<Category>(initialCategory || '')
+  const [atapId, setAtapId] = useState(initialAtapId || '')
+  const [rangkaId, setRangkaId] = useState(initialRangkaId || '')
+
+  const showAtap = useMemo(() => category === 'kanopi', [category])
+  const showRangka = useMemo(() => category !== 'aksesoris' && category !== 'lainnya', [category])
+
+  const onCategoryChange = (next: Category) => {
+    setCategory(next)
+    if (next !== 'kanopi') setAtapId('')
+    if (next === 'aksesoris' || next === 'lainnya') setRangkaId('')
+  }
+
+  return (
+    <>
+      <div>
+        <label className="block text-sm font-medium mb-2">Kategori *</label>
+        <select
+          name="category"
+          className="w-full px-4 py-2 border rounded-md"
+          required
+          value={category}
+          onChange={(e) => onCategoryChange(e.target.value as Category)}
+        >
+          <option value="">Pilih Kategori...</option>
+          <option value="kanopi">Kanopi</option>
+          <option value="pagar">Pagar</option>
+          <option value="railing">Railing</option>
+          <option value="aksesoris">Aksesoris</option>
+          <option value="lainnya">Lainnya</option>
+        </select>
+      </div>
+
+      {showAtap ? (
+        <div>
+          <label className="block text-sm font-medium mb-2">Material Atap</label>
+          <select
+            name="atap_id"
+            className="w-full px-4 py-2 border rounded-md"
+            value={atapId}
+            onChange={(e) => setAtapId(e.target.value)}
+            required={showAtap}
+          >
+            <option value="">Pilih Atap...</option>
+            {atapList?.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <input type="hidden" name="atap_id" value="" />
+      )}
+
+      {showRangka ? (
+        <div>
+          <label className="block text-sm font-medium mb-2">Material Rangka</label>
+          <select
+            name="rangka_id"
+            className="w-full px-4 py-2 border rounded-md"
+            value={rangkaId}
+            onChange={(e) => setRangkaId(e.target.value)}
+          >
+            <option value="">Pilih Rangka...</option>
+            {rangkaList?.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <input type="hidden" name="rangka_id" value="" />
+      )}
+    </>
+  )
+}

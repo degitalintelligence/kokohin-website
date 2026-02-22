@@ -157,13 +157,6 @@ const styles = StyleSheet.create({
 });
 
 // TYPE DEFINITIONS
-interface EstimationItem {
-  name: string;
-  qty: number | string;
-  unit: string;
-  subtotal: number;
-}
-
 interface QuotationPDFProps {
   result: CalculatorResult;
   leadInfo: {
@@ -173,6 +166,10 @@ interface QuotationPDFProps {
   projectId: string | null;
   zoneName?: string | null;
   logoUrl?: string | null;
+  specifications: string;
+  projectArea: number;
+  projectType?: string;
+  areaUnit?: string;
 }
 
 // 3. MAIN COMPONENT
@@ -182,30 +179,16 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
   projectId,
   zoneName,
   logoUrl,
+  specifications,
+  projectArea,
+  projectType = 'Pekerjaan Pembuatan Kanopi',
+  areaUnit = 'm²',
 }) => {
   const estimationNumber = projectId ? `WEB-${projectId.slice(0, 8).toUpperCase()}` : 'WEB-PREVIEW';
   const customerName = leadInfo.name || 'Customer';
   const customerPhone = leadInfo.whatsapp || '-';
-  const projectType = 'Kanopi / Pagar Rumah';
-  const areaLabel = `${result.luas.toFixed(1)} m²`;
   const zoneLabel = zoneName || 'Belum dipilih';
-
-  const items: EstimationItem[] =
-    result.breakdown && result.breakdown.length > 0
-      ? result.breakdown.map((b) => ({
-          name: b.name,
-          qty: b.qtyCharged,
-          unit: b.unit,
-          subtotal: b.subtotal,
-        }))
-      : [
-          {
-            name: 'Paket Pekerjaan Kanopi',
-            qty: `${result.luas.toFixed(1)} m²`,
-            unit: 'm²',
-            subtotal: result.estimatedPrice,
-          },
-        ];
+  const areaLabel = `${projectArea} ${areaUnit}`;
 
   const totalPrice = result.estimatedPrice;
   const companyName = 'KOKOHIN';
@@ -272,16 +255,14 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
           </View>
           
           {/* Table Rows */}
-          {items.map((item, index) => (
-            <View style={styles.tableRow} key={index}>
-              <Text style={styles.col1}>{index + 1}</Text>
-              <Text style={styles.col2}>{item.name}</Text>
-              <Text style={styles.col3}>{item.qty} {item.unit}</Text>
-              <Text style={styles.col4}>
-                Rp {item.subtotal.toLocaleString('id-ID')}
-              </Text>
-            </View>
-          ))}
+          <View style={styles.tableRow} key={1}>
+            <Text style={styles.col1}>1</Text>
+            <Text style={styles.col2}>{projectType} - {specifications}</Text>
+            <Text style={styles.col3}>{areaLabel}</Text>
+            <Text style={styles.col4}>
+              Rp {totalPrice.toLocaleString('id-ID')}
+            </Text>
+          </View>
         </View>
 
         {/* TOTALS SECTION */}

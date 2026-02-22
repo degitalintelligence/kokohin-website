@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Montserrat } from 'next/font/google'
 import './globals.css'
+import { Toaster } from '@/components/ui/toaster'
 
 const montserrat = Montserrat({
   subsets: ['latin'],
@@ -33,6 +34,7 @@ export default function RootLayout({
     <html lang="id" className={montserrat.variable}>
       <body className="font-sans">
         {children}
+        <Toaster />
       </body>
     </html>
   )

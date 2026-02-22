@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { deleteMaterial } from '@/app/actions/materials'
+import { toast } from '@/components/ui/toaster'
 
 interface DeleteMaterialButtonProps {
   id: string
@@ -17,11 +18,12 @@ export default function DeleteMaterialButton({ id }: DeleteMaterialButtonProps) 
       setIsDeleting(true)
       try {
         await deleteMaterial(id)
+        toast.success('Material berhasil dihapus')
         router.push('/admin/materials')
         router.refresh()
       } catch (error) {
         console.error('Error deleting material:', error)
-        alert('Gagal menghapus material')
+        toast.error('Gagal menghapus material', error instanceof Error ? error.message : 'Terjadi kesalahan')
         setIsDeleting(false)
       }
     }

@@ -67,9 +67,27 @@ export function calculateMaterialCost(material: Material, qtyNeeded: number): {
 
 /**
  * Kalkulasi harga berdasarkan katalog paket
+ * basePriceValue: harga dasar sesuai satuan
+ * unit:
+ *  - 'm2' => kuantitas = panjang * lebar
+ *  - 'm1' => kuantitas = panjang
+ *  - 'unit' => kuantitas = 1
  */
-export function calculateCatalogPrice(basePricePerM2: number, luas: number): number {
-  return basePricePerM2 * luas
+export function calculateCatalogPrice(
+  basePriceValue: number,
+  unit: 'm2' | 'm1' | 'unit' = 'm2',
+  panjang = 0,
+  lebar = 0
+): number {
+  let quantity = 1
+  if (unit === 'm2') {
+    quantity = Math.max(0, panjang) * Math.max(0, lebar)
+  } else if (unit === 'm1') {
+    quantity = Math.max(0, panjang)
+  } else {
+    quantity = 1
+  }
+  return basePriceValue * quantity
 }
 
 /**
@@ -174,9 +192,19 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
   const luas = input.panjang * input.lebar
   const supabase = createClient()
   if (input.catalogId) {
+    type CatalogRow = {
+      id: string
+      base_price_per_m2: number | null
+      base_price_unit: 'm2' | 'm1' | 'unit' | null
+      labor_cost: number | null
+      transport_cost: number | null
+      margin_percentage: number | null
+      atap_id: string | null
+      rangka_id: string | null
+    }
     const { data: catalog, error: catalogError } = await supabase
       .from('catalogs')
-      .select('id, base_price_per_m2, atap_id, rangka_id')
+      .select('id, base_price_per_m2, base_price_unit, labor_cost, transport_cost, margin_percentage, atap_id, rangka_id')
       .eq('id', input.catalogId)
       .eq('is_active', true)
       .maybeSingle()
@@ -184,13 +212,67 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
       throw new Error('Katalog belum tersedia')
     }
 
-    const basePrice = calculateCatalogPrice(catalog.base_price_per_m2 ?? 0, luas)
+    const row = catalog as CatalogRow
+    const unit = (row.base_price_unit ?? 'm2')
+    const basePrice = calculateCatalogPrice(row.base_price_per_m2 ?? 0, unit, input.panjang, input.lebar)
+    const laborCostUnit = calculateCatalogPrice(row.labor_cost ?? 0, unit, input.panjang, input.lebar)
+    const transportCost = row.transport_cost ?? 0
+
+    // Fetch catalog addons with material info
+    type AddonWithMaterial = {
+      id: string
+      qty_per_m2: number
+      basis?: 'm2' | 'm1' | 'unit' | null
+      qty_per_basis?: number | null
+      is_optional: boolean
+      material?: {
+        name: string
+        base_price_per_unit: number
+        unit: string
+      } | {
+        name: string
+        base_price_per_unit: number
+        unit: string
+      }[]
+    }
+
+    const { data: addons } = await supabase
+      .from('catalog_addons')
+      .select('id, basis, qty_per_basis, is_optional, material:material_id(name, base_price_per_unit, unit)')
+      .eq('catalog_id', input.catalogId)
+
+    const selectedSet = new Set(input.selectedAddonIds ?? [])
+    const normalizedAddons: (AddonWithMaterial & { material?: { name: string; base_price_per_unit: number; unit: string } })[] =
+      (addons as AddonWithMaterial[] | null | undefined)?.map(a => ({
+        ...a,
+        material: Array.isArray(a.material) ? a.material[0] : a.material
+      })) ?? []
+    const includedAddons = normalizedAddons.filter(a => !a.is_optional || selectedSet.has(a.id))
+
+    const addonCost = includedAddons.reduce((sum, a) => {
+      const price = a.material?.base_price_per_unit ?? 0
+      const basis = (a.basis ?? 'm2')
+      const qty = (typeof a.qty_per_basis === 'number' ? a.qty_per_basis : 0)
+      let multiplier = 1
+      if (basis === 'm2') {
+        multiplier = luas
+      } else if (basis === 'm1') {
+        multiplier = Math.max(0, input.panjang)
+      } else {
+        multiplier = 1
+      }
+      return sum + price * qty * multiplier
+    }, 0)
+
     const { data: zone } = input.zoneId
       ? await supabase.from('zones').select('*').eq('id', input.zoneId).maybeSingle()
       : { data: null }
     const markupPercentage = zone?.markup_percentage ?? 0
     const flatFee = zone?.flat_fee ?? 0
-    const estimatedPrice = applyZoneMarkup(basePrice, markupPercentage, flatFee)
+    const hppBeforeMargin = basePrice + addonCost + laborCostUnit + transportCost
+    const marginPct = row.margin_percentage ?? 0
+    const totalHpp = hppBeforeMargin * (1 + (marginPct / 100))
+    const estimatedPrice = applyZoneMarkup(totalHpp, markupPercentage, flatFee)
 
     // Validasi auto-upsell constraints
     const warnings: string[] = []
@@ -234,15 +316,36 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
 
     return {
       luas,
-      materialCost: basePrice,
+      materialCost: totalHpp,
       wasteCost: 0,
-      totalHpp: basePrice,
-      marginPercentage: 0,
+      totalHpp,
+      marginPercentage: marginPct,
       markupPercentage,
       flatFee,
       totalSellingPrice: estimatedPrice,
       estimatedPrice,
-      breakdown: [],
+      breakdown: includedAddons.map((a) => {
+        const basis = (a.basis ?? 'm2')
+        const qtyBasis = (typeof a.qty_per_basis === 'number' ? a.qty_per_basis : 0)
+        let multiplier = 1
+        if (basis === 'm2') {
+          multiplier = luas
+        } else if (basis === 'm1') {
+          multiplier = Math.max(0, input.panjang)
+        } else {
+          multiplier = 1
+        }
+        const qtyNeeded = qtyBasis * multiplier
+        const pricePerUnit = a.material?.base_price_per_unit ?? 0
+        return {
+          name: a.material?.name ?? 'Addon',
+          qtyNeeded,
+          qtyCharged: qtyNeeded,
+          unit: a.material?.unit ?? '',
+          pricePerUnit,
+          subtotal: pricePerUnit * qtyNeeded,
+        }
+      }),
       warnings: warnings.length > 0 ? warnings : undefined,
       suggestedItems: suggestedItems.length > 0 ? suggestedItems : undefined
     }

@@ -2,20 +2,23 @@ import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { AlertTriangle } from 'lucide-react'
-import { updateCatalog } from '@/app/actions/catalogs'
+import { AlertTriangle, CheckCircle } from 'lucide-react'
+import { updateCatalog, importCatalogAddons } from '@/app/actions/catalogs'
 import styles from '../../page.module.css'
 import DeleteCatalogButton from '../components/DeleteCatalogButton'
+import CatalogAddonsEditor from '../components/CatalogAddonsEditor'
+import CatalogBaseFields from '../components/CatalogBaseFields'
+import CatalogEstimatePreview from '../components/CatalogEstimatePreview'
 
 export default async function AdminCatalogDetailPage({ 
   params,
   searchParams 
 }: { 
   params: Promise<{ id: string }>
-  searchParams: Promise<{ error?: string }> 
+  searchParams: Promise<{ error?: string; import?: string; import_detail?: string; import_detail_url?: string }> 
 }) {
   const { id } = await params
-  const { error: errorMessage } = await searchParams
+  const { error: errorMessage, import: importResult, import_detail: importDetail, import_detail_url: importDetailUrl } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
@@ -28,10 +31,16 @@ export default async function AdminCatalogDetailPage({
     .eq('id', id)
     .single()
 
-  // Fetch materials for dropdowns
-  const [{ data: atapList }, { data: rangkaList }] = await Promise.all([
+  // Fetch materials for dropdowns + addons data
+  const [{ data: atapList }, { data: rangkaList }, { data: allMaterials }, { data: addons }] = await Promise.all([
     supabase.from('materials').select('id, name').eq('category', 'atap').eq('is_active', true).order('name'),
-    supabase.from('materials').select('id, name').eq('category', 'frame').eq('is_active', true).order('name')
+    supabase.from('materials').select('id, name').eq('category', 'frame').eq('is_active', true).order('name'),
+    supabase.from('materials').select('id, name, category, base_price_per_unit, unit').eq('is_active', true).order('name'),
+    supabase
+      .from('catalog_addons')
+      .select('id, material_id, basis, qty_per_basis, is_optional, material:material_id(id, name, base_price_per_unit, unit, category)')
+      .eq('catalog_id', id)
+      .order('created_at', { ascending: true })
   ])
 
   if (error || !catalog) {
@@ -80,8 +89,37 @@ export default async function AdminCatalogDetailPage({
             {decodeURIComponent(errorMessage)}
           </div>
         )}
+        {importResult && (
+          <div className="mx-6 mt-4 p-4 bg-green-50 text-green-700 border border-green-200 rounded-md flex items-center gap-2">
+            <CheckCircle className="w-4 h-4" />
+            {decodeURIComponent(importResult)}
+          </div>
+        )}
+        {importDetail && (
+          <div className="mx-6 mt-2 p-4 border border-gray-200 rounded-md bg-white text-sm">
+            <div className="font-medium mb-2">Detil:</div>
+            <ul className="list-disc pl-5 space-y-1">
+              {decodeURIComponent(importDetail).split('|').filter(Boolean).map((d, i) => (
+                <li key={i}>{d}</li>
+              ))}
+            </ul>
+            {importDetailUrl && (
+              <div className="mt-3">
+                <a
+                  href={decodeURIComponent(importDetailUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-3 py-2 rounded-md text-white"
+                  style={{ backgroundColor: '#E30613' }}
+                >
+                  Download detil (JSON)
+                </a>
+              </div>
+            )}
+          </div>
+        )}
 
-        <form id="editCatalogForm" action={updateCatalog} className="p-6 space-y-6">
+        <form id="editCatalogForm" action={updateCatalog} className="p-6 space-y-8">
           <input type="hidden" name="id" value={catalog.id} />
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -97,47 +135,84 @@ export default async function AdminCatalogDetailPage({
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Material Atap</label>
-              <select 
-                name="atap_id" 
-                defaultValue={catalog.atap_id || ''}
-                className="w-full px-4 py-2 border rounded-md"
-              >
-                <option value="">Pilih Atap...</option>
-                {atapList?.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
+            <CatalogBaseFields
+              atapList={atapList ?? []}
+              rangkaList={rangkaList ?? []}
+              initialCategory={catalog.category ?? ''}
+              initialAtapId={catalog.atap_id || ''}
+              initialRangkaId={catalog.rangka_id || ''}
+            />
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-2">Harga Dasar (Rp) *</label>
+                <input
+                  type="number"
+                  name="base_price_per_m2"
+                  defaultValue={catalog.base_price_per_m2}
+                  className="w-full px-4 py-2 border rounded-md"
+                  placeholder="0"
+                  min={0}
+                  step={1000}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Satuan</label>
+                <select
+                  name="base_price_unit"
+                  defaultValue={catalog.base_price_unit || 'm2'}
+                  className="w-full px-4 py-2 border rounded-md"
+                >
+                  <option value="m2">m²</option>
+                  <option value="m1">m¹</option>
+                  <option value="unit">unit</option>
+                </select>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Material Rangka</label>
-              <select 
-                name="rangka_id" 
-                defaultValue={catalog.rangka_id || ''}
-                className="w-full px-4 py-2 border rounded-md"
-              >
-                <option value="">Pilih Rangka...</option>
-                {rangkaList?.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-1">
+                <label className="block text-sm font-medium mb-2">Tenaga Kerja (Rp)</label>
+                <input
+                  type="number"
+                  name="labor_cost"
+                  defaultValue={(catalog as { labor_cost?: number }).labor_cost ?? 0}
+                  className="w-full px-4 py-2 border rounded-md"
+                  placeholder="0"
+                  min={0}
+                  step={1000}
+                />
+                <p className="text-xs text-gray-500 mt-1">Mengikuti satuan harga dasar</p>
+              </div>
+              <div className="col-span-1">
+                <label className="block text-sm font-medium mb-2">Transport (Rp)</label>
+                <input
+                  type="number"
+                  name="transport_cost"
+                  defaultValue={(catalog as { transport_cost?: number }).transport_cost ?? 0}
+                  className="w-full px-4 py-2 border rounded-md"
+                  placeholder="0"
+                  min={0}
+                  step={1000}
+                />
+                <p className="text-xs text-gray-500 mt-1">Biaya flat sekali proyek</p>
+              </div>
+              <div className="col-span-1">
+                <label className="block text-sm font-medium mb-2">Margin (%)</label>
+                <input
+                  type="number"
+                  name="margin_percentage"
+                  defaultValue={(catalog as { margin_percentage?: number }).margin_percentage ?? 0}
+                  className="w-full px-4 py-2 border rounded-md"
+                  placeholder="0"
+                  min={0}
+                  step={1}
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Harga Dasar per m² (Rp) *</label>
-              <input
-                type="number"
-                name="base_price_per_m2"
-                defaultValue={catalog.base_price_per_m2}
-                className="w-full px-4 py-2 border rounded-md"
-                placeholder="0"
-                required
-              />
-            </div>
-
-            <div>
+            <div className="md:col-span-2">
               <label className="block text-sm font-medium mb-2">Upload Gambar</label>
               {catalog.image_url && (
                 <div className="mb-2">
@@ -173,7 +248,70 @@ export default async function AdminCatalogDetailPage({
               </label>
             </div>
           </div>
+
+          <div className="pt-6 border-t">
+            <CatalogAddonsEditor
+              materials={allMaterials ?? []}
+              initialAddons={(addons ?? []).map((a) => {
+                type AddonMaterial = {
+                  id: string;
+                  name: string;
+                  base_price_per_unit: number;
+                  unit: 'batang' | 'lembar' | 'm1' | 'm2' | 'hari' | 'unit';
+                  category: 'atap' | 'frame' | 'aksesoris' | 'lainnya';
+                }
+                type RawAddon = {
+                  id: string;
+                  material_id: string;
+                  basis?: 'm2' | 'm1' | 'unit';
+                  qty_per_basis?: number;
+                  is_optional: boolean;
+                  material?: AddonMaterial | AddonMaterial[];
+                }
+                const ra = a as RawAddon
+                const material = Array.isArray(ra.material) ? ra.material[0] : ra.material
+                const basis = ra.basis ?? 'm2'
+                const qtyPerBasis = ra.qty_per_basis ?? 0
+                return { ...ra, material, basis, qty_per_basis: qtyPerBasis }
+              })}
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              Item bertanda opsional dapat dicentang oleh sales/customer di kalkulator.
+            </p>
+          </div>
+
+          <CatalogEstimatePreview formId="editCatalogForm" />
         </form>
+      </div>
+
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Import Addons dari CSV</h2>
+        </div>
+        <div className="p-6">
+          <form action={importCatalogAddons} className="flex flex-wrap items-center gap-3">
+            <input type="hidden" name="catalog_id" value={catalog.id} />
+            <input type="file" name="file" accept=".csv" className="text-sm" />
+            <select name="mode" defaultValue="replace" className="px-3 py-2 border rounded-md bg-white">
+              <option value="replace">replace (hapus & ganti)</option>
+              <option value="append">append (tambah baru)</option>
+              <option value="upsert">upsert (update jika ada, jika tidak tambah)</option>
+            </select>
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input type="checkbox" name="preview" value="1" />
+              <span>Preview saja</span>
+            </label>
+            <button type="submit" className="px-4 py-2 rounded-md text-white" style={{ backgroundColor: '#E30613' }}>
+              Import CSV
+            </button>
+            <a href="/templates/catalog_addons_template.csv" className="text-sm underline">
+              Download Template
+            </a>
+          </form>
+          <p className="text-xs text-gray-500 mt-2">
+            Kolom: material_id, basis (m2/m1/unit), qty_per_basis, is_optional.
+          </p>
+        </div>
       </div>
     </div>
   )

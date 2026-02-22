@@ -259,7 +259,7 @@ export default function HomePage() {
         <div className="container relative z-10 text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 mb-6 animate-fade-in-up shadow-lg">
             <ShieldCheck size={16} className="text-primary drop-shadow-md" />
-            <span className="text-sm font-semibold tracking-wide drop-shadow-md">GARANSI KONSTRUKSI 2 TAHUN</span>
+            <span className="text-sm font-semibold tracking-wide drop-shadow-md">GARANSI KONSTRUKSI 1 TAHUN</span>
           </div>
           
           <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6 leading-tight max-w-5xl mx-auto drop-shadow-2xl">

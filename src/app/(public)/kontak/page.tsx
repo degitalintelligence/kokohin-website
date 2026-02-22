@@ -10,15 +10,14 @@ export const metadata: Metadata = {
 
 export default async function KontakPage() {
     const supabase = await createClient()
-    const { data: catalogs } = await supabase
-        .from('catalogs')
-        .select('id, title')
-        .eq('is_active', true)
-        .order('title', { ascending: true })
+    const { data: servicesRows } = await supabase
+        .from('services')
+        .select('id, name')
+        .order('name', { ascending: true })
 
-    const services = (catalogs || []).map(c => ({
-        id: c.id,
-        name: c.title
+    const services = (servicesRows || []).map(s => ({
+        id: s.id,
+        name: s.name
     }))
 
     const CONTACT_INFO = [

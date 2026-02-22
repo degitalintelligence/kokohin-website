@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Calculator, Ruler, MapPin, Package, AlertCircle, FileDown } from 'lucide-react'
 import { calculateCanopyPrice, formatRupiah, formatNumber } from '@/lib/calculator'
-import type { CalculatorInput, CalculatorResult, Material, Zone, Catalog } from '@/lib/types'
+import type { CalculatorInput, CalculatorResult, Material, Zone, Catalog, CatalogAddon } from '@/lib/types'
 import { createEstimation } from '@/app/actions/estimations'
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
@@ -52,6 +52,8 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
   const [materials, setMaterials] = useState<Material[]>([])
   const [zones, setZones] = useState<Zone[]>([])
   const [catalogData, setCatalogData] = useState<Catalog | null>(null)
+  const [catalogAddons, setCatalogAddons] = useState<(CatalogAddon & { material?: Material })[]>([])
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([])
   const [dataError, setDataError] = useState<string | null>(null)
   const [calcError, setCalcError] = useState<string | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
@@ -86,7 +88,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
         return
       }
       
-      const calculation = await calculateCanopyPrice(input)
+      const calculation = await calculateCanopyPrice({ ...input, selectedAddonIds })
       setPendingResult(calculation)
       setIsLeadCaptured(false)
     } catch (error) {
@@ -291,6 +293,8 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     const fetchCatalogData = async () => {
       if (!input.catalogId) {
         setCatalogData(null)
+        setCatalogAddons([])
+        setSelectedAddonIds([])
         return
       }
 
@@ -298,24 +302,35 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
         const supabase = createClient()
         const { data, error } = await supabase
           .from('catalogs')
-          .select('*, atap:atap_id(*), rangka:rangka_id(*)')
+          .select('*, atap:atap_id(*), rangka:rangka_id(*), catalog_addons(id, basis, qty_per_basis, is_optional, material:material_id(id, name, base_price_per_unit, unit, category))')
           .eq('id', input.catalogId)
           .eq('is_active', true)
           .maybeSingle()
 
         if (error || !data) {
           setCatalogData(null)
+          setCatalogAddons([])
+          setSelectedAddonIds([])
           return
         }
 
-        setCatalogData(data)
+        type CatalogWithAddons = Catalog & {
+          catalog_addons?: (CatalogAddon & { material?: Material | Material[] })[]
+        }
+        const typed = data as CatalogWithAddons
+        const normalizedAddons =
+          (typed.catalog_addons ?? []).map(a => ({
+            ...a,
+            material: Array.isArray(a.material) ? a.material[0] : a.material
+          }))
+        setCatalogData(typed as Catalog)
+        setCatalogAddons(normalizedAddons)
+        setSelectedAddonIds([])
 
-        // Pre-fill material dropdown dengan rangka_id jika ada
         if (data.rangka_id) {
           setInput((prev) => ({ ...prev, materialId: data.rangka_id }))
         }
 
-        // Smooth scroll ke kalkulator setelah data katalog di-load
         setTimeout(() => {
           const calculatorElement = document.getElementById('canopy-calculator')
           if (calculatorElement) {
@@ -470,12 +485,52 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                           {catalogData.atap && ` • Atap: ${catalogData.atap.name}`}
                           {catalogData.rangka && ` • Rangka: ${catalogData.rangka.name}`}
                         </p>
+                        {catalogAddons.some(a => a.is_optional) && (
+                          <div className="mt-3">
+                            <p className="text-sm text-blue-700 font-medium mb-2">Komponen Tambahan (Opsional)</p>
+                            <div className="space-y-2">
+                              {catalogAddons.filter(a => a.is_optional).map((a) => {
+                                const basis = (a.basis ?? 'm2') as 'm2' | 'm1' | 'unit'
+                                const qtyBasis = typeof a.qty_per_basis === 'number' ? a.qty_per_basis : 0
+                                const pricePerBasis = (a.material?.base_price_per_unit || 0) * qtyBasis
+                                const checked = selectedAddonIds.includes(a.id)
+                                return (
+                                  <label key={a.id} className="flex items-center justify-between gap-3 p-2 bg-white rounded border">
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={(e) => {
+                                          const next = e.target.checked
+                                            ? [...selectedAddonIds, a.id]
+                                            : selectedAddonIds.filter(id => id !== a.id)
+                                          setSelectedAddonIds(next)
+                                        }}
+                                      />
+                                      <span className="text-sm">{a.material?.name}</span>
+                                    </div>
+                                    <div className="text-right">
+                                      <div className="text-sm text-blue-700 font-semibold">
+                                        + {formatRupiah(pricePerBasis)}/{basis}
+                                      </div>
+                                      <div className="text-[11px] text-gray-500">
+                                        {basis === 'm2' ? 'mengikuti luas (p×l)' : basis === 'm1' ? 'mengikuti panjang (p)' : 'per unit'}
+                                      </div>
+                                    </div>
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <button
                         type="button"
                         onClick={() => {
                           setInput(prev => ({ ...prev, catalogId: undefined, materialId: undefined }))
                           setCatalogData(null)
+                          setCatalogAddons([])
+                          setSelectedAddonIds([])
                         }}
                         className="text-blue-700 hover:text-blue-900 text-sm font-medium"
                       >
@@ -755,6 +810,10 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                             projectId={projectId}
                             zoneName={activeZoneName}
                             logoUrl={logoUrl}
+                            specifications={result.breakdown?.map(item => item.name).join(', ') || 'Paket Pekerjaan Kanopi'}
+                            projectArea={result.luas}
+                            projectType={'Pekerjaan Pembuatan Kanopi'}
+                            areaUnit="m²"
                           />
                         }
                         fileName={`Penawaran_Kokohin_${leadInfo.name.replace(/\s+/g, '_')}.pdf`}
@@ -795,7 +854,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
               <ul className="space-y-2 text-sm text-gray-700">
                 <li className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                  <span>Garansi material 5 tahun</span>
+                  <span>Garansi material 1 tahun</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>

@@ -7,7 +7,7 @@ import type { Catalog } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 
 const features = [
-  { icon: Shield, text: 'Garansi Material 5 Tahun' },
+  { icon: Shield, text: 'Garansi Material 1 Tahun' },
   { icon: Check, text: 'Survey & Konsultasi Gratis' },
   { icon: Star, text: 'Free Maintenance 1 Tahun' },
   { icon: TrendingUp, text: 'Harga Terjangkau' }
@@ -229,7 +229,7 @@ export default function CatalogGrid() {
                 <div className="text-sm text-white/80">Proyek Selesai</div>
               </div>
               <div className="bg-white/10 rounded-xl p-4 text-center">
-                <div className="text-2xl font-bold">5 Tahun</div>
+                <div className="text-2xl font-bold">1 Tahun</div>
                 <div className="text-sm text-white/80">Garansi Material</div>
               </div>
               <div className="bg-white/10 rounded-xl p-4 text-center">
@@ -266,7 +266,7 @@ export default function CatalogGrid() {
             },
             {
               q: 'Bagaimana dengan garansi?',
-              a: 'Kami memberikan garansi material 5 tahun dan garansi instalasi 1 tahun untuk semua produk kami.'
+              a: 'Kami memberikan garansi material 1 tahun dan garansi instalasi 1 tahun untuk semua produk kami.'
             }
           ].map((faq, index) => (
             <div key={index} className="card hover:shadow-md transition-shadow">

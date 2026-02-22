@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import CatalogGrid from '@/components/catalog/CatalogGrid'
-import { createClient } from '@/lib/supabase/server'
 import { ShieldCheck, Ruler, Zap, Tag } from 'lucide-react'
 
 export const metadata: Metadata = {
@@ -11,36 +10,6 @@ export const metadata: Metadata = {
 const KOKOHIN_WA = process.env.NEXT_PUBLIC_WA_NUMBER ?? '628123456789'
 
 export default async function KatalogPage() {
-  const supabase = await createClient()
-  const { data: materialsRaw, error } = await supabase
-    .from('materials')
-    .select('id, name, category, unit, base_price_per_unit, length_per_unit, is_active')
-    .eq('is_active', true)
-    .order('name', { ascending: true })
-  const materials = materialsRaw || []
-
-  if (error) {
-    console.error('Error fetching materials:', {
-      message: error.message,
-      details: error.details,
-      hint: error.hint,
-      code: error.code
-    })
-  }
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount)
-  }
-
-  const formatLengthUnit = (lengthPerUnit: number | null) => {
-    if (!lengthPerUnit || lengthPerUnit <= 1) return 'Satuan'
-    return `${lengthPerUnit} m`
-  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -58,7 +27,7 @@ export default async function KatalogPage() {
             </p>
             <div className="inline-flex flex-wrap gap-3 justify-center">
               <span className="px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full text-white text-sm flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-white" /> Garansi 5 Tahun
+                <ShieldCheck className="w-4 h-4 text-white" /> Garansi 1 Tahun
               </span>
               <span className="px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full text-white text-sm flex items-center gap-2">
                 <Ruler className="w-4 h-4 text-white" /> Survey Gratis
@@ -79,52 +48,7 @@ export default async function KatalogPage() {
         <CatalogGrid />
       </div>
       
-      {/* Material Comparison */}
-      <div className="bg-gray-50 py-20">
-        <div className="container">
-          <div className="max-w-6xl mx-auto">
-            <h2 className="text-3xl md:text-4xl font-bold text-primary-dark text-center mb-12">
-              Perbandingan Material Kanopi
-            </h2>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full bg-white rounded-2xl shadow-lg overflow-hidden">
-                <thead>
-                  <tr className="bg-primary text-white">
-                    <th className="py-4 px-6 text-left">Material</th>
-                    <th className="py-4 px-6 text-left">Kategori</th>
-                    <th className="py-4 px-6 text-left">Harga/Unit</th>
-                    <th className="py-4 px-6 text-left">Satuan</th>
-                    <th className="py-4 px-6 text-left">Panjang per Unit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(materials ?? []).map((item, index) => (
-                    <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="py-4 px-6 font-bold text-primary-dark">{item.name}</td>
-                      <td className="py-4 px-6 text-gray-700">{item.category || '-'}</td>
-                      <td className="py-4 px-6 font-semibold">{formatCurrency(item.base_price_per_unit || 0)}</td>
-                      <td className="py-4 px-6 text-gray-700">{item.unit || '-'}</td>
-                      <td className="py-4 px-6 text-gray-700">{formatLengthUnit(item.length_per_unit)}</td>
-                    </tr>
-                  ))}
-                  {(!materials || materials.length === 0) && (
-                    <tr>
-                      <td colSpan={5} className="py-8 px-6 text-center text-gray-500">Belum ada material tersedia.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            
-            <div className="mt-8 text-center text-gray-600">
-              <p>
-                *Harga ditampilkan per unit material dan dapat berubah sesuai desain, lokasi, serta kondisi lapangan.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+      
       
       {/* Process Section */}
       <div className="py-20">

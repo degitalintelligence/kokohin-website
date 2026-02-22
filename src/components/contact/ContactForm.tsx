@@ -2,7 +2,8 @@
 
 import { useActionState, useEffect, useMemo, useRef } from 'react'
 import { submitLead, type LeadFormState } from '@/app/actions/leads'
-import { AlertTriangle, CheckCircle, Loader2, Send } from 'lucide-react'
+import { AlertTriangle, Loader2, Send } from 'lucide-react'
+import { toast } from '@/components/ui/toaster'
 
 const initialState: LeadFormState = { success: false }
 
@@ -26,16 +27,20 @@ export default function ContactForm({ services = [] }: ContactFormProps) {
         if (state.success) formRef.current?.reset()
     }, [state.success])
 
+    useEffect(() => {
+        if (state.success) {
+            toast.success('Permintaan penawaran berhasil dikirim!', state.message)
+        }
+        if (state.error) {
+            toast.error('Gagal mengirim permintaan', state.error)
+        }
+    }, [state.success, state.error, state.message])
+
     return (
-        <form ref={formRef} action={formAction} className="flex flex-col gap-5">
+        <form ref={formRef} action={formAction} className="flex flex-col gap-5 animate-fade-in-up">
             {state.error && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4" /> {state.error}
-                </div>
-            )}
-            {state.success && (
-                <div className="p-4 bg-green-50 border border-green-200 rounded-md text-green-600 text-sm flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" /> {state.message}
                 </div>
             )}
 

@@ -29,12 +29,23 @@ export async function submitLead(
 
     try {
         const supabase = await createClient()
+        let validServiceId: string | null = serviceId
+        if (serviceId) {
+            const { data: svc } = await supabase
+                .from('services')
+                .select('id')
+                .eq('id', serviceId)
+                .maybeSingle()
+            if (!svc) {
+                validServiceId = null
+            }
+        }
         const { error } = await supabase.from('leads').insert({
             name,
             phone,
             email,
             location,
-            service_id: serviceId || null,
+            service_id: validServiceId,
             message,
             status: 'new',
         })

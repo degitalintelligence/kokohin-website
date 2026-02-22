@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
+import { toast } from '@/components/ui/toaster'
+import { cn } from '@/lib/utils'
 
 interface LoginFormProps {
     backgroundUrl: string | null
@@ -19,6 +21,7 @@ export default function LoginForm({ backgroundUrl, logoUrl }: LoginFormProps) {
     const [error, setError] = useState('')
     const [connectionTested, setConnectionTested] = useState(false)
     const [supabaseAvailable, setSupabaseAvailable] = useState(true)
+    const [mounted, setMounted] = useState(false)
 
     useEffect(() => {
         // Tampilkan error dari URL param (misal dari auth/callback)
@@ -27,6 +30,16 @@ export default function LoginForm({ backgroundUrl, logoUrl }: LoginFormProps) {
             setError('Autentikasi via callback gagal. Coba login manual.')
         }
     }, [searchParams])
+
+    useEffect(() => {
+        if (error) {
+            toast.error('Gagal masuk', error)
+        }
+    }, [error])
+
+    useEffect(() => {
+        setMounted(true)
+    }, [])
 
     useEffect(() => {
         const checkSupabaseConnection = async () => {
@@ -126,7 +139,7 @@ export default function LoginForm({ backgroundUrl, logoUrl }: LoginFormProps) {
         : "min-h-[100svh] flex items-center justify-center p-6 bg-gradient-to-br from-[#1D1D1B] to-[#E30613]"
 
     return (
-        <div className={containerClasses} style={backgroundStyle}>
+        <div className={cn(containerClasses, mounted && "animate-slide-in-right")} style={backgroundStyle}>
             {/* Overlay for better readability if background image is present */}
             {backgroundUrl && <div className="absolute inset-0 bg-black/40 z-0" />}
 
