@@ -19,7 +19,10 @@ export default async function NewLeadPage() {
 
   return (
     <div className="h-full overflow-y-auto bg-gray-50 p-8">
-      <NewLeadForm services={services || []} />
+      <NewLeadForm services={(services || []).filter(s => {
+        const n = (s.name || '').toLowerCase()
+        return !(n.includes('membrane') || n.includes('membran'))
+      })} />
     </div>
   )
 }

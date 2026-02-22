@@ -4,7 +4,7 @@ import { ShieldCheck, Ruler, Zap, Tag } from 'lucide-react'
 
 export const metadata: Metadata = {
   title: 'Katalog Paket Kanopi | Kokohin',
-  description: 'Pilihan paket kanopi terbaik dari Kokohin: baja ringan, polycarbonate, kaca, spandek, membrane, dan pergola. Harga transparan, garansi terjamin.',
+  description: 'Pilihan paket kanopi terbaik dari Kokohin: baja ringan, polycarbonate, kaca, spandek, dan pergola. Harga transparan, garansi terjamin.',
   keywords: ['katalog kanopi', 'paket kanopi', 'harga kanopi', 'kanopi baja ringan', 'kanopi polycarbonate', 'carport', 'pergola'],
 }
 const KOKOHIN_WA = process.env.NEXT_PUBLIC_WA_NUMBER ?? '628123456789'

@@ -15,10 +15,15 @@ export default async function KontakPage() {
         .select('id, name')
         .order('name', { ascending: true })
 
-    const services = (servicesRows || []).map(s => ({
-        id: s.id,
-        name: s.name
-    }))
+    const services = (servicesRows || [])
+        .filter(s => {
+            const n = (s.name || '').toLowerCase()
+            return !(n.includes('membrane') || n.includes('membran'))
+        })
+        .map(s => ({
+            id: s.id,
+            name: s.name
+        }))
 
     const CONTACT_INFO = [
         { 

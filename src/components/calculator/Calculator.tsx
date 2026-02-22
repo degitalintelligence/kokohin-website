@@ -557,31 +557,34 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                     </option>
                   ))}
                 </select>
-                <label className="label">
-                  <span className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    Zona Lokasi (Opsional)
-                  </span>
-                </label>
-                <select
-                  value={input.zoneId || ''}
-                  onChange={(e) => handleInputChange('zoneId', e.target.value || undefined)}
-                  className="input"
-                >
-                  <option value="">Pilih zona lokasi...</option>
-                  {zones.map((zone) => (
-                    <option key={zone.id} value={zone.id}>
-                      {zone.name} (+{zone.markup_percentage}%{zone.flat_fee > 0 ? `, +${formatRupiah(zone.flat_fee)}` : ''})
-                    </option>
-                  ))}
-                </select>
-                {dataError && (
-                  <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
-                    {dataError}
-                  </div>
-                )}
               </div>
             )}
+            
+            <div className="pt-4 border-t border-gray-200">
+              <label className="label">
+                <span className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4" />
+                  Zona Lokasi (Opsional)
+                </span>
+              </label>
+              <select
+                value={input.zoneId || ''}
+                onChange={(e) => handleInputChange('zoneId', e.target.value || undefined)}
+                className="input"
+              >
+                <option value="">Pilih zona lokasi...</option>
+                {zones.map((zone) => (
+                  <option key={zone.id} value={zone.id}>
+                    {zone.name} (+{zone.markup_percentage}%{zone.flat_fee > 0 ? `, +${formatRupiah(zone.flat_fee)}` : ''})
+                  </option>
+                ))}
+              </select>
+              {dataError && (
+                <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+                  {dataError}
+                </div>
+              )}
+            </div>
             
             <div className="flex flex-col sm:flex-row gap-4 pt-6">
               <button
@@ -849,20 +852,24 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
             </div>
             
             {/* Quick Info */}
-            <div className="mt-6 p-4 bg-primary/10 border border-primary/20 rounded-xl">
-              <h4 className="font-bold text-primary-dark mb-2">Garansi & Layanan</h4>
+            <div className="mt-6 p-4 bg-primary/10 border border-primary/20 rounded-xl" suppressHydrationWarning>
+              <h4 className="font-bold text-primary-dark mb-2">Manfaat untuk Anda</h4>
               <ul className="space-y-2 text-sm text-gray-700">
                 <li className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                  <span>Garansi material 1 tahun</span>
+                  <span>Tanpa pemborosan material</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                  <span>Survey & konsultasi gratis</span>
+                  <span>Harga adil sesuai lokasi</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                  <span>Free maintenance 1 tahun</span>
+                  <span>Permintaan custom? Kami bantu</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+                  <span>Total harga transparan</span>
                 </li>
               </ul>
             </div>

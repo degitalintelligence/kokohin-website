@@ -442,17 +442,21 @@ const parseCsv = (text: string) => {
   return rows
 }
 
-export default async function AdminMaterialsPage() {
+export default async function AdminMaterialsPage({ searchParams }: { searchParams: Promise<{ category?: string }> }) {
+  const { category: rawCategory } = await searchParams
+  const allowedCategories = new Set(['atap', 'frame', 'aksesoris', 'lainnya'])
+  const activeCategory = rawCategory && allowedCategories.has(rawCategory) ? rawCategory as 'atap'|'frame'|'aksesoris'|'lainnya' : null
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
   if (!user && !bypass) redirect('/admin/login')
 
   // Fetch materials from Supabase
-  const { data: materialsRaw, error } = await supabase
-    .from('materials')
-    .select('*')
-    .order('created_at', { ascending: false })
+  let query = supabase.from('materials').select('*').order('created_at', { ascending: false })
+  if (activeCategory) {
+    query = query.eq('category', activeCategory)
+  }
+  const { data: materialsRaw, error } = await query
   const materials = materialsRaw || []
 
   if (error) {
@@ -528,12 +532,41 @@ export default async function AdminMaterialsPage() {
         <div className={styles.section}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>
-              Semua Material ({materials?.length ?? 0})
+              {activeCategory ? `Material — ${activeCategory.toUpperCase()}` : 'Semua Material'} ({materials?.length ?? 0})
             </h2>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <ImportCsvForm importMaterials={importMaterials} importPreset={importFenceRailingPreset} />
               <a href={csvHref} download="materials.csv" className="btn btn-outline-dark btn-sm">Export CSV</a>
-              <button className="btn btn-outline-dark btn-sm">Filter</button>
+              <Link
+                href="/admin/materials"
+                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${!activeCategory ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+              >
+                Semua
+              </Link>
+              <Link
+                href="/admin/materials?category=atap"
+                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'atap' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+              >
+                Atap
+              </Link>
+              <Link
+                href="/admin/materials?category=frame"
+                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'frame' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+              >
+                Rangka
+              </Link>
+              <Link
+                href="/admin/materials?category=aksesoris"
+                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'aksesoris' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+              >
+                Aksesoris
+              </Link>
+              <Link
+                href="/admin/materials?category=lainnya"
+                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'lainnya' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+              >
+                Lainnya
+              </Link>
             </div>
           </div>
           <div className={styles.tableWrap}>

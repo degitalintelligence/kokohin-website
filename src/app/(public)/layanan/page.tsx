@@ -6,7 +6,7 @@ import { CheckCircle, ShieldCheck, Clock, Users, Wrench, Hammer, Warehouse, Clou
 
 export const metadata: Metadata = {
     title: 'Layanan Kanopi',
-    description: 'Berbagai jenis layanan pemasangan kanopi profesional: baja ringan, polycarbonate, kaca, spandek, membrane, pergola, dan carport.',
+    description: 'Berbagai jenis layanan pemasangan kanopi profesional: baja ringan, polycarbonate, kaca, spandek, pergola, dan carport.',
 }
 
 const BENEFITS = [
@@ -36,7 +36,12 @@ export default async function LayananPage() {
     try {
         const supabase = await createClient()
         const { data } = await supabase.from('services').select('*').order('order')
-        if (data && data.length > 0) services = data
+        if (data && data.length > 0) {
+            services = data.filter((s) => {
+                const n = (s.name || '').toLowerCase()
+                return !(n.includes('membrane') || n.includes('membran'))
+            })
+        }
     } catch {
         services = []
     }

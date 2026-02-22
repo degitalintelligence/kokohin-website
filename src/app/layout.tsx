@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     template: '%s | Kokohin',
   },
   description:
-    'Kokohin menyediakan jasa pemasangan kanopi berkualitas: baja ringan, polycarbonate, kaca, spandek, membrane, dan pergola. Berpengalaman, bergaransi, harga terjangkau.',
+    'Kokohin menyediakan jasa pemasangan kanopi berkualitas: baja ringan, polycarbonate, kaca, spandek, dan pergola. Berpengalaman, bergaransi, harga terjangkau.',
   keywords: ['kanopi', 'kontraktor kanopi', 'kanopi baja ringan', 'kanopi polycarbonate', 'kanopi kaca', 'carport', 'pergola'],
   openGraph: {
     title: 'Kokohin — Kontraktor Kanopi Profesional',

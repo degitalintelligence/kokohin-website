@@ -19,6 +19,9 @@ export default function CatalogGrid() {
   const [catalogs, setCatalogs] = useState<Catalog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [category, setCategory] = useState<'all' | 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya'>('all')
+  const [sort, setSort] = useState<'price_asc' | 'price_desc' | 'name_asc'>('price_asc')
+  const [q, setQ] = useState('')
 
   useEffect(() => {
     const fetchCatalogs = async () => {
@@ -47,6 +50,30 @@ export default function CatalogGrid() {
 
     fetchCatalogs()
   }, [])
+  
+  const presentCategories = Array.from(
+    new Set(
+      (catalogs ?? [])
+        .map((c) => c.category)
+        .filter(Boolean) as Array<'kanopi'|'pagar'|'railing'|'aksesoris'|'lainnya'>
+    )
+  )
+  const labelFor = (cat: string) => {
+    switch (cat) {
+      case 'kanopi': return 'Kanopi'
+      case 'pagar': return 'Pagar'
+      case 'railing': return 'Railing'
+      case 'aksesoris': return 'Aksesoris'
+      default: return 'Lainnya'
+    }
+  }
+  const filtered = catalogs.filter(c => category === 'all' ? true : c.category === category)
+  const searched = filtered.filter(c => c.title.toLowerCase().includes(q.trim().toLowerCase()))
+  const sorted = [...searched].sort((a, b) => {
+    if (sort === 'price_asc') return (a.base_price_per_m2 || 0) - (b.base_price_per_m2 || 0)
+    if (sort === 'price_desc') return (b.base_price_per_m2 || 0) - (a.base_price_per_m2 || 0)
+    return a.title.localeCompare(b.title, 'id')
+  })
   
   const formatRupiah = (amount: number) => {
     return new Intl.NumberFormat('id-ID', {
@@ -89,6 +116,48 @@ export default function CatalogGrid() {
         ))}
       </div>
       
+      {presentCategories.length > 0 && (
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-8">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCategory('all')}
+              className={`px-3.5 py-2 rounded-full text-sm font-bold transition-colors border ${category === 'all' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+            >
+              Semua
+            </button>
+            {presentCategories.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setCategory(cat)}
+                className={`px-3.5 py-2 rounded-full text-sm font-bold transition-colors border ${category === cat ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+              >
+                {labelFor(cat)}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as typeof sort)}
+              className="input md:w-56"
+            >
+              <option value="price_asc">Urutkan: Harga Termurah</option>
+              <option value="price_desc">Urutkan: Harga Termahal</option>
+              <option value="name_asc">Urutkan: Nama A-Z</option>
+            </select>
+            <input
+              type="text"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Cari paket..."
+              className="input w-full md:w-64"
+            />
+          </div>
+        </div>
+      )}
+      
       {/* Catalog Grid */}
       {loading ? (
         <div className="text-center text-gray-600 mb-16">Memuat katalog...</div>
@@ -98,7 +167,7 @@ export default function CatalogGrid() {
         <div className="text-center text-gray-600 mb-16">Belum ada paket yang tersedia.</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
-          {catalogs.map((catalog) => {
+          {sorted.map((catalog) => {
           const estimatedPrice = calculatePriceForArea(catalog.base_price_per_m2, 10)
           const isSelected = selectedCatalog === catalog.id
           
