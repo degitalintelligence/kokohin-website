@@ -2,27 +2,10 @@ import { createClient } from '@/lib/supabase/server'
 import { Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import { Camera } from 'lucide-react'
+import type { ProjectRow, GalleryProject } from '@/lib/types'
 
 export const revalidate = 3600 // Revalidate every hour (ISR)
 const GalleryGrid = dynamic(() => import('@/components/gallery/GalleryGrid'))
-
-type GalleryProject = {
-    id: string
-    title: string
-    location: string | null
-    year: number | null
-    featured: boolean | null
-    service?: { name: string | null } | null
-}
-
-type ProjectRow = {
-    id: string
-    title: string
-    location?: string | null
-    year?: number | null
-    featured?: boolean | null
-    service?: { name: string | null } | { name: string | null }[] | null
-}
 
 export default async function GaleriPage() {
     const supabase = await createClient()

@@ -2,15 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { Construction, Sparkles, Blinds, Wrench, Tent, Home, MapPin, Calendar } from 'lucide-react'
-
-type GalleryProject = {
-    id: string
-    title: string
-    location: string | null
-    year: number | null
-    featured: boolean | null
-    service?: { name: string | null } | null
-}
+import type { GalleryProject } from '@/lib/types'
 
 const BG_CLASSES = [
     'bg-gradient-to-br from-slate-900 to-slate-700',

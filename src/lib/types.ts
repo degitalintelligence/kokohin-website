@@ -22,6 +22,30 @@ export interface Project {
     created_at: string
 }
 
+export type ServiceRel = {
+    id: string
+    name: string
+}
+
+export type ProjectRow = {
+    id: string
+    title: string
+    location: string | null
+    year: number | null
+    featured: boolean
+    is_public?: boolean
+    service?: ServiceRel | ServiceRel[] | null
+}
+
+export type GalleryProject = {
+    id: string
+    title: string
+    location: string | null
+    year: number | null
+    featured: boolean | null
+    service?: { name: string | null } | null
+}
+
 export interface Testimonial {
     id: string
     name: string

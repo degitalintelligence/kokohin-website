@@ -2,6 +2,8 @@ import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import styles from '../page.module.css'
 import { addProjectPublic, deleteProjectPublic, toggleFeatured, togglePublish, updateProjectPublic, importFromErp } from '@/app/actions/projectsPublic'
+import type { ServiceRel, ProjectRow } from '@/lib/types'
+import { serviceIdFromRel, serviceNameFromRel } from '@/lib/utils'
 
 export default async function AdminGalleryCurationPage({
   searchParams,
@@ -14,24 +16,13 @@ export default async function AdminGalleryCurationPage({
   const bypass = await isDevBypass()
   if (!user && !bypass) redirect('/admin/login')
 
-  type ServiceRow = { id: string; name: string }
   const { data: servicesRaw } = await supabase
     .from('services')
     .select('id, name')
     .order('name', { ascending: true })
-  const services: ServiceRow[] = (servicesRaw ?? []) as unknown as ServiceRow[]
+  const services: ServiceRel[] = (servicesRaw ?? []) as unknown as ServiceRel[]
 
   // Coba ambil dengan kolom is_public; jika kolom belum ada, fallback tanpa kolom tersebut
-  type ServiceRel = { id: string; name: string }
-  type ProjectRow = {
-    id: string
-    title: string
-    location: string | null
-    year: number | null
-    featured: boolean
-    is_public?: boolean
-    service?: ServiceRel | ServiceRel[] | null
-  }
   const { data: projectsWithPublish, error: publishErr } = await supabase
     .from('projects')
     .select('id, title, location, year, featured, is_public, service:service_id(name, id)')
@@ -46,13 +37,6 @@ export default async function AdminGalleryCurationPage({
       .limit(100)
     return (fb as unknown as ProjectRow[]) ?? []
   })()) as ProjectRow[]
-
-  const getServiceName = (svc: ProjectRow['service']): string => {
-    return Array.isArray(svc) ? (svc?.[0]?.name ?? '-') : (svc?.name ?? '-')
-  }
-  const getServiceId = (svc: ProjectRow['service']): string => {
-    return Array.isArray(svc) ? (svc?.[0]?.id ?? '') : (svc?.id ?? '')
-  }
 
   return (
     <div className={`${styles.main} flex-1 h-full`}>
@@ -125,7 +109,7 @@ export default async function AdminGalleryCurationPage({
                 {(projects || []).map((p) => (
                   <tr key={p.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-semibold text-gray-900">{p.title}</td>
-                    <td className="px-4 py-3">{getServiceName(p?.service)}</td>
+                    <td className="px-4 py-3">{serviceNameFromRel(p?.service)}</td>
                     <td className="px-4 py-3">{p.location ?? '-'}</td>
                     <td className="px-4 py-3">{p.year ?? '-'}</td>
                     {hasPublish && (
@@ -157,7 +141,7 @@ export default async function AdminGalleryCurationPage({
                             <input name="title" defaultValue={p.title} className="md:col-span-2 w-full px-3 py-2 border rounded-md" required />
                             <input name="location" defaultValue={p.location ?? ''} className="md:col-span-1 w-full px-3 py-2 border rounded-md" />
                             <input name="year" defaultValue={p.year ?? ''} type="number" className="md:col-span-1 w-full px-3 py-2 border rounded-md" />
-                            <select name="service_id" defaultValue={getServiceId(p?.service)} className="md:col-span-1 w-full px-3 py-2 border rounded-md">
+                            <select name="service_id" defaultValue={serviceIdFromRel(p?.service)} className="md:col-span-1 w-full px-3 py-2 border rounded-md">
                               <option value="">Pilih Layanan</option>
                               {services.map((s) => (
                                 <option key={s.id} value={s.id}>{s.name}</option>

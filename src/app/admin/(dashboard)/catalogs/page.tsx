@@ -2,6 +2,7 @@ import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { FolderOpen, BadgeDollarSign, BarChart3 } from 'lucide-react'
+import { relNameFrom } from '@/lib/utils'
 import styles from '../page.module.css'
 import ImportCsvForm from './components/ImportCsvForm'
 
@@ -363,8 +364,8 @@ export default async function AdminCatalogsPage() {
                           {getCatalogType(catalog)}
                         </span>
                       </td>
-                      <td>{catalog.atap?.name || '—'}</td>
-                      <td>{catalog.rangka?.name || '—'}</td>
+                      <td>{relNameFrom(catalog.atap)}</td>
+                      <td>{relNameFrom(catalog.rangka)}</td>
                       <td className={styles.bold}>{formatCurrency(catalog.base_price_per_m2)}</td>
                       <td>{formatCurrency(estimatedPrice)}</td>
                       <td>

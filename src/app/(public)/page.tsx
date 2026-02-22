@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
+import { firstRel } from '@/lib/utils'
 
 const HomePricelist = dynamic(() => import('@/components/home/HomePricelist'))
 
@@ -107,8 +108,8 @@ export default function HomePage() {
         if (fetchError) return setCatalogs([])
 
         const items: HomeCatalog[] = (data ?? []).map((item) => {
-          const atap = Array.isArray(item.atap) ? item.atap[0] ?? null : item.atap ?? null
-          const rangka = Array.isArray(item.rangka) ? item.rangka[0] ?? null : item.rangka ?? null
+          const atap = firstRel(item.atap ?? null)
+          const rangka = firstRel(item.rangka ?? null)
           return {
             id: item.id,
             title: item.title,
