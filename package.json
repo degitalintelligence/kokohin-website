@@ -11,7 +11,9 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "echo 'No tests yet'"
+    "test": "echo 'No tests yet'",
+    "verify:materials": "node scripts/verify-materials.js",
+    "seed:catalogs": "node scripts/seed-catalogs-from-list.js"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.2",

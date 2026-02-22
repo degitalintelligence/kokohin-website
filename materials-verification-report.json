@@ -1,0 +1,148 @@
+{
+  "timestamp": "2026-02-22T10:59:37.583Z",
+  "dbMaterialsCount": 6,
+  "uiCalculatorMaterialsCount": 2,
+  "dbVsUiDiff": {
+    "missingInDb": [],
+    "extraInCalc": []
+  },
+  "catalogBrokenReferences": [],
+  "hardcodedCandidates": [
+    {
+      "file": "src\\lib\\calculator.ts",
+      "matches": [
+        {
+          "pattern": "/\\bbase_price_per_unit\\b/",
+          "snippet": "d\n    // wasteQty adalah luas waste dalam m² (konversi ke unit lembar jika perlu)\n    const wasteQty = wasteAreaM2\n    // subtotal berdasarkan jumlah lembar\n    const subtotal = qtyCharged * material.base_price_per_unit\n    return { qtyCharged, subtotal, wasteQty }\n  }"
+        }
+      ]
+    },
+    {
+      "file": "src\\lib\\types.ts",
+      "matches": [
+        {
+          "pattern": "/\\bbase_price_per_unit\\b/",
+          "snippet": "g\n    name: string\n    category: 'atap' | 'frame' | 'aksesoris' | 'lainnya'\n    unit: 'batang' | 'lembar' | 'm1' | 'm2' | 'hari' | 'unit'\n    base_price_per_unit: number   // kolom DB: base_price_per_unit (bukan 'price')\n    length_per_unit: number | null\n    is_active: boolean\n    is_laser_cut: boolean"
+        }
+      ]
+    },
+    {
+      "file": "src\\components\\calculator\\Calculator.tsx",
+      "matches": [
+        {
+          "pattern": "/\\bbase_price_per_unit\\b/",
+          "snippet": "{\n        const supabase = createClient()\n        const { data, error } = await supabase\n          .from('catalogs')\n          .select('*, atap:atap_id(*), rangka:rangka_id(*), catalog_addons(id, basis, qty_per_basis, is_optional, material:material_id(id, name, base_price_per_unit, unit, category))')\n          .eq('id', input.catalogId)\n          .eq('is_active', true)\n          .maybeSingle()"
+        }
+      ]
+    },
+    {
+      "file": "src\\app\\admin\\(dashboard)\\materials\\page.tsx",
+      "matches": [
+        {
+          "pattern": "/\\bbase_price_per_unit\\b/",
+          "snippet": "g\n  name: string\n  category: string\n  unit: string\n  base_price_per_unit: number\n  length_per_unit: number | null\n  is_active: boolean\n  is_laser_cut: boolean"
+        }
+      ]
+    },
+    {
+      "file": "src\\app\\admin\\(dashboard)\\materials\\new\\page.tsx",
+      "matches": [
+        {
+          "pattern": "/\\bbase_price_per_unit\\b/",
+          "snippet": ">\n                <label className=\"block text-sm font-medium mb-2\">Harga Dasar per Unit *</label>\n                <input\n                  type=\"number\"\n                  name=\"base_price_per_unit\"\n                  min=\"0\"\n                  step=\"1000\"\n                  className=\"w-full px-4 py-2 border rounded-md\""
+        }
+      ]
+    },
+    {
+      "file": "src\\app\\admin\\(dashboard)\\materials\\components\\ImportCsvForm.tsx",
+      "matches": [
+        {
+          "pattern": "/\\bbase_price_per_unit\\b/",
+          "snippet": "}\n        </div>\n      )}\n      <div className=\"text-xs text-gray-500\">\n        <p>Format CSV: id (opsional), code, name, category, unit, base_price_per_unit, length_per_unit, is_active</p>\n        <p>Gunakan <strong>Export CSV</strong> untuk mendapatkan template dengan ID (untuk update).</p>\n      </div>\n    </div>"
+        }
+      ]
+    },
+    {
+      "file": "src\\app\\admin\\(dashboard)\\leads\\page.tsx",
+      "matches": [
+        {
+          "pattern": "/\\bbase_price_per_unit\\b/",
+          "snippet": "id: `${mat.id}-${qtyNeeded}`,\r\n      name: mat.name,\r\n      unit: mat.unit,\r\n      hpp: mat.base_price_per_unit,\r\n      lengthPerUnit,\r\n      qtyNeeded,\r\n      qtyCharged,"
+        }
+      ]
+    },
+    {
+      "file": "src\\app\\admin\\(dashboard)\\catalogs\\[id]\\page.tsx",
+      "matches": [
+        {
+          "pattern": "/\\bbase_price_per_unit\\b/",
+          "snippet": "a\n  const [{ data: atapList }, { data: rangkaList }, { data: allMaterials }, { data: addons }] = await Promise.all([\n    supabase.from('materials').select('id, name').eq('category', 'atap').eq('is_active', true).order('name'),\n    supabase.from('materials').select('id, name').eq('category', 'frame').eq('is_active', true).order('name'),\n    supabase.from('materials').select('id, name, category, base_price_per_unit, unit').eq('is_active', true).order('name'),\n    supabase\n      .from('catalog_addons')\n      .select('id, material_id, basis, qty_per_basis, is_optional, material:material_id(id, name, base_price_per_unit, unit, category)')"
+        }
+      ]
+    },
+    {
+      "file": "src\\app\\admin\\(dashboard)\\catalogs\\new\\page.tsx",
+      "matches": [
+        {
+          "pattern": "/\\bbase_price_per_unit\\b/",
+          "snippet": "s\n  const [{ data: atapList }, { data: rangkaList }, { data: allMaterials }] = await Promise.all([\n    supabase.from('materials').select('id, name').eq('category', 'atap').eq('is_active', true).order('name'),\n    supabase.from('materials').select('id, name').eq('category', 'frame').eq('is_active', true).order('name'),\n    supabase.from('materials').select('id, name, category, base_price_per_unit, unit').eq('is_active', true).order('name')\n  ])\n\n  return ("
+        }
+      ]
+    },
+    {
+      "file": "src\\app\\admin\\(dashboard)\\catalogs\\components\\CatalogAddonsEditor.tsx",
+      "matches": [
+        {
+          "pattern": "/\\bbase_price_per_unit\\b/",
+          "snippet": "{\n  id?: string\n  material_id: string\n  is_optional: boolean\n  material?: Pick<Material, 'id' | 'name' | 'base_price_per_unit' | 'unit' | 'category'>\n  // Basis dan qty per basis untuk perhitungan end-to-end\n  basis?: 'm2' | 'm1' | 'unit'\n  qty_per_basis?: number"
+        }
+      ]
+    },
+    {
+      "file": "src\\app\\actions\\materials.ts",
+      "matches": [
+        {
+          "pattern": "/\\bbase_price_per_unit\\b/",
+          "snippet": "g\n  const name = formData.get('name') as string\n  const category = formData.get('category') as string\n  const unit = formData.get('unit') as string\n  const basePrice = Number(formData.get('base_price_per_unit'))\n  const lengthPerUnitRaw = formData.get('length_per_unit')\n  const lengthPerUnit = lengthPerUnitRaw ? Number(lengthPerUnitRaw) : null\n  const isActive = formData.get('is_active') === 'on'"
+        }
+      ]
+    }
+  ],
+  "sampleDbMaterials": [
+    {
+      "id": "81b3f7c1-ebc3-4ba6-86b6-e3cab9826e4e",
+      "code": "ATAP-PC-01",
+      "name": "Polycarbonate 6mm",
+      "category": "atap",
+      "unit": "lembar"
+    },
+    {
+      "id": "51b1407d-14da-4882-a178-ef6b7ee5989a",
+      "code": "ATAP-SP-01",
+      "name": "Spandek Zincalume",
+      "category": "atap",
+      "unit": "lembar"
+    },
+    {
+      "id": "b8bf925a-c648-4603-b6d1-b171478f64fb",
+      "code": "FRAME-BR-01",
+      "name": "Baja Ringan 0.75mm",
+      "category": "frame",
+      "unit": "batang"
+    },
+    {
+      "id": "604f27ab-a58f-48b5-bbe4-3b98a5b6e48e",
+      "code": "FRAME-BR-02",
+      "name": "Baja Ringan 1.00mm",
+      "category": "frame",
+      "unit": "batang"
+    },
+    {
+      "id": "3058703a-a0ce-4ab0-8d73-5a243b935723",
+      "code": "AKS-BOLT-01",
+      "name": "Baut & Mur",
+      "category": "aksesoris",
+      "unit": "unit"
+    }
+  ]
+}

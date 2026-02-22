@@ -16,6 +16,7 @@ interface TransitionProps {
   className?: string
   duration?: number
   unmount?: boolean
+  onExitComplete?: () => void
 }
 
 export function Transition({
@@ -31,6 +32,7 @@ export function Transition({
   className,
   duration = 200,
   unmount = true,
+  onExitComplete,
 }: TransitionProps) {
   const [isShowing, setIsShowing] = useState(appear ? show : false)
   const [isInDOM, setIsInDOM] = useState(!unmount || show)
@@ -55,7 +57,10 @@ export function Transition({
   return (
     <div
       onTransitionEnd={() => {
-        if (!show && unmount) setIsInDOM(false)
+        if (!show && unmount) {
+          setIsInDOM(false)
+          if (onExitComplete) onExitComplete()
+        }
       }}
       className={cn(
         'transition-all duration-200 ease-in-out',
@@ -80,6 +85,7 @@ export function FadeIn({
   duration = 200,
   className,
   unmount = true,
+  onExitComplete,
 }: Omit<TransitionProps, 'enter' | 'enterFrom' | 'enterTo' | 'leave' | 'leaveFrom' | 'leaveTo'>) {
   return (
     <Transition
@@ -94,6 +100,7 @@ export function FadeIn({
       duration={duration}
       className={className}
       unmount={unmount}
+      onExitComplete={onExitComplete}
     >
       {children}
     </Transition>
@@ -106,6 +113,7 @@ export function SlideUp({
   duration = 300,
   className,
   unmount = true,
+  onExitComplete,
 }: Omit<TransitionProps, 'enter' | 'enterFrom' | 'enterTo' | 'leave' | 'leaveFrom' | 'leaveTo'>) {
   return (
     <Transition
@@ -120,6 +128,7 @@ export function SlideUp({
       duration={duration}
       className={cn('transition-all', className)}
       unmount={unmount}
+      onExitComplete={onExitComplete}
     >
       {children}
     </Transition>
@@ -132,6 +141,7 @@ export function Scale({
   duration = 200,
   className,
   unmount = true,
+  onExitComplete,
 }: Omit<TransitionProps, 'enter' | 'enterFrom' | 'enterTo' | 'leave' | 'leaveFrom' | 'leaveTo'>) {
   return (
     <Transition
@@ -146,19 +156,68 @@ export function Scale({
       duration={duration}
       className={cn('transition-all', className)}
       unmount={unmount}
+      onExitComplete={onExitComplete}
     >
       {children}
     </Transition>
   )
 }
 
-// Page transition wrapper
 export function PageTransition({ children }: { children: ReactNode }) {
   return (
-    <FadeIn duration={300}>
+    <TransitionPreset preset="fade" duration={300}>
       <div className="animate-fade-in-up">
         {children}
       </div>
-    </FadeIn>
+    </TransitionPreset>
+  )
+}
+
+type TransitionPresetName = 'fade' | 'slide' | 'scale'
+
+type TransitionPresetProps = Omit<TransitionProps, 'enter' | 'enterFrom' | 'enterTo' | 'leave' | 'leaveFrom' | 'leaveTo'> & {
+  preset?: TransitionPresetName
+}
+
+export function TransitionPreset({
+  preset = 'fade',
+  ...rest
+}: TransitionPresetProps) {
+  if (preset === 'fade') {
+    return (
+      <FadeIn
+        show={rest.show}
+        duration={rest.duration}
+        className={rest.className}
+        unmount={rest.unmount}
+        onExitComplete={rest.onExitComplete}
+      >
+        {rest.children}
+      </FadeIn>
+    )
+  }
+  if (preset === 'slide') {
+    return (
+      <SlideUp
+        show={rest.show}
+        duration={rest.duration}
+        className={rest.className}
+        unmount={rest.unmount}
+        onExitComplete={rest.onExitComplete}
+      >
+        {rest.children}
+      </SlideUp>
+    )
+  }
+  return (
+    <Scale
+      show={rest.show}
+      duration={rest.duration}
+      className={rest.className}
+      unmount={rest.unmount}
+      onExitComplete={rest.onExitComplete}
+    >
+      {rest.children}
+    </Scale>
   )
 }

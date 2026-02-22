@@ -5,6 +5,7 @@ import { Boxes, BadgeDollarSign, Ruler } from 'lucide-react'
 import styles from '../page.module.css'
 import ImportCsvForm from './components/ImportCsvForm'
 import { ALLOWED_MATERIALS_ROLES, isRoleAllowed } from '@/lib/rbac'
+import { revalidatePath } from 'next/cache'
 
 type MaterialImportData = {
   id?: string
@@ -92,6 +93,276 @@ export async function importMaterials(formData: FormData) {
     }
   }
 
+  redirect('/admin/materials')
+}
+
+export async function replaceMaterialsWithBusinessList() {
+  'use server'
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const bypass = await isDevBypass()
+  if (!user && !bypass) redirect('/admin/login')
+  if (user && !bypass) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle()
+    const role = (profile as { role?: string } | null)?.role ?? null
+    if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+      throw new Error('Hanya Super Admin yang boleh mengganti material')
+    }
+  }
+  const raw = `Kategori,Material,Spek_Varian,Ketebalan,Satuan,Harga_Bawah_Rp,Harga_Atas_Rp,Fungsi_dan_Strategi_Bisnis
+Rangka Utama,Baja Ringan Kanal C,C75,0.75 mm,Batang (6m),95000,105000,Segmen budget / Low-end.
+Rangka Utama,Baja Ringan Kanal C,C75,1.00 mm,Batang (6m),115000,135000,Segmen budget dengan bentang lebih lebar.
+Rangka Utama,Besi Hollow Hitam,40x40 mm,1.2 mm,Batang (6m),110000,125000,Opsi murah besi las. Wajib ekstra cat dasar.
+Rangka Utama,Besi Hollow Hitam,40x60 mm,1.4 mm,Batang (6m),160000,185000,Tiang/Frame standar. Wajib cat dasar.
+Rangka Utama,Besi Hollow Galvanis,40x40 mm,1.2 mm,Batang (6m),145000,160000,Best value. Anti karat bawaan pabrik.
+Rangka Utama,Besi Hollow Galvanis,40x60 mm,1.4 mm,Batang (6m),210000,240000,Tiang/Frame utama. Durabilitas tinggi.
+Rangka Utama,Besi Hollow Galvanis,50x100 mm,1.6 mm,Batang (6m),380000,420000,Frame premium/bentang lebar tanpa tiang tengah.
+Rangka Utama,Baja WF (Wide Flange),WF 150,Tebal Standar,Batang (6m),2600000,2800000,Komersial/High-end. Aesthetic industrial.
+Rangka Jari-jari,Reng Baja Ringan,Standar,0.40 mm,Batang (6m),40000,50000,Dudukan atap spandek pada rangka baja ringan.
+Rangka Jari-jari,Reng Baja Ringan,Standar,0.45 mm,Batang (6m),55000,65000,Lebih kaku untuk atap yang lebih berat.
+Rangka Jari-jari,Besi Hollow Galvanis,20x40 mm,1.2 mm,Batang (6m),90000,110000,Kisi-kisi atau dudukan atap rapat.
+Atap,Spandek Polos,Galvalum,0.25 mm,Meter Lari,45000,55000,Super budget. Resiko komplain berisik tinggi.
+Atap,Spandek Polos,Galvalum,0.30 mm,Meter Lari,55000,65000,Standar proyek murah.
+Atap,Spandek Pasir,Peredam Suara,0.30 mm,Meter Lari,70000,85000,Upgrade UX (meredam suara hujan).
+Atap,Alderon RS,Single Layer / Corrugated,1.2 mm,Meter Lari,75000,95000,Alternatif UPVC murah. Tidak meredam panas maksimal.
+Atap,Alderon Twinwall,Double Layer / Rongga,10 mm,Meter Lari,175000,225000,Segmen Menengah-Atas. Adem dan kedap suara (High margin).
+Atap,Polycarbonate,X-Lite (Ekonomis),4 mm,Roll (11.8m),1400000,1600000,Transparan budget. Cepat kusam/jamuran.
+Atap,Polycarbonate,Twinlite (Premium),5 - 6 mm,Roll (11.8m),3200000,3800000,Transparan awet. UV Protection bagus.
+Atap,SolarTuff Gelombang,Transparan Polycarbonate,0.8 mm,Meter Lari,145000,175000,Durable transparan. Look mirip kaca gelombang.
+Atap,SolarTuff Solid/Flat,Transparan Kaca,1.2 mm,Meter Lari,280000,350000,Alternatif kaca tempered yang lebih aman/ringan.
+Atap,Kaca Tempered,Clear/Dark,8 mm,Meter Persegi,750000,950000,Sangat Premium. Butuh handling/tukang khusus kaca.
+Aksesoris,Base Plate / Tapak Besi,15x15 cm / 20x20 cm,5 mm,Pcs,25000,45000,Fondasi tiang ke lantai. Wajib untuk stabilitas.
+Aksesoris,Dynabolt,10 x 77 mm,Standar,Pcs,2500,4000,Anchor tiang ke beton.
+Aksesoris,Dynabolt,12 x 99 mm,Standar,Pcs,4500,6000,Anchor beban berat.
+Aksesoris,Baut Roofing (Spandek),5 cm (plus karet),Standar,Pack (100pcs),25000,35000,Pengunci atap. Karet aus = kebocoran.
+Aksesoris,Sekrup Baja Ringan,Standar,Standar,Pack (1000pcs),60000,80000,Sambungan rangka baja ringan.
+Aksesoris,Sealant Kaca/Atap,Clear / Black / White,Tube,Tube,35000,55000,Waterproofing area sambungan dinding & atap.
+Consumables,Kawat Las,2.0 mm (Besi Tipis),Box (5kg),Box,145000,165000,Habis pakai boros jika banyak sambungan jari-jari.
+Consumables,Kawat Las,2.6 mm (Besi Tebal),Box (5kg),Box,155000,185000,Habis pakai untuk struktur tiang/frame.
+Consumables,Mata Gerinda Potong,4 Inch (WD/BWS),Pcs,Pcs,5000,8000,Sangat boros. Selalu alokasikan waste 15%.
+Consumables,Mata Gerinda Amplas,Flap Disc,Pcs,Pcs,12000,18000,Menghaluskan sisa las sebelum dempul/cat.
+Finishing,Dempul Besi,Isamu / Sanpolac,1 Kg,Kaleng,45000,65000,Menutup lubang pori-pori sisa las agar mulus.
+Finishing,Cat Dasar Anti Karat,Zincromate / Epoxy,1 Kg,Kaleng,65000,95000,Vital untuk besi hitam.
+Finishing,Cat Warna (Sintetik),FTALIT / Seiv,1 Kg,Kaleng,75000,95000,Warna akhir. (Hitam doff paling laku).
+Finishing,Thinner,ND / A Super,1 Liter,Botol/Kaleng,30000,45000,Pelarut cat dasar dan cat warna.
+Finishing,Kuas & Roll Cat,Berbagai Ukuran,Standar,Set,30000,50000,Alat aplikasi.
+Jasa & Ops,Ongkos Tukang Las (Borongan),Per Meter Persegi,Standar,Meter Persegi,80000,150000,Lebih aman untuk cashflow daripada harian.
+Jasa & Ops,Transport & Kuli,Pick up / Engkel,Standar,Trip,150000,350000,Hidden cost logistik yang sering lupa dihitung.`
+  const rows = parseCsv(raw)
+  const [header, ...dataRows] = rows
+  const idx = (key: string) => header.findIndex(h => h.toLowerCase() === key.toLowerCase())
+  const catMap = (v: string) => {
+    const t = v.toLowerCase()
+    if (t.includes('atap')) return 'atap'
+    if (t.includes('rangka')) return 'frame'
+    if (t.includes('aksesoris')) return 'aksesoris'
+    return 'lainnya'
+  }
+  const unitMap = (v: string) => {
+    const t = v.toLowerCase()
+    if (t.includes('meter lari')) return { unit: 'm1' as const, len: 1 }
+    if (t.includes('meter persegi')) return { unit: 'm2' as const, len: 1 }
+    if (t.includes('batang')) {
+      const m = v.match(/\((\d+(?:\.\d+)?)m\)/i)
+      const len = m ? Number(m[1]) : 6
+      return { unit: 'batang' as const, len }
+    }
+    if (t.includes('roll')) {
+      const m = v.match(/\((\d+(?:\.\d+)?)m\)/i)
+      const len = m ? Number(m[1]) : 1
+      return { unit: 'lembar' as const, len }
+    }
+    return { unit: 'unit' as const, len: 1 }
+  }
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+  const codeFrom = (cat: string, material: string, spec: string, thick: string) => {
+    const catTag = cat === 'atap' ? 'AT' : cat === 'frame' ? 'FR' : cat === 'aksesoris' ? 'AK' : 'LN'
+    const specTag = slug(spec).replace(/-/g, '').toUpperCase()
+    const thickTag = slug(thick).replace(/mm/i, 'MM').replace(/\./g, '_').toUpperCase()
+    return `${catTag}-${slug(material).slice(0, 8).toUpperCase()}-${specTag}-${thickTag}`
+  }
+  const toName = (material: string, spec: string, thick: string) => `${material} ${spec} ${thick}`.replace(/\s+/g, ' ').trim()
+  const rawPayload = dataRows.map((row) => {
+    const cat = catMap(row[idx('Kategori')])
+    const material = row[idx('Material')]
+    const spec = row[idx('Spek_Varian')]
+    const thick = row[idx('Ketebalan')]
+    const satuan = row[idx('Satuan')]
+    const hi = Number(row[idx('Harga_Atas_Rp')] || '0')
+    const um = unitMap(satuan)
+    return {
+      code: codeFrom(cat, material, spec, thick),
+      name: toName(material, spec, thick),
+      category: cat,
+      unit: um.unit,
+      base_price_per_unit: hi,
+      length_per_unit: um.len,
+      is_active: true,
+      is_laser_cut: false,
+      requires_sealant: false
+    } as MaterialImportData
+  })
+  const payload: MaterialImportData[] = []
+  const seen: Record<string, number> = {}
+  for (const p of rawPayload) {
+    const base = p.code
+    if (seen[base]) {
+      let i = ++seen[base]
+      while (seen[`${base}-V${i}`]) i++
+      p.code = `${base}-V${i}`
+      seen[p.code] = 1
+    } else {
+      seen[base] = 1
+    }
+    payload.push(p)
+  }
+  await supabase.from('materials').update({ is_active: false })
+  const { error: upErr } = await supabase.from('materials').upsert(payload, { onConflict: 'code' })
+  if (upErr) {
+    throw new Error(upErr.message)
+  }
+  const { data: mats } = await supabase.from('materials').select('id,code')
+  const newCodes = new Set(payload.map(p => p.code))
+  const deletable = (mats ?? []).filter(m => !newCodes.has(m.code)).map(m => m.id)
+  const refIds = new Set<string>()
+  const { data: ei } = await supabase.from('estimation_items').select('material_id')
+  ;(ei ?? []).forEach((x: { material_id: string }) => refIds.add(x.material_id))
+  const { data: cats } = await supabase.from('catalogs').select('atap_id,rangka_id')
+  ;(cats ?? []).forEach((x: { atap_id: string | null, rangka_id: string | null }) => {
+    if (x.atap_id) refIds.add(x.atap_id)
+    if (x.rangka_id) refIds.add(x.rangka_id)
+  })
+  try {
+    const { data: add } = await supabase.from('catalog_addons').select('material_id')
+    ;(add ?? []).forEach((x: { material_id: string }) => refIds.add(x.material_id))
+  } catch {}
+  const toDelete = deletable.filter(id => !refIds.has(id))
+  if (toDelete.length > 0) {
+    await supabase.from('materials').delete().in('id', toDelete)
+  }
+  revalidatePath('/admin/materials')
+  revalidatePath('/kalkulator')
+  revalidatePath('/admin/catalogs')
+  revalidatePath('/admin/catalogs/new')
+  revalidatePath('/admin/catalogs/[id]')
+  revalidatePath('/katalog')
+  redirect('/admin/materials')
+}
+
+export async function importFenceRailingPreset() {
+  'use server'
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const bypass = await isDevBypass()
+  if (!user && !bypass) redirect('/admin/login')
+  if (user && !bypass) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle()
+    const role = (profile as { role?: string } | null)?.role ?? null
+    if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+      throw new Error('Hanya Super Admin yang boleh mengimport material')
+    }
+  }
+  const raw = `Kategori,Material_Utama,Varian_Tipe,Dimensi_Ketebalan_Umum,Satuan_Harga,Estimasi_Harga_Bawah_Rp,Estimasi_Harga_Atas_Rp,Karakteristik_Fisik,Aesthetic_Positioning
+Rangka Utama Pagar,Besi Hollow Galvanis,40x60 mm / 50x100 mm,1.4 mm - 1.8 mm,Batang (6m),210000,450000,Anti karat frame utama kokoh wibawa.,Industrial / Modern Minimalis.
+Rangka Utama Pagar,Besi Hollow Hitam,40x60 mm / 50x100 mm,1.4 mm - 1.8 mm,Batang (6m),160000,350000,Lebih murah wajib dempul & cat anti karat tebal.,Budget fungsional.
+Rangka Railing,Stainless Steel (Pipa),SUS 304 (Anti Karat),1.5 inch - 2 inch,Batang (6m),350000,600000,Sangat awet mengkilap higienis susah dilas biasa.,Rumah sakit komersial modern klasik.
+Rangka Railing,Stainless Steel (Kotak),SUS 304,40x40 mm,Batang (6m),400000,650000,Clean look tahan cuaca ekstrem/dekat laut.,Modern kontemporer premium.
+Isian / Jari-jari Pagar,Besi Nako (Solid),Kotak Polos / Ulir,10 mm - 12 mm,Batang (6m),45000,80000,Besi padat berat susah dibengkokkan klasik.,Klasik Eropa / Minimalis rapat.
+Isian / Panel Pagar,Plat Laser Cut,Baja Karbon,1.5 mm - 2.0 mm,Meter Persegi,600000,1200000,Motif bisa custom presisi CNC butuh frame kuat.,Eksklusif mewah custom vibe (High Margin).
+Isian / Panel Pagar,Expanded Metal,Ornamesh,1.2 mm - 2.0 mm,Lembar (1.2x2.4m),250000,450000,Jaring besi kuat industrial look tembus pandang.,Industrial raw maskulin.
+Isian / Panel Pagar,Plat Perforated (Bolong),Galvanis / Mild Steel,1.0 mm - 1.5 mm,Lembar (1.2x2.4m),350000,650000,Plat bolong rapi sirkulasi udara bagus privasi terjaga.,Modern urban arsitektur tropis.
+Isian / Panel Pagar,Woodplank / GRC,Motif Kayu (GRC Board),8 mm - 9 mm,Lembar (15cm x 4m),60000,90000,Mirip kayu tahan cuaca/rayap rawan getas jika ditabrak.,Tropical warm modern minimalis.
+Isian / Panel Pagar,WPC (Wood Plastic Composite),Solid / Rongga,20 mm - 25 mm,Batang (3m - 4m),150000,280000,Campuran kayu plastik lebih awet dari GRC warna asli.,Premium tropical elegan (Alternatif kayu asli).
+Isian Railing Balkon,Kaca Tempered,Clear / Tinted,8 mm - 12 mm,Meter Persegi,800000,1500000,Aman jika pecah butiran butuh railing super kaku.,Luxury clean hotel vibe view tanpa batas.
+Isian Railing Balkon,Kaca Laminated,Clear + PVB Film,5+5 mm - 6+6 mm,Meter Persegi,1200000,2500000,Paling aman untuk lantai tinggi (tidak jatuh kalau pecah).,Ultra-premium high-rise standard.
+Aksesoris Pintu Gerbang,Roda Besi / Nylon,V-Groove / U-Groove,Cetak / Bubut (7cm - 10cm),Pcs,40000,120000,Nylon lebih senyap besi lebih kuat tahan beban.,Fungsional pergerakan gerbang.
+Aksesoris Pintu Gerbang,Rel Bawah Pagar Sliding,Besi Beton / Besi Siku,16 mm - 20 mm / 5x5 cm,Batang (6m),80000,180000,Track roda bawah harus dicor ke lantai kuat.,Infrastruktur gerbang.
+Aksesoris Pintu Gerbang,Engsel Bubut (Pintu Swing),Besi Solid,Diameter 1 inch - 2 inch,Pasang (2 pcs),50000,150000,Untuk gerbang lipat/swing harus dilas full agar tidak turun.,Krusial untuk UX (tidak seret).
+Aksesoris Railing,Handrail Kayu,Kamper / Meranti / Jati,5x7 cm (Profil Oval/Bulat),Meter Lari,80000,250000,Hangat dipegang elegan butuh plitur/varnish.,Klasik warm luxury.
+Aksesoris Railing,Penjepit Kaca (Glass Clip),Stainless / Zinc Alloy,Standar (Untuk kaca 8-12mm),Pcs,30000,75000,Pengunci kaca ke tiang railing (wajib presisi).,Estetika detail.
+Consumables Tambahan,Dempul Plastik,Sanpolac / Isamu,1 Kg,Kaleng,45000,65000,Menutup lubang las di frame pagar (wajib mulus).,Finishing perfection.
+Consumables Tambahan,Cat Finish (Duco/PU),Nippon / Danapaint,1 Liter / Kg,Kaleng,90000,180000,Lebih tahan cuaca dan anti gores dibanding sintetik biasa.,Long-term investment look.`
+  const rows = parseCsv(raw)
+  const [header, ...dataRows] = rows
+  const idx = (key: string) => header.findIndex(h => h.toLowerCase() === key.toLowerCase())
+  const catMap = (v: string) => {
+    const t = v.toLowerCase()
+    if (t.includes('rangka') || t.includes('isian')) return 'frame'
+    if (t.includes('aksesoris') || t.includes('consumables') || t.includes('finishing') || t.includes('jasa')) return 'aksesoris'
+    return 'lainnya'
+  }
+  const unitMap = (v: string) => {
+    const t = v.toLowerCase()
+    if (t.includes('meter lari')) return { unit: 'm1' as const, len: 1 }
+    if (t.includes('meter persegi')) return { unit: 'm2' as const, len: 1 }
+    if (t.includes('batang')) {
+      const m = v.match(/\((\d+(?:\.\d+)?)m\)/i)
+      let len = 6
+      if (m) len = Number(m[1])
+      else if (/3m/.test(v)) len = 3
+      return { unit: 'batang' as const, len }
+    }
+    if (t.includes('lembar')) return { unit: 'lembar' as const, len: 1 }
+    if (t.includes('pasang') || t.includes('pcs') || t.includes('kaleng') || t.includes('set') || t.includes('trip') || t.includes('botol')) return { unit: 'unit' as const, len: 1 }
+    return { unit: 'unit' as const, len: 1 }
+  }
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+  const codeFrom = (cat: string, material: string, spec: string, thick: string) => {
+    const catTag = cat === 'atap' ? 'AT' : cat === 'frame' ? 'FR' : cat === 'aksesoris' ? 'AK' : 'LN'
+    const specTag = slug(spec).replace(/-/g, '').toUpperCase()
+    const thickTag = slug(thick).replace(/mm/i, 'MM').replace(/\./g, '_').toUpperCase()
+    return `${catTag}-${slug(material).slice(0, 8).toUpperCase()}-${specTag}-${thickTag}`
+  }
+  const toName = (material: string, spec: string, thick: string) => `${material} ${spec} ${thick}`.replace(/\s+/g, ' ').trim()
+  const rawPayload = dataRows.map((row) => {
+    const cat = catMap(row[idx('Kategori')])
+    const material = row[idx('Material_Utama')]
+    const spec = row[idx('Varian_Tipe')]
+    const thick = row[idx('Dimensi_Ketebalan_Umum')]
+    const satuan = row[idx('Satuan_Harga')]
+    const hi = Number(row[idx('Estimasi_Harga_Atas_Rp')] || '0')
+    const um = unitMap(satuan)
+    const isLaser = /laser/i.test(material) || /laser/i.test(spec)
+    const requiresSealant = /kaca tempered/i.test(material) || /kaca tempered/i.test(spec)
+    return {
+      code: codeFrom(cat, material, spec, thick),
+      name: toName(material, spec, thick),
+      category: cat,
+      unit: um.unit,
+      base_price_per_unit: hi,
+      length_per_unit: um.len,
+      is_active: true,
+      is_laser_cut: isLaser,
+      requires_sealant: requiresSealant
+    } as MaterialImportData
+  })
+  const payload: MaterialImportData[] = []
+  const seen: Record<string, number> = {}
+  for (const p of rawPayload) {
+    const base = p.code
+    if (seen[base]) {
+      let i = ++seen[base]
+      while (seen[`${base}-V${i}`]) i++
+      p.code = `${base}-V${i}`
+      seen[p.code] = 1
+    } else {
+      seen[base] = 1
+    }
+    payload.push(p)
+  }
+  const { error } = await supabase.from('materials').upsert(payload, { onConflict: 'code' })
+  if (error) {
+    throw new Error(error.message)
+  }
+  revalidatePath('/admin/materials')
   redirect('/admin/materials')
 }
 
@@ -221,7 +492,6 @@ export default async function AdminMaterialsPage() {
             <Link href="/admin/materials/new" className="btn btn-primary">
               + Tambah Material
             </Link>
-            <ImportCsvForm importMaterials={importMaterials} />
           </div>
         </div>
 
@@ -261,6 +531,7 @@ export default async function AdminMaterialsPage() {
               Semua Material ({materials?.length ?? 0})
             </h2>
             <div className="flex gap-2">
+              <ImportCsvForm importMaterials={importMaterials} importPreset={importFenceRailingPreset} />
               <a href={csvHref} download="materials.csv" className="btn btn-outline-dark btn-sm">Export CSV</a>
               <button className="btn btn-outline-dark btn-sm">Filter</button>
             </div>

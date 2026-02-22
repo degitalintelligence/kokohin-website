@@ -22,11 +22,12 @@ function SubmitButton() {
 }
 
 interface ImportCsvFormProps {
-  importMaterials: (formData: FormData) => Promise<void>
+  importCatalogs: (formData: FormData) => Promise<void>
   importPreset?: () => Promise<void>
+  importPresetSecondary?: () => Promise<void>
 }
 
-export default function ImportCsvForm({ importMaterials, importPreset }: ImportCsvFormProps) {
+export default function ImportCsvForm({ importCatalogs, importPreset, importPresetSecondary }: ImportCsvFormProps) {
   const [error, setError] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
@@ -52,25 +53,19 @@ export default function ImportCsvForm({ importMaterials, importPreset }: ImportC
       setError('Please select a CSV file')
       return
     }
-    
-    // Validate file type
     if (!file.name.toLowerCase().endsWith('.csv')) {
       setError('File must be a CSV (.csv)')
       return
     }
-
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       setError('File size must be less than 5MB')
       return
     }
-
     try {
-      await importMaterials(formData)
+      await importCatalogs(formData)
       setOpen(false)
       setFileName(null)
     } catch (err) {
-      console.error('Import error:', err)
       setError(err instanceof Error ? err.message : 'Failed to import CSV')
     }
   }
@@ -104,15 +99,14 @@ export default function ImportCsvForm({ importMaterials, importPreset }: ImportC
                   Selected: {fileName}
                 </div>
               )}
-        </div>
+            </div>
             {error && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
                 ⚠️ {error}
               </div>
             )}
             <div className="text-xs text-gray-500">
-              <p>Format CSV: id (opsional), code, name, category, unit, base_price_per_unit, length_per_unit, is_active</p>
-              <p>Gunakan <strong>Export CSV</strong> untuk mendapatkan template dengan ID (untuk update).</p>
+              <p>Format CSV: title, image_url, atap_id, rangka_id, base_price_per_m2, is_active</p>
             </div>
             <div className="flex justify-end gap-2">
               <button type="button" className="btn btn-outline-dark btn-sm" onClick={() => setOpen(false)}>
@@ -122,15 +116,24 @@ export default function ImportCsvForm({ importMaterials, importPreset }: ImportC
             </div>
           </form>
 
-      {importPreset && (
-        <div className="mt-3 pt-3 border-t border-gray-200">
-          <form action={importPreset}>
-            <button type="submit" className="btn btn-outline-dark btn-sm w-full">
-              Gunakan Dataset Pagar/Railing
-            </button>
-          </form>
-        </div>
-      )}
+          {importPreset && (
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <form action={importPreset}>
+                <button type="submit" className="btn btn-outline-dark btn-sm w-full">
+                  Gunakan Dataset Kokohin
+                </button>
+              </form>
+            </div>
+          )}
+          {importPresetSecondary && (
+            <div className="mt-3">
+              <form action={importPresetSecondary}>
+                <button type="submit" className="btn btn-outline-dark btn-sm w-full">
+                  Dataset Katalog Railing/Pagar
+                </button>
+              </form>
+            </div>
+          )}
         </div>
       )}
     </div>

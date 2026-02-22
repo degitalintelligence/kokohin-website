@@ -4,17 +4,19 @@ import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import type { CalculatorResult } from '@/lib/types';
 
-// Determine font base URL - prefer environment variable for server-side rendering
-const fontBase = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' && window.location.origin ? window.location.origin : '');
-const fontPath = fontBase ? `${fontBase}/fonts` : '/fonts';
-
-Font.register({
-  family: 'Montserrat',
-  fonts: [
-    { src: `${fontPath}/Montserrat-Regular.ttf`, fontWeight: 400 },
-    { src: `${fontPath}/Montserrat-Bold.ttf`, fontWeight: 700 },
-  ],
-});
+let fontsRegistered = false
+function ensureFontsRegistered() {
+  if (fontsRegistered) return
+  if (typeof window === 'undefined') return
+  const base = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin || ''
+  const path = base ? `${base}/fonts` : '/fonts'
+  try {
+    Font.register({ family: 'Montserrat', src: `${path}/Montserrat-Regular.ttf` })
+    Font.register({ family: 'Montserrat', src: `${path}/Montserrat-Bold.ttf`, fontWeight: 700 })
+    fontsRegistered = true
+  } catch {
+  }
+}
 
 // 2. STYLING KELAS ATAS (Mirip Tailwind tapi untuk React PDF)
 const styles = StyleSheet.create({
@@ -184,6 +186,7 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
   projectType = 'Pekerjaan Pembuatan Kanopi',
   areaUnit = 'm²',
 }) => {
+  ensureFontsRegistered()
   const estimationNumber = projectId ? `WEB-${projectId.slice(0, 8).toUpperCase()}` : 'WEB-PREVIEW';
   const customerName = leadInfo.name || 'Customer';
   const customerPhone = leadInfo.whatsapp || '-';
