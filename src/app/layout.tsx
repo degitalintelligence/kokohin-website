@@ -4,7 +4,6 @@ import './globals.css'
 import { Toaster } from '@/components/ui/toaster'
 import { getLogoUrl } from '@/app/actions/settings'
 import RouteProgress from '@/components/layout/RouteProgress'
-import PageTransition from '@/components/layout/PageTransition'
 
 const montserrat = Montserrat({
   subsets: ['latin'],
@@ -38,7 +37,7 @@ export default async function RootLayout({
     <html lang="id" className={montserrat.variable}>
       <body className="font-sans" data-logo-url={logoUrl ?? ''}>
         <RouteProgress />
-        <PageTransition>{children}</PageTransition>
+        {children}
         <Toaster />
       </body>
     </html>

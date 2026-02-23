@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useReducer, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Calculator, Ruler, MapPin, Package, AlertCircle } from 'lucide-react'
 import { calculateCanopyPrice, formatRupiah, formatNumber } from '@/lib/calculator'
 import type { CalculatorInput, CalculatorResult, Material, Zone, Catalog, CatalogAddon } from '@/lib/types'
@@ -8,7 +9,6 @@ import { createProjectWithEstimation } from '@/app/actions/createProjectWithEsti
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
 import { generateWhatsAppLink } from '@/utils/generateWhatsAppLink'
-import LeadForm from './LeadForm'
 import ResultPanel from './ResultPanel'
 
 function getFriendlySupabaseError(error: unknown, fallback: string): string {
@@ -46,7 +46,6 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
   const [result, setResult] = useState<(CalculatorResult & { isCustom?: boolean }) | null>(null)
   const [pendingResult, setPendingResult] = useState<(CalculatorResult & { isCustom?: boolean }) | null>(null)
   const [leadInfo, dispatchLead] = useReducer(leadReducer, { name: '', whatsapp: '' })
-  const [isLeadCaptured, setIsLeadCaptured] = useState(false)
   const [projectId, setProjectId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [materials, setMaterials] = useState<Material[]>([])
@@ -58,6 +57,20 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
   const [calcError, setCalcError] = useState<string | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [waNumber, setWaNumber] = useState<string>(FALLBACK_WA)
+  const [showLeadModal, setShowLeadModal] = useState(false)
+  const [leadModalAnim, setLeadModalAnim] = useState(false)
+  const [modalStep, setModalStep] = useState<'form' | 'result'>('form')
+  const [portalReady, setPortalReady] = useState(false)
+  const [savingLead, setSavingLead] = useState(false)
+  useEffect(() => { setPortalReady(true) }, [])
+  useEffect(() => {
+    if (modalStep === 'result' && !result && pendingResult) {
+      setResult(pendingResult)
+    }
+  }, [modalStep, pendingResult, result])
+  const nameValid = leadInfo.name.trim().length > 0
+  const whatsappValid = /^(\+62|62|0)8[1-9][0-9]{6,9}$/.test(leadInfo.whatsapp.replace(/\s+/g, ''))
+  const canContinue = nameValid && whatsappValid && !loading
   
   const handleInputChange = (field: keyof CalculatorInput, value: CalculatorInput[typeof field]) => {
     setInput(prev => ({
@@ -65,14 +78,39 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
       [field]: value
     }))
   }
+
+  const openLeadModalAndCalculate = () => {
+    setShowLeadModal(true)
+    setModalStep('form')
+    setTimeout(() => setLeadModalAnim(true), 0)
+  }
+
+  const closeLeadModal = () => {
+    setLeadModalAnim(false)
+    setTimeout(() => {
+      setShowLeadModal(false)
+      setModalStep('form')
+    }, 200)
+  }
+
+  const handleContinueFromModal = async () => {
+    if (!canContinue) return
+    const calc = await handleCalculate()
+    if (!calc) return
+    setResult(calc)
+    setModalStep('result')
+    if (input.jenis !== 'custom') {
+      void handleLeadSubmit()
+    }
+  }
   
-  const handleCalculate = async () => {
+  const handleCalculate = async (): Promise<(CalculatorResult & { isCustom?: boolean }) | null> => {
     setLoading(true)
     setCalcError(null)
     try {
       // ESCAPE HATCH: Jika custom, simpan ke pendingResult untuk lead capture
       if (input.jenis === 'custom') {
-        setPendingResult({
+        const customResult: CalculatorResult & { isCustom?: boolean } = {
           luas: input.panjang * input.lebar,
           materialCost: 0,
           wasteCost: 0,
@@ -84,14 +122,16 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
           estimatedPrice: 0,
           breakdown: [],
           isCustom: true
-        })
-        setIsLeadCaptured(false)
-        return
+        }
+        setPendingResult(customResult)
+        setResult(customResult)
+        return customResult
       }
       
       const calculation = await calculateCanopyPrice({ ...input, selectedAddonIds })
       setPendingResult(calculation)
-      setIsLeadCaptured(false)
+      setResult(calculation)
+      return calculation
     } catch (error) {
       console.error('Error menghitung estimasi:', error)
       const fallback = 'Gagal menghitung estimasi. Silakan coba beberapa saat lagi.'
@@ -100,6 +140,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
         error instanceof Error ? error.message : fallback
       )
       setCalcError(friendly)
+      return null
     } finally {
       setLoading(false)
     }
@@ -116,10 +157,13 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
       return
     }
     try {
+      setSavingLead(true)
+      const zoneName = zones.find((z) => z.id === input.zoneId)?.name ?? null
+      const inferredAddress = zoneName ? `Zona ${zoneName}` : 'Alamat belum diisi'
       const dto = {
         customer_name: leadInfo.name,
         phone: leadInfo.whatsapp,
-        address: '',
+        address: inferredAddress,
         zone_id: input.zoneId || null,
         custom_notes: input.jenis === 'custom' ? (input.customNotes || 'Permintaan custom via kalkulator') : null,
         status: input.jenis === 'custom' ? 'Need Manual Quote' as const : 'New' as const,
@@ -133,7 +177,6 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
       const res = await createProjectWithEstimation(dto)
       setProjectId(res.project_id)
       setResult(pendingResult)
-      setIsLeadCaptured(true)
       setCalcError(null)
     } catch (error) {
       const fallback = 'Gagal menyimpan data ke sistem. Silakan coba beberapa saat lagi atau hubungi kami via WhatsApp.'
@@ -145,6 +188,8 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
         const friendly = getFriendlySupabaseError(error, fallback)
         setCalcError(friendly)
       }
+    } finally {
+      setSavingLead(false)
     }
   }
 
@@ -186,7 +231,6 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     setResult(null)
     setPendingResult(null)
     dispatchLead({ type: 'reset' })
-    setIsLeadCaptured(false)
     setProjectId(null)
     setCalcError(null)
   }
@@ -200,7 +244,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
           { data: materialsData, error: materialsError },
           { data: logoSetting },
         ] = await Promise.all([
-          supabase.from('zones').select('*').order('name'),
+          supabase.from('zones').select('*').eq('is_active', true).order('name'),
           supabase.from('materials').select('*').eq('category', 'frame').eq('is_active', true).order('name'),
           supabase.from('site_settings').select('value').eq('key', 'logo_url').maybeSingle(),
         ])
@@ -321,9 +365,9 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
         </div>
       )}
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 gap-8">
         {/* Input Section */}
-        <div className="lg:col-span-2 space-y-8">
+        <div className="space-y-8">
           <div className="card space-y-6">
             <div className="flex items-center gap-2 mb-6">
               <Ruler className="w-5 h-5 text-primary" />
@@ -541,7 +585,8 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
             
             <div className="flex flex-col sm:flex-row gap-4 pt-6">
               <button
-                onClick={handleCalculate}
+                type="button"
+                onClick={openLeadModalAndCalculate}
                 disabled={loading}
                 className="flex-1 btn btn-primary text-lg py-4"
               >
@@ -577,16 +622,10 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
           <div className="card bg-primary-light/30 border-primary/20">
             <h4 className="font-bold text-primary-dark mb-4 text-lg">Catatan Penting:</h4>
             <ul className="space-y-3">
-              <li className="flex items-start gap-3">
-                <div className="w-2 h-2 bg-primary rounded-full mt-2"></div>
+              <li className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-primary mt-0.5" />
                 <span className="text-gray-700">
-                  <span className="font-semibold">Waste Calculation:</span> Perhitungan menggunakan <code className="bg-gray-100 px-1.5 py-0.5 rounded">Math.ceil()</code> untuk pembulatan ke atas material batangan/lembaran.
-                </span>
-              </li>
-              <li className="flex items-start gap-3">
-                <div className="w-2 h-2 bg-primary rounded-full mt-2"></div>
-                <span className="text-gray-700">
-                  <span className="font-semibold">Escape Hatch:</span> Permintaan custom akan langsung ditandai <span className="font-semibold text-primary">&quot;Need Manual Quote&quot;</span> dan bypass auto-kalkulasi.
+                  <span className="font-semibold">Permintaan Khusus:</span> Untuk permintaan custom, tuliskan detail kebutuhan di kolom keterangan. Tim kami akan menghubungi Anda untuk penawaran manual.
                 </span>
               </li>
               <li className="flex items-start gap-3">
@@ -598,71 +637,151 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
             </ul>
           </div>
         </div>
-        
-        {/* Results Section */}
-        <div className="lg:col-span-1">
-          <div className="sticky top-8">
-            <div className="card bg-gradient-to-br from-primary-dark to-primary-dark/90 text-white">
-              <h3 className="text-2xl font-bold mb-6">Hasil Perhitungan</h3>
-              
-              {pendingResult && !isLeadCaptured ? (
-                <LeadForm
-                  name={leadInfo.name}
-                  whatsapp={leadInfo.whatsapp}
-                  onNameChange={(v) => handleLeadChange('name', v)}
-                  onWhatsappChange={(v) => handleLeadChange('whatsapp', v)}
-                  onSubmit={handleLeadSubmit}
-                  error={calcError}
-                  submitDisabled={!leadInfo.name.trim() || !leadInfo.whatsapp.trim()}
-                  areaM2={pendingResult.luas}
-                />
-              ) : result ? (
-                <ResultPanel
-                  result={result}
-                  leadName={leadInfo.name}
-                  projectId={projectId}
-                  zoneName={activeZoneName}
-                  logoUrl={logoUrl}
-                  customNotes={input.customNotes || null}
-                  onBookSurvey={result.isCustom ? handleCustomConsultation : handleBookSurvey}
-                />
-              ) : (
-                <div className="text-center py-12">
-                  <div className="w-16 h-16 mx-auto mb-6 bg-white/10 rounded-full flex items-center justify-center">
-                    <Calculator className="w-8 h-8 text-white/60" />
+      </div>
+      {showLeadModal && portalReady &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center" role="dialog" aria-modal="true">
+            <div
+              className={`absolute inset-0 bg-black/50 transition-opacity duration-200 ${leadModalAnim ? 'opacity-100' : 'opacity-0'}`}
+              onClick={() => !loading && closeLeadModal()}
+            />
+            <div className={`relative w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl p-6 max-h-[90svh] overflow-y-auto transform transition-all duration-200 ${leadModalAnim ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'}`}>
+              {modalStep === 'form' ? (
+                <>
+                  <h3 className="text-xl font-bold text-[#1D1D1B] mb-4">Data Kontak</h3>
+                  <p className="text-gray-600 text-sm mb-6">Masukkan nama lengkap dan nomor WhatsApp Anda untuk melanjutkan perhitungan.</p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="label">Nama Lengkap *</label>
+                      <input
+                        type="text"
+                        value={leadInfo.name}
+                        onChange={(e) => handleLeadChange('name', e.target.value)}
+                        className={`input ${!nameValid && leadInfo.name ? 'border-red-300' : ''}`}
+                        placeholder="Nama lengkap Anda"
+                      />
+                      {!nameValid && leadInfo.name !== '' && (
+                        <p className="text-red-600 text-xs mt-1">Nama wajib diisi.</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="label">Nomor WhatsApp *</label>
+                      <input
+                        type="tel"
+                        value={leadInfo.whatsapp}
+                        onChange={(e) => handleLeadChange('whatsapp', e.target.value)}
+                        className={`input ${!whatsappValid && leadInfo.whatsapp ? 'border-red-300' : ''}`}
+                        placeholder="08xxx (format Indonesia)"
+                      />
+                      {!whatsappValid && leadInfo.whatsapp !== '' && (
+                        <p className="text-red-600 text-xs mt-1">Gunakan format Indonesia, contoh: 081234567890.</p>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-white/80">
-                    Masukkan dimensi kanopi Anda dan klik &quot;Hitung Estimasi&quot; untuk melihat perhitungan detail.
-                  </p>
-                </div>
+                  <div className="flex gap-3 mt-6">
+                    <button
+                      type="button"
+                      className="btn btn-outline flex-1"
+                      onClick={closeLeadModal}
+                      disabled={loading}
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary flex-1"
+                      onClick={handleContinueFromModal}
+                      disabled={!canContinue}
+                    >
+                      {loading ? (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="animate-spin h-4 w-4 rounded-full border-b-2 border-white" />
+                          Memproses...
+                        </span>
+                      ) : (
+                        'Lanjutkan'
+                      )}
+                    </button>
+                  </div>
+                  {calcError && (
+                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-sm text-red-700">{calcError}</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="card bg-gradient-to-br from-primary-dark to-primary-dark/90 text-white">
+                    <h3 className="text-2xl font-bold mb-6">Hasil Perhitungan</h3>
+                    {calcError ? (
+                      <div className="p-4 bg-red-500/20 border border-red-500/40 rounded-lg">
+                        <p className="text-red-100 text-sm">{calcError}</p>
+                        <div className="mt-4 flex gap-3">
+                          <button
+                            type="button"
+                            className="btn btn-outline flex-1"
+                            onClick={() => { setModalStep('form'); setCalcError(null) }}
+                          >
+                            Kembali
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-primary flex-1"
+                            onClick={async () => {
+                              const calc = await handleCalculate()
+                              if (calc) {
+                                setResult(calc)
+                                setCalcError(null)
+                              }
+                            }}
+                          >
+                            Coba Lagi
+                          </button>
+                        </div>
+                      </div>
+                    ) : result ? (
+                      <ResultPanel
+                        result={result}
+                        leadName={leadInfo.name}
+                        projectId={projectId}
+                        zoneName={activeZoneName}
+                        logoUrl={logoUrl}
+                        customNotes={input.customNotes || null}
+                        onBookSurvey={result.isCustom ? handleCustomConsultation : handleBookSurvey}
+                      />
+                    ) : (
+                      <div className="text-center py-12">
+                        <div className="w-16 h-16 mx-auto mb-6 bg-white/10 rounded-full flex items-center justify-center">
+                          <span className="animate-spin h-6 w-6 rounded-full border-b-2 border-white" />
+                        </div>
+                        <p className="text-white/80">{loading ? 'Menghitung...' : 'Menyiapkan hasil...'}</p>
+                      </div>
+                    )}
+                  </div>
+                  {savingLead && (
+                    <div className="mt-3 text-center text-sm text-gray-600">
+                      <span className="inline-flex items-center gap-2">
+                        <span className="animate-spin h-4 w-4 rounded-full border-b-2 border-gray-600" />
+                        Menyimpan data ke sistem...
+                      </span>
+                    </div>
+                  )}
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      className="btn btn-outline w-full"
+                      onClick={closeLeadModal}
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                </>
               )}
             </div>
-            
-            {/* Quick Info */}
-            <div className="mt-6 p-4 bg-primary/10 border border-primary/20 rounded-xl" suppressHydrationWarning>
-              <h4 className="font-bold text-primary-dark mb-2">Manfaat untuk Anda</h4>
-              <ul className="space-y-2 text-sm text-gray-700">
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                  <span>Tanpa pemborosan material</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                  <span>Harga adil sesuai lokasi</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                  <span>Permintaan custom? Kami bantu</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                  <span>Total harga transparan</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
+          </div>,
+          document.body
+        )
+      }
     </div>
   )
 }
