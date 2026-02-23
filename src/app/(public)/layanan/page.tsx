@@ -71,11 +71,29 @@ async function ServicesSection() {
         return !(n.includes('membrane') || n.includes('membran'))
     })
 
+  const toPlainText = (html?: string | null) => {
+    if (!html) return ''
+    let t = String(html)
+    t = t.replace(/<\s*br\s*\/?>/gi, '\n')
+    t = t.replace(/<\/\s*p\s*>/gi, '\n')
+    t = t.replace(/<[^>]+>/g, '')
+    t = t.replace(/&nbsp;/gi, ' ')
+    t = t.replace(/&amp;/gi, '&')
+    t = t.replace(/&lt;/gi, '<')
+    t = t.replace(/&gt;/gi, '>')
+    t = t.replace(/&quot;/gi, '"')
+    t = t.replace(/&#39;/gi, "'")
+    t = t.replace(/\n{2,}/g, '\n')
+    return t.trim()
+  }
+
     return (
         <div className="flex flex-col gap-16">
             {visible.length > 0 ? (
                 visible.map((s, idx) => {
                     const Icon = getIconByLucideName(s.icon) || getServiceIcon(s.name || '')
+          const plain = toPlainText(s.description)
+          const lines = plain.split(/\n+/).filter(Boolean)
                     return (
                     <div key={s.id} id={String(s.slug || s.id)} className={`grid grid-cols-1 lg:grid-cols-[1fr_1.8fr] gap-12 items-center scroll-mt-28 ${idx % 2 === 1 ? 'lg:grid-cols-[1.8fr_1fr]' : ''}`}>
                         <div className={`relative aspect-video lg:aspect-square max-w-full lg:max-w-xs rounded-2xl bg-gradient-to-br from-primary to-primary-light flex items-center justify-center shadow-xl overflow-hidden ${idx % 2 === 1 ? 'lg:order-2' : ''}`}>
@@ -106,7 +124,13 @@ async function ServicesSection() {
                                 {s.name}
                             </div>
                             <h2 className="text-3xl font-bold text-primary leading-tight">{s.name}</h2>
-                            <p className="text-base text-gray-600 leading-relaxed">{s.description}</p>
+              <div className="space-y-2">
+                {lines.length > 0 ? lines.map((ln, i) => (
+                  <p key={i} className="text-base text-gray-600 leading-relaxed">{ln}</p>
+                )) : (
+                  <p className="text-base text-gray-600 leading-relaxed">{plain}</p>
+                )}
+              </div>
                             <Link href="/kontak" className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-primary rounded-full hover:bg-primary/90 shadow-lg w-fit transition-all">
                                 Minta Penawaran →
                             </Link>

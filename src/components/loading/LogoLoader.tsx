@@ -24,6 +24,9 @@ export default function LogoLoader({ src }: { src: string | null }) {
             alt="Kokohin Logo"
             fill
             priority
+            quality={70}
+            unoptimized
+            sizes="96px"
             className={`object-contain z-10 transition-all duration-500 ease-out ${loaded ? 'opacity-100 scale-100' : 'opacity-80 scale-95'}`}
             onLoadingComplete={() => setLoaded(true)}
             onLoad={() => setLoaded(true)}

@@ -130,18 +130,26 @@ export default function LoginForm({ backgroundUrl, logoUrl }: LoginFormProps) {
     }
 
     // Determine background style
-    const backgroundStyle = backgroundUrl 
-        ? { backgroundImage: `url(${backgroundUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-        : undefined
-
     const containerClasses = backgroundUrl 
-        ? "min-h-[100svh] flex items-center justify-center p-6 bg-gray-900" // fallback color
+        ? "min-h-[100svh] flex items-center justify-center p-6 bg-gray-900"
         : "min-h-[100svh] flex items-center justify-center p-6 bg-gradient-to-br from-[#1D1D1B] to-[#E30613]"
 
     return (
-        <div className={cn(containerClasses, mounted && "animate-slide-in-right")} style={backgroundStyle}>
-            {/* Overlay for better readability if background image is present */}
-            {backgroundUrl && <div className="absolute inset-0 bg-black/40 z-0" />}
+        <div className={cn(containerClasses, mounted && "animate-slide-in-right")} >
+            {backgroundUrl && (
+                <div className="absolute inset-0 -z-10">
+                    <Image 
+                        src={backgroundUrl}
+                        alt="Background"
+                        fill
+                        className="object-cover"
+                        sizes="100vw"
+                        quality={60}
+                        priority
+                    />
+                    <div className="absolute inset-0 bg-black/40" />
+                </div>
+            )}
 
             <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 md:p-10 z-10 relative">
                 <div className="flex justify-center mb-6">
@@ -152,6 +160,7 @@ export default function LoginForm({ backgroundUrl, logoUrl }: LoginFormProps) {
                                 alt="Kokohin Logo"
                                 fill
                                 className="object-contain"
+                                quality={75}
                                 priority
                             />
                         </div>

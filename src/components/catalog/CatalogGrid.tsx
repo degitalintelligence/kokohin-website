@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { Check, Star, Shield, TrendingUp, Package } from 'lucide-react'
 import type { Catalog } from '@/lib/types'
-import { createClient } from '@/lib/supabase/client'
+
 
 const features = [
   { icon: Shield, text: 'Garansi Material 1 Tahun' },
@@ -27,20 +27,14 @@ export default function CatalogGrid() {
   useEffect(() => {
     const fetchCatalogs = async () => {
       try {
-        const supabase = createClient()
-        const { data, error: fetchError } = await supabase
-          .from('catalogs')
-          .select('*, atap:atap_id(name, category), rangka:rangka_id(name, category)')
-          .eq('is_active', true)
-          .order('created_at', { ascending: false })
-
-        if (fetchError) {
-          setError(fetchError.message)
+        const res = await fetch('/api/public/catalogs', { cache: 'no-store' })
+        if (!res.ok) {
+          setError('Gagal memuat katalog')
           setCatalogs([])
           return
         }
-
-        setCatalogs(data ?? [])
+        const json = await res.json() as { catalogs?: Catalog[] }
+        setCatalogs(json.catalogs ?? [])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Gagal memuat katalog')
         setCatalogs([])
@@ -308,15 +302,15 @@ export default function CatalogGrid() {
                 Butuh Paket Custom atau Spesifikasi Khusus?
               </h3>
               <p className="text-white/90 mb-6">
-                Tim ahli kami siap mendesain kanopi sesuai kebutuhan spesifik Anda. 
-                Dapatkan penawaran kompetitif dengan kualitas terjamin.
+                Tim Ahli kami akan mendesain kebutuhan Anda sesuai dengan konsep dan spesifikasi yang diinginkan. 
+                Dapatkan penawaran produk berkualitas kami sesuai budget Anda!
               </p>
               <div className="space-y-3">
                 <button
                   onClick={() => window.location.href = '/kontak'}
                   className="btn bg-white text-primary-dark hover:bg-white/90 font-bold px-8"
                 >
-                  Request Custom Quote
+                  Request Estimasi Harga
                 </button>
                 <button
                   onClick={() => window.location.href = `https://wa.me/${waNumber}`}
@@ -357,20 +351,16 @@ export default function CatalogGrid() {
         <div className="max-w-3xl mx-auto space-y-4">
           {[
             {
-              q: 'Apakah harga sudah termasuk pemasangan?',
-              a: 'Ya, semua harga paket sudah termasuk material berkualitas dan pemasangan profesional oleh tim ahli kami.'
+              q: 'Berapa lama proses produksi dan instalasi hingga selesai?',
+              a: 'Pengerjaan dilakukan 2-7 hari setelah survei dan down payment; pemasangan dilakukan sesuai jadwal yang disepakati bersama klien.'
             },
             {
-              q: 'Berapa lama proses instalasi kanopi?',
-              a: 'Waktu instalasi bervariasi tergantung kompleksitas proyek, rata-rata 2-5 hari kerja setelah survey.'
+              q: 'Bagaimana proses klaim maintenance dan garansi produk?',
+              a: 'Klien dapat melakukan klaim perawatan dan perbaikan material serta instalasi selama 1 tahun.'
             },
             {
-              q: 'Apakah ada biaya survey?',
-              a: 'Survey dan konsultasi awal kami berikan secara gratis tanpa biaya apapun.'
-            },
-            {
-              q: 'Bagaimana dengan garansi?',
-              a: 'Kami memberikan garansi material 1 tahun dan garansi instalasi 1 tahun untuk semua produk kami.'
+              q: 'Bagaimana proses pembayaran?',
+              a: 'Setelah survei dilakukan, kami menerbitkan penawaran kepada klien. Jika penawaran sudah sesuai, klien dapat melakukan down payment 50% dari total harga agar proses produksi bisa dilakukan. Kemudian, setelah produksi selesai, klien melakukan pembayaran 40% untuk melanjutkan proses instalasi. Sisa pembayaran dilakukan setelah seluruh proses pekerjaan selesai. Pembayaran dilakukan melalui transfer bank ke rekening resmi perusahaan.'
             }
           ].map((faq, index) => (
             <div key={index} className="card hover:shadow-md transition-shadow">

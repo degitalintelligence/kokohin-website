@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Building2, BookOpen, Target, Heart, Zap, Leaf, Users } from 'lucide-react'
+import { Building2, BookOpen, Target, Heart, Zap } from 'lucide-react'
 
 export const metadata: Metadata = {
     title: 'Tentang Kami',
@@ -8,27 +8,10 @@ export const metadata: Metadata = {
 }
 export const revalidate = 86400
 
-const TIMELINE = [
-    { year: '2014', event: 'Kokohin berdiri dengan 3 orang tim kecil di Depok.' },
-    { year: '2016', event: 'Ekspansi ke Jakarta dan Tangerang. Proyek ke-100 selesai.' },
-    { year: '2018', event: 'Mulai melayani proyek komersial gedung dan pusat perbelanjaan.' },
-    { year: '2020', event: 'Bertahan di masa pandemi dengan layanan konsultasi online.' },
-    { year: '2022', event: 'Proyek ke-400 selesai. Tim berkembang menjadi 25 orang.' },
-    { year: '2024', event: 'Layanan diperluas ke wilayah Jawa Barat dan Jawa Tengah.' },
-]
-
-const TEAM = [
-    { name: 'Bapak Hendra', role: 'Direktur & Pendiri' },
-    { name: 'Ibu Sari', role: 'Manajer Proyek' },
-    { name: 'Pak Dian', role: 'Kepala Teknisi' },
-    { name: 'Pak Reza', role: 'Konsultan Desain' },
-]
-
 const VALUES = [
     { icon: Target, title: 'Presisi', desc: 'Setiap detail pengerjaan dilakukan dengan cermat dan terukur.' },
     { icon: Heart, title: 'Kepercayaan', desc: 'Kami menjaga kepercayaan klien sebagai aset terpenting.' },
     { icon: Zap, title: 'Inovasi', desc: 'Terus berinovasi dalam material dan teknik pemasangan.' },
-    { icon: Leaf, title: 'Keberlanjutan', desc: 'Menggunakan material ramah lingkungan dan efisien.' },
 ]
 
 export default function TentangPage() {
@@ -112,61 +95,7 @@ export default function TentangPage() {
                 </div>
             </section>
 
-            {/* Timeline */}
-            <section className="section">
-                <div className="container">
-                    <div className="section-header section-header--center">
-                        <div className="section-label">
-                            <BookOpen className="w-5 h-5 inline-block mr-2" />
-                            Perjalanan Kami
-                        </div>
-                        <h2 className="section-title">Milestone Kokohin</h2>
-                        <div className="divider divider--center" />
-                    </div>
-                    <div className="relative max-w-3xl mx-auto flex flex-col gap-6">
-                        {/* Vertical Line */}
-                        <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-gray-200 -translate-x-1/2 hidden md:block" />
-                        
-                        {TIMELINE.map((t, i) => (
-                            <div key={t.year} className={`grid grid-cols-1 md:grid-cols-[1fr_24px_1fr] items-center gap-4 relative`}>
-                                {/* Mobile: Year on top or handled differently? For now using md:grid */}
-                                <div className={`${i % 2 === 0 ? 'md:col-start-1 md:text-right' : 'md:col-start-3 md:text-left'} bg-white border border-gray-200 rounded-md p-4 shadow-sm z-10`}>
-                                    <div className="font-bold text-lg text-primary mb-1">{t.year}</div>
-                                    <p className="text-sm text-gray-600 leading-relaxed">{t.event}</p>
-                                </div>
-                                <div className="hidden md:block w-3.5 h-3.5 bg-primary rounded-full border-[3px] border-white shadow-[0_0_0_2px_var(--primary)] justify-self-center col-start-2 z-10" />
-                                {/* Empty div for the other side */}
-                                <div className={`hidden md:block ${i % 2 === 0 ? 'md:col-start-3' : 'md:col-start-1'}`} />
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            {/* Team */}
-            <section className="section bg-white">
-                <div className="container">
-                    <div className="section-header section-header--center">
-                        <div className="section-label">
-                            <Users className="w-5 h-5 inline-block mr-2" />
-                            Tim Kami
-                        </div>
-                        <h2 className="section-title">Orang di Balik Kokohin</h2>
-                        <div className="divider divider--center" />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {TEAM.map(m => (
-                            <div key={m.name} className="bg-white rounded-2xl shadow-lg p-6 border border-gray-200 flex flex-col items-center gap-3 text-center">
-                                <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center text-4xl mb-2">
-                                    <Users className="w-10 h-10 text-gray-400" />
-                                </div>
-                                <h3 className="text-lg font-bold text-gray-800">{m.name}</h3>
-                                <p className="text-sm font-medium text-primary">{m.role}</p>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </section>
+            
 
             {/* CTA */}
             <section className="py-16 bg-primary text-white text-center">

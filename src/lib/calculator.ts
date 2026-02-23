@@ -103,17 +103,15 @@ export function applyZoneMarkup(basePrice: number, markupPercentage: number, fla
  * Return base_price_per_unit jika ditemukan, otherwise return default price
  */
 async function getMaterialPriceByName(materialName: string, defaultPrice = 0): Promise<number> {
-  const supabase = createClient()
-  const { data: materials } = await supabase
-    .from('materials')
-    .select('base_price_per_unit')
-    .ilike('name', `%${materialName}%`)
-    .limit(1)
-  
-  if (materials && materials.length > 0) {
-    return materials[0].base_price_per_unit
+  try {
+    const res = await fetch(`/api/public/materials?search=${encodeURIComponent(materialName)}`, { cache: 'no-store' })
+    if (!res.ok) return defaultPrice
+    const json = await res.json() as { material?: { base_price_per_unit?: number } | null }
+    const price = json?.material?.base_price_per_unit
+    return typeof price === 'number' ? price : defaultPrice
+  } catch {
+    return defaultPrice
   }
-  return defaultPrice
 }
 
 /**
@@ -148,23 +146,23 @@ export async function validateTemperedGlass(materialId: string): Promise<{
   requiresSealant: boolean
   sealantMaterialName: string
 }> {
-  // Gunakan flag requires_sealant dari database
-  const supabase = createClient()
-  const { data: material } = await supabase
-    .from('materials')
-    .select('name, requires_sealant')
-    .eq('id', materialId)
-    .maybeSingle()
-  
-  const materialName = material?.name.toLowerCase() || ''
-  const isTemperedGlass = materialName.includes('tempered') || materialName.includes('kaca tempered')
-  // Prioritaskan flag dari database, fallback ke deteksi nama
-  const requiresSealant = material?.requires_sealant ?? isTemperedGlass
-  
-  return {
-    isTemperedGlass,
-    requiresSealant,
-    sealantMaterialName: requiresSealant ? 'Sealant Karet Kaca' : ''
+  try {
+    const res = await fetch(`/api/public/materials?id=${encodeURIComponent(materialId)}`, { cache: 'no-store' })
+    if (!res.ok) {
+      return { isTemperedGlass: false, requiresSealant: false, sealantMaterialName: '' }
+    }
+    const json = await res.json() as { material?: { name?: string; requires_sealant?: boolean } }
+    const mat = json.material || {}
+    const materialName = (mat.name || '').toLowerCase()
+    const isTemperedGlass = materialName.includes('tempered') || materialName.includes('kaca tempered')
+    const requiresSealant = typeof mat.requires_sealant === 'boolean' ? mat.requires_sealant : isTemperedGlass
+    return {
+      isTemperedGlass,
+      requiresSealant,
+      sealantMaterialName: requiresSealant ? 'Sealant Karet Kaca' : ''
+    }
+  } catch {
+    return { isTemperedGlass: false, requiresSealant: false, sealantMaterialName: '' }
   }
 }
 
@@ -225,29 +223,40 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
       basis?: 'm2' | 'm1' | 'unit' | null
       qty_per_basis?: number | null
       is_optional: boolean
-      material?: {
-        name: string
-        base_price_per_unit: number
-        unit: string
-      } | {
-        name: string
-        base_price_per_unit: number
-        unit: string
-      }[]
+      material_id?: string | null
+      material?: { name: string; base_price_per_unit: number; unit: string }
     }
 
     const { data: addons } = await supabase
       .from('catalog_addons')
-      .select('id, basis, qty_per_basis, is_optional, material:material_id(name, base_price_per_unit, unit)')
+      .select('id, basis, qty_per_basis, is_optional, material_id')
       .eq('catalog_id', input.catalogId)
 
     const selectedSet = new Set(input.selectedAddonIds ?? [])
-    const normalizedAddons: (AddonWithMaterial & { material?: { name: string; base_price_per_unit: number; unit: string } })[] =
-      (addons as AddonWithMaterial[] | null | undefined)?.map(a => ({
-        ...a,
-        material: Array.isArray(a.material) ? a.material[0] : a.material
-      })) ?? []
-    const includedAddons = normalizedAddons.filter(a => !a.is_optional || selectedSet.has(a.id))
+    const baseAddons: AddonWithMaterial[] = (addons as AddonWithMaterial[] | null | undefined) ?? []
+    const enriched: AddonWithMaterial[] = await Promise.all(
+      baseAddons.map(async (a) => {
+        const matId = a.material_id || ''
+        if (!matId) return { ...a, material: { name: 'Addon', base_price_per_unit: 0, unit: '' } }
+        try {
+          const res = await fetch(`/api/public/materials?id=${encodeURIComponent(matId)}`, { cache: 'no-store' })
+          if (!res.ok) return { ...a, material: { name: 'Addon', base_price_per_unit: 0, unit: '' } }
+          const json = await res.json() as { material?: { name?: string; base_price_per_unit?: number; unit?: string } }
+          const m = json.material || {}
+          return {
+            ...a,
+            material: {
+              name: String(m.name || 'Addon'),
+              base_price_per_unit: Number(m.base_price_per_unit || 0),
+              unit: String(m.unit || '')
+            }
+          }
+        } catch {
+          return { ...a, material: { name: 'Addon', base_price_per_unit: 0, unit: '' } }
+        }
+      })
+    )
+    const includedAddons = enriched.filter(a => !a.is_optional || selectedSet.has(a.id))
 
     const addonCost = includedAddons.reduce((sum, a) => {
       const price = a.material?.base_price_per_unit ?? 0
@@ -264,11 +273,18 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
       return sum + price * qty * multiplier
     }, 0)
 
-    const { data: zone } = input.zoneId
-      ? await supabase.from('zones').select('*').eq('id', input.zoneId).maybeSingle()
-      : { data: null }
-    const markupPercentage = zone?.markup_percentage ?? 0
-    const flatFee = zone?.flat_fee ?? 0
+    let markupPercentage = 0
+    let flatFee = 0
+    if (input.zoneId) {
+      try {
+        const zr = await fetch(`/api/public/zones?id=${encodeURIComponent(input.zoneId)}`, { cache: 'no-store' })
+        if (zr.ok) {
+          const zj = await zr.json() as { zone?: { markup_percentage?: number; flat_fee?: number } }
+          markupPercentage = Number(zj.zone?.markup_percentage || 0)
+          flatFee = Number(zj.zone?.flat_fee || 0)
+        }
+      } catch {}
+    }
     const hppBeforeMargin = basePrice + addonCost + laborCostUnit + transportCost
     const marginPct = row.margin_percentage ?? 0
     const totalHpp = hppBeforeMargin * (1 + (marginPct / 100))
@@ -282,20 +298,19 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
     const antiSagging = await validateAntiSagging(input.lebar)
     if (antiSagging.needsAntiSagging) {
       warnings.push(antiSagging.warning)
-      for (const matName of antiSagging.suggestedMaterials) {
-        // Estimasi quantity berdasarkan material
+      const matNames = antiSagging.suggestedMaterials
+      const prices = await Promise.all(matNames.map((m) => getMaterialPriceByName(m)))
+      matNames.forEach((matName, idx) => {
         let quantity = 1
-        if (matName.includes('Hollow')) {
-          quantity = 2 // 2 batang hollow untuk reinforcement
-        }
-        const pricePerUnit = await getMaterialPriceByName(matName)
+        if (matName.includes('Hollow')) quantity = 2
+        const pricePerUnit = prices[idx] ?? 0
         const estimatedCost = pricePerUnit * quantity
         suggestedItems.push({
           name: matName,
           reason: `Bentangan lebar ${input.lebar}m > 4.5m memerlukan ${matName} untuk mencegah sagging`,
           estimatedCost
         })
-      }
+      })
     }
 
     // 2. Tempered glass validation (jika ada atap_id)
@@ -303,8 +318,22 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
       const temperedGlass = await validateTemperedGlass(catalog.atap_id)
       if (temperedGlass.isTemperedGlass && temperedGlass.requiresSealant) {
         warnings.push(`Material atap adalah Kaca Tempered, memerlukan ${temperedGlass.sealantMaterialName}`)
-        const sealantPricePerUnit = await getMaterialPriceByName(temperedGlass.sealantMaterialName, 10000) // default Rp 10,000
-        const sealantQuantity = 2 // 2 tube sealant untuk standar kanopi
+        let sealantPricePerUnit = 0
+        const { data: sealantSetting } = await supabase
+          .from('site_settings')
+          .select('value')
+          .eq('key', 'sealant_material_id')
+          .maybeSingle()
+        const sealantId = sealantSetting?.value ?? null
+        if (sealantId) {
+          const { data: sealantMat } = await supabase
+            .from('materials')
+            .select('base_price_per_unit')
+            .eq('id', sealantId)
+            .maybeSingle()
+          sealantPricePerUnit = sealantMat?.base_price_per_unit ?? 0
+        }
+        const sealantQuantity = 2
         const estimatedSealantCost = sealantPricePerUnit * sealantQuantity
         suggestedItems.push({
           name: temperedGlass.sealantMaterialName,
@@ -350,13 +379,30 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
       suggestedItems: suggestedItems.length > 0 ? suggestedItems : undefined
     }
   }
-  const materialQuery = input.materialId
-    ? supabase.from('materials').select('*').eq('id', input.materialId).eq('is_active', true).maybeSingle()
-    : supabase.from('materials').select('*').eq('category', 'frame').eq('is_active', true).order('name').limit(1).maybeSingle()
-  const { data: material, error: materialError } = await materialQuery
-  if (materialError || !material) {
-    throw new Error('Material belum tersedia')
+  let material: Partial<Material> | null = null
+  if (input.materialId) {
+    try {
+      const res = await fetch(`/api/public/materials?id=${encodeURIComponent(input.materialId)}`, { cache: 'no-store' })
+      if (res.ok) {
+        const json = await res.json() as { material?: Partial<Material> }
+        material = json.material ?? null
+      }
+    } catch {}
+  } else {
+    try {
+      const resList = await fetch('/api/public/materials?category=frame', { cache: 'no-store' })
+      const listJson = await resList.json() as { materials?: Array<{ id: string }> }
+      const firstId = listJson.materials && listJson.materials[0]?.id
+      if (firstId) {
+        const resOne = await fetch(`/api/public/materials?id=${encodeURIComponent(firstId)}`, { cache: 'no-store' })
+        if (resOne.ok) {
+          const oneJson = await resOne.json() as { material?: Partial<Material> }
+          material = oneJson.material ?? null
+        }
+      }
+    } catch {}
   }
+  if (!material) throw new Error('Material belum tersedia')
 
   // Hitung kebutuhan material (dummy calculation)
   // Asumsi: untuk kanopi 1m² butuh 0.5 batang rangka
@@ -379,11 +425,18 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
   const priceBeforeMarkup = totalHpp * (1 + marginPercentage / 100)
 
   // TODO: Fetch zone data dan apply markup
-  const { data: zone } = input.zoneId
-    ? await supabase.from('zones').select('*').eq('id', input.zoneId).maybeSingle()
-    : { data: null }
-  const markupPercentage = zone?.markup_percentage ?? 0
-  const flatFee = zone?.flat_fee ?? 0
+  let markupPercentage = 0
+  let flatFee = 0
+  if (input.zoneId) {
+    try {
+      const zr = await fetch(`/api/public/zones?id=${encodeURIComponent(input.zoneId)}`, { cache: 'no-store' })
+      if (zr.ok) {
+        const zj = await zr.json() as { zone?: { markup_percentage?: number; flat_fee?: number } }
+        markupPercentage = Number(zj.zone?.markup_percentage || 0)
+        flatFee = Number(zj.zone?.flat_fee || 0)
+      }
+    } catch {}
+  }
 
   const priceAfterMarkup = applyZoneMarkup(priceBeforeMarkup, markupPercentage, flatFee)
 
@@ -398,20 +451,19 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
   const antiSagging = await validateAntiSagging(input.lebar)
   if (antiSagging.needsAntiSagging) {
     warnings.push(antiSagging.warning)
-    for (const matName of antiSagging.suggestedMaterials) {
-      // Estimasi quantity berdasarkan material
+    const matNames = antiSagging.suggestedMaterials
+    const prices = await Promise.all(matNames.map((m) => getMaterialPriceByName(m)))
+    matNames.forEach((matName, idx) => {
       let quantity = 1
-      if (matName.includes('Hollow')) {
-        quantity = 2 // 2 batang hollow untuk reinforcement
-      }
-      const pricePerUnit = await getMaterialPriceByName(matName)
+      if (matName.includes('Hollow')) quantity = 2
+      const pricePerUnit = prices[idx] ?? 0
       const estimatedCost = pricePerUnit * quantity
       suggestedItems.push({
         name: matName,
         reason: `Bentangan lebar ${input.lebar}m > 4.5m memerlukan ${matName} untuk mencegah sagging`,
         estimatedCost
       })
-    }
+    })
   }
 
   return {

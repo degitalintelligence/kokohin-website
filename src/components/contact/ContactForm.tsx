@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useEffect, useMemo, useRef } from 'react'
+import { useActionState, useEffect, useMemo, useRef, useState } from 'react'
 import { submitLead, type LeadFormState } from '@/app/actions/leads'
 import { AlertTriangle, Loader2, Send } from 'lucide-react'
 import { toast } from '@/components/ui/toaster'
@@ -19,6 +19,9 @@ type ContactFormProps = {
 export default function ContactForm({ services = [] }: ContactFormProps) {
     const [state, formAction, isPending] = useActionState(submitLead, initialState)
     const formRef = useRef<HTMLFormElement>(null)
+    const widgetRef = useRef<HTMLDivElement>(null)
+    const [cfToken, setCfToken] = useState<string>('')
+    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || null
     const serviceOptions = useMemo(() => {
         return [{ id: '', name: '-- Pilih Jenis Kanopi --' }, ...services]
     }, [services])
@@ -35,6 +38,33 @@ export default function ContactForm({ services = [] }: ContactFormProps) {
             toast.error('Gagal mengirim permintaan', state.error)
         }
     }, [state.success, state.error, state.message])
+
+    useEffect(() => {
+        const key = siteKey
+        if (!key) return
+        type TurnstileApi = { render: (el: HTMLElement, opts: { sitekey: string; callback?: (token: string) => void }) => void }
+        const w = window as unknown as { turnstile?: TurnstileApi }
+        const render = () => {
+            if (!widgetRef.current || !w.turnstile) return
+            w.turnstile.render(widgetRef.current, {
+                sitekey: key,
+                callback: (token: string) => setCfToken(token),
+            })
+        }
+        if (w.turnstile) {
+            render()
+            return
+        }
+        const s = document.createElement('script')
+        s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js'
+        s.async = true
+        s.defer = true
+        s.onload = render
+        document.head.appendChild(s)
+        return () => {
+            try { document.head.removeChild(s) } catch {}
+        }
+    }, [siteKey])
 
     return (
         <form ref={formRef} action={formAction} className="flex flex-col gap-5 animate-fade-in-up">
@@ -86,7 +116,15 @@ export default function ContactForm({ services = [] }: ContactFormProps) {
                 />
             </div>
 
-            <button type="submit" className="btn btn-primary w-full py-3.5 text-base" disabled={isPending}>
+            <input type="text" name="website" className="hidden" tabIndex={-1} aria-hidden="true" autoComplete="off" />
+            {siteKey && (
+                <div className="mb-2">
+                    <div ref={widgetRef} />
+                    <input type="hidden" name="cf-turnstile-response" value={cfToken} />
+                </div>
+            )}
+
+            <button type="submit" className="btn btn-primary w-full py-3.5 text-base" disabled={isPending || (!!siteKey && !cfToken)}>
                 {isPending ? (
                     <>
                         <Loader2 className="w-5 h-5 animate-spin" /> Mengirim...

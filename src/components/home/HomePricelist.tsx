@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import { ArrowRight } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
-import { firstRel } from '@/lib/utils'
+
 
 type HomeCatalog = {
   id: string
@@ -19,7 +18,7 @@ type HomeCatalog = {
 }
 
 type Props = {
-  onSelectType: (type: 'kanopi' | 'pagar') => void
+  onSelectType: (type: 'kanopi' | 'pagar', catalogId?: string) => void
 }
 
 export default function HomePricelist({ onSelectType }: Props) {
@@ -31,45 +30,36 @@ export default function HomePricelist({ onSelectType }: Props) {
   useEffect(() => {
     const fetchCatalogs = async () => {
       try {
-        const supabase = createClient()
-        const { data, error: fetchError } = await supabase
-          .from('catalogs')
-          .select('id, title, image_url, category, atap_id, rangka_id, base_price_per_m2, atap:atap_id(name), rangka:rangka_id(name)')
-          .eq('is_active', true)
-          .order('created_at', { ascending: false })
-
-        if (fetchError) {
-          setCatalogError(fetchError.message)
+        const res = await fetch('/api/public/catalogs', { cache: 'no-store' })
+        if (!res.ok) {
+          setCatalogError('Gagal memuat katalog')
           setCatalogs([])
           return
         }
-
-        type Row = {
-          id: string
-          title: string
-          image_url: string | null
-          category?: 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya' | null
-          atap_id: string | null
-          rangka_id: string | null
-          base_price_per_m2: number | null
-          atap?: { name: string | null } | { name: string | null }[] | null
-          rangka?: { name: string | null } | { name: string | null }[] | null
+        const json = await res.json() as {
+          catalogs?: Array<{
+            id: string
+            title: string
+            image_url: string | null
+            category?: HomeCatalog['category']
+            atap_id: string | null
+            rangka_id: string | null
+            base_price_per_m2: number | null
+            atap?: { name: string | null } | null
+            rangka?: { name: string | null } | null
+          }>
         }
-        const items: HomeCatalog[] = ((data ?? []) as Row[]).map((item) => {
-          const atap = firstRel(item.atap ?? null)
-          const rangka = firstRel(item.rangka ?? null)
-          return {
-            id: item.id,
-            title: item.title,
-            image_url: item.image_url ?? null,
-            category: item.category ?? undefined,
-            atap_id: item.atap_id ?? null,
-            rangka_id: item.rangka_id ?? null,
-            base_price_per_m2: item.base_price_per_m2 ?? 0,
-            atap,
-            rangka
-          }
-        })
+        const items: HomeCatalog[] = (json.catalogs ?? []).map((item) => ({
+          id: item.id,
+          title: item.title,
+          image_url: item.image_url ?? null,
+          category: item.category ?? undefined,
+          atap_id: item.atap_id ?? null,
+          rangka_id: item.rangka_id ?? null,
+          base_price_per_m2: item.base_price_per_m2 ?? 0,
+          atap: item.atap ?? null,
+          rangka: item.rangka ?? null
+        }))
         setCatalogs(items)
       } catch (err) {
         setCatalogError(err instanceof Error ? err.message : 'Gagal memuat katalog')
@@ -198,7 +188,7 @@ export default function HomePricelist({ onSelectType }: Props) {
                       <span className="text-gray-500 text-sm"> / m²</span>
                     </div>
                     <button
-                      onClick={() => onSelectType(catalogType)}
+                      onClick={() => onSelectType(catalogType, katalog.id)}
                       className="w-full py-3 border-2 border-primary-dark text-primary-dark rounded-lg font-bold flex justify-center gap-2 hover:bg-primary-dark hover:text-white transition-colors"
                     >
                       Hitung Ukuran Saya <ArrowRight size={18} />

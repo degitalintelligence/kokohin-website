@@ -19,6 +19,7 @@ const navLinks = [
 export default function Navbar({ logoUrl, backgroundUrl }: { logoUrl?: string | null, backgroundUrl?: string | null }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isNavigating, setIsNavigating] = useState(false)
+  const [logoFailed, setLogoFailed] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
 
@@ -91,7 +92,7 @@ export default function Navbar({ logoUrl, backgroundUrl }: { logoUrl?: string | 
           {/* Logo */}
           <div className="flex items-center gap-2">
             <Link href="/" className="flex items-center gap-2 relative">
-              {logoUrl ? (
+              {logoUrl && !logoFailed ? (
                 <div className="relative h-10 w-40">
                   <Image 
                     src={logoUrl} 
@@ -99,6 +100,8 @@ export default function Navbar({ logoUrl, backgroundUrl }: { logoUrl?: string | 
                     fill 
                     className="object-contain object-left"
                     priority
+                    unoptimized
+                    onError={() => setLogoFailed(true)}
                   />
                 </div>
               ) : (

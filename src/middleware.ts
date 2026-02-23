@@ -3,10 +3,6 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { isRoleAllowed, ALLOWED_MATERIALS_ROLES } from '@/lib/rbac'
 
-type CacheEntry = { role: string | null; email: string | null; exp: number }
-const ROLE_CACHE = new Map<string, CacheEntry>()
-const TTL_MS = 60_000
-
 export async function middleware(request: NextRequest) {
     const nodeMajor = Number(process.versions.node.split('.')[0] ?? 0)
     
@@ -50,24 +46,10 @@ export async function middleware(request: NextRequest) {
     let userEmail: string | null = null
 
     if (user) {
-        const userId = user.id
-        const now = Date.now()
-        const cached = ROLE_CACHE.get(userId)
-        if (cached && cached.exp > now) {
-            userRole = cached.role
-            userEmail = cached.email
-        } else {
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('role, email')
-                .eq('id', userId)
-                .maybeSingle()
-            const role = (profile as { role?: string } | null)?.role ?? null
-            const email = (profile as { email?: string } | null)?.email ?? user.email ?? null
-            userRole = role
-            userEmail = email
-            ROLE_CACHE.set(userId, { role, email, exp: now + TTL_MS })
-        }
+        const jwtRole = (user.user_metadata as Record<string, unknown> | undefined)?.role as string | undefined
+        const appRole = (user.app_metadata as Record<string, unknown> | undefined)?.role as string | undefined
+        userRole = jwtRole ?? appRole ?? null
+        userEmail = user.email ?? null
     }
 
     const isDevMode = process.env.DEV_MODE === 'true'

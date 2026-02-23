@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import dynamic from 'next/dynamic'
-import { ShieldCheck, Ruler, Zap, Tag } from 'lucide-react'
+import { ShieldCheck, Ruler, Tag } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 
 export const metadata: Metadata = {
@@ -34,21 +34,17 @@ export default async function KatalogPage() {
               Katalog Paket Kanopi
             </h1>
             <p className="text-xl text-white/90 mb-8 max-w-3xl mx-auto">
-              Dari kanopi standar hingga custom premium, temukan solusi terbaik untuk kebutuhan Anda. 
-              Setiap paket dirancang dengan material berkualitas dan pemasangan profesional.
+              Dari kanopi sederhana hingga custom premium, Kokohin adalah solusi profesional untuk kanopi berkualitas yang dirancang sesuai dengan budget dan kebutuhan Anda.
             </p>
             <div className="inline-flex flex-wrap gap-3 justify-center">
               <span className="px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full text-white text-sm flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-white" /> Garansi 1 Tahun
+                <ShieldCheck className="w-4 h-4 text-white" /> Garansi Perawatan 1 tahun
               </span>
               <span className="px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full text-white text-sm flex items-center gap-2">
-                <Ruler className="w-4 h-4 text-white" /> Survey Gratis
+                <Ruler className="w-4 h-4 text-white" /> Survei Gratis
               </span>
               <span className="px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full text-white text-sm flex items-center gap-2">
-                <Zap className="w-4 h-4 text-white" /> Proses Cepat
-              </span>
-              <span className="px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full text-white text-sm flex items-center gap-2">
-                <Tag className="w-4 h-4 text-white" /> Harga Terjangkau
+                <Tag className="w-4 h-4 text-white" /> Budget Friendly
               </span>
             </div>
           </div>
@@ -138,11 +134,10 @@ export default async function KatalogPage() {
         <div className="container">
           <div className="max-w-4xl mx-auto text-center text-white">
             <h2 className="text-3xl md:text-4xl font-bold mb-6">
-              Siap Mengubah Ruang Terbuka Anda?
+              Kokohin: Satu-satunya yang Profesional &amp; Bergaransi!
             </h2>
             <p className="text-xl text-white/90 mb-8">
-              Konsultasikan kebutuhan kanopi Anda dengan tim ahli kami. 
-              Dapatkan solusi terbaik dengan harga kompetitif dan kualitas terjamin.
+              Wujudkan bentuk ruang terbukamu yang nyaman, aman, dan menginspirasi bersama tim ahli berpengalaman kami. Harga bersahabat, kualitas terjamin.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <a

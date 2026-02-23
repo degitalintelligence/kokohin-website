@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { headers } from 'next/headers'
 
 export type CreateProjectDTO = {
   customer_name: string
@@ -45,6 +46,43 @@ export async function createProjectWithEstimationWithRpc(
 
 export async function createProjectWithEstimation(dto: CreateProjectDTO): Promise<CreateProjectResult> {
   const supabase = await createClient()
+  const hdrs = await headers()
+  const ipRaw = hdrs.get('x-forwarded-for') || hdrs.get('x-real-ip') || ''
+  const ip = ipRaw.split(',')[0]?.trim() || ''
+  let blockedIpsStr = process.env.BLOCKED_IPS || ''
+  let windowMin = Number(process.env.LEAD_RATE_LIMIT_WINDOW_MIN || '15')
+  let maxPerWindow = Number(process.env.LEAD_RATE_LIMIT_MAX || '1')
+  {
+    const { data: sBlocked } = await supabase.from('site_settings').select('value').eq('key', 'blocked_ips').maybeSingle()
+    if (sBlocked?.value) blockedIpsStr = String(sBlocked.value)
+    const { data: sWin } = await supabase.from('site_settings').select('value').eq('key', 'lead_rate_limit_window_min').maybeSingle()
+    if (sWin?.value && !isNaN(Number(sWin.value))) windowMin = Number(sWin.value)
+    const { data: sMax } = await supabase.from('site_settings').select('value').eq('key', 'lead_rate_limit_max').maybeSingle()
+    if (sMax?.value && !isNaN(Number(sMax.value))) maxPerWindow = Number(sMax.value)
+  }
+  if (ip) {
+    const blocked = blockedIpsStr.split(',').map(s => s.trim()).filter(Boolean)
+    if (blocked.includes(ip)) {
+      throw new Error('Permintaan ditolak')
+    }
+  }
+  const normalizedPhone = String(dto.phone || '').replace(/\s|-/g, '')
+  const indoPhoneRegex = /^(\+62|62|0)8[1-9][0-9]{6,9}$/
+  if (!indoPhoneRegex.test(normalizedPhone)) {
+    throw new Error('Format nomor telepon tidak valid')
+  }
+  if (maxPerWindow > 0) {
+    const sinceIso = new Date(Date.now() - windowMin * 60_000).toISOString()
+    const { count } = await supabase
+      .from('erp_projects')
+      .select('id', { head: true, count: 'exact' })
+      .eq('phone', normalizedPhone)
+      .gt('created_at', sinceIso)
+    if ((count ?? 0) >= maxPerWindow) {
+      throw new Error('Terlalu banyak permintaan. Coba lagi beberapa saat.')
+    }
+  }
+  dto.phone = normalizedPhone
   try {
     return await createProjectWithEstimationWithRpc(
       async (fn, args) => await supabase.rpc(fn, args),

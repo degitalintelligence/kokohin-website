@@ -76,6 +76,26 @@ async function run() {
   const blocked = !!waUpdateErr || (Array.isArray(updRows) && updRows.length === 0)
   results.push({ check: 'public_update_site_settings_blocked', ok: blocked, error: waUpdateErr?.message })
 
+  // Public should be able to insert leads
+  const leadPayload = {
+    name: 'RLS Public Lead',
+    phone: '081234567890',
+    location: 'Bandung',
+    status: 'new'
+  }
+  const { error: leadInsErr } = await publicClient.from('leads').insert(leadPayload)
+  results.push({ check: 'public_insert_leads', ok: !leadInsErr, error: leadInsErr?.message })
+
+  // Public should NOT be able to read materials
+  const { count: matCount, error: matErr } = await publicClient.from('materials').select('id', { head: true, count: 'exact' })
+  const noPublicRead = (!!matErr) || ((matCount ?? 0) === 0)
+  results.push({ check: 'public_select_materials_blocked', ok: noPublicRead, error: matErr?.message })
+
+  // Public should NOT be able to read zones
+  const { count: zoneCount, error: zoneErr } = await publicClient.from('zones').select('id', { head: true, count: 'exact' })
+  const noPublicReadZones = (!!zoneErr) || ((zoneCount ?? 0) === 0)
+  results.push({ check: 'public_select_zones_blocked', ok: noPublicReadZones, error: zoneErr?.message })
+
   console.log(JSON.stringify(results, null, 2))
   const allOk = results.every(r => r.ok)
   if (!allOk) process.exit(1)

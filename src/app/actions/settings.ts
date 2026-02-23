@@ -232,3 +232,79 @@ export async function updateBasicSettings(payload: { siteName?: string; supportE
     revalidatePath('/admin/settings')
     return { success: true }
 }
+
+export async function getSealantMaterialId() {
+    const supabase = await createClient()
+    const { data } = await supabase
+        .from('site_settings')
+        .select('value')
+        .eq('key', 'sealant_material_id')
+        .maybeSingle()
+    return (data as { value?: string } | null)?.value ?? null
+}
+
+export async function updateSealantMaterialId(materialId: string | null) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('role,email')
+        .eq('id', user.id)
+        .maybeSingle()
+    const role = (profile as { role?: string } | null)?.role ?? null
+    const email = (profile as { email?: string } | null)?.email ?? undefined
+    if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, email)) {
+        return { error: 'Forbidden' }
+    }
+    let validId: string | null = null
+    if (materialId) {
+        const { data: mat } = await supabase.from('materials').select('id').eq('id', materialId).maybeSingle()
+        if (!mat) return { error: 'Material tidak ditemukan' }
+        validId = materialId
+    }
+    const { error } = await supabase
+        .from('site_settings')
+        .upsert({ key: 'sealant_material_id', value: validId ?? '', updated_at: new Date().toISOString() }, { onConflict: 'key' })
+    if (error) return { error: error.message }
+    revalidatePath('/admin/settings')
+    return { success: true, value: validId }
+}
+
+export async function getSecuritySettings() {
+    const supabase = await createClient()
+    const keys = ['blocked_ips', 'lead_rate_limit_window_min', 'lead_rate_limit_max']
+    const { data } = await supabase.from('site_settings').select('key,value').in('key', keys)
+    const map: Record<string, string> = {}
+    const rows = (data as Array<{ key?: string; value?: string }> | null) ?? []
+    rows.forEach((row) => { if (row && row.key) map[row.key] = row.value ?? '' })
+    return {
+        blockedIps: map['blocked_ips'] ?? '',
+        rateWindowMin: Number(map['lead_rate_limit_window_min'] || '15') || 15,
+        rateMax: Number(map['lead_rate_limit_max'] || '1') || 1,
+    }
+}
+
+export async function updateSecuritySettings(payload: { blockedIps?: string; rateWindowMin?: number; rateMax?: number }) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized' }
+    const { data: profile } = await supabase.from('profiles').select('role,email').eq('id', user.id).maybeSingle()
+    const role = (profile as { role?: string } | null)?.role ?? null
+    const email = (profile as { email?: string } | null)?.email ?? undefined
+    if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, email)) {
+        return { error: 'Forbidden' }
+    }
+    const blockedIps = String(payload.blockedIps ?? '').trim()
+    const rateWindowMin = Number(payload.rateWindowMin ?? 15)
+    const rateMax = Number(payload.rateMax ?? 1)
+    const rows: Array<{ key: string; value: string; updated_at: string }> = [
+        { key: 'blocked_ips', value: blockedIps, updated_at: new Date().toISOString() },
+        { key: 'lead_rate_limit_window_min', value: String(rateWindowMin), updated_at: new Date().toISOString() },
+        { key: 'lead_rate_limit_max', value: String(rateMax), updated_at: new Date().toISOString() },
+    ]
+    const { error } = await supabase.from('site_settings').upsert(rows, { onConflict: 'key' })
+    if (error) return { error: error.message }
+    revalidatePath('/admin/settings')
+    return { success: true }
+}

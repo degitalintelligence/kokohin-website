@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { getLogoUrl, getLoginBackgroundUrl, getWaNumber, getBasicSettings } from '@/app/actions/settings'
+import { getLogoUrl, getLoginBackgroundUrl, getWaNumber, getBasicSettings, getSealantMaterialId, getSecuritySettings } from '@/app/actions/settings'
 import LogoUploadForm from '@/components/admin/LogoUploadForm'
 import BackgroundUploadForm from '@/components/admin/BackgroundUploadForm'
 import { removeMembraneService } from '@/app/actions/services'
@@ -8,6 +8,8 @@ import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { isRoleAllowed, ALLOWED_MATERIALS_ROLES } from '@/lib/rbac'
 import BasicSettingsForm from '@/components/admin/BasicSettingsForm'
+import SealantMaterialForm from '@/components/admin/SealantMaterialForm'
+import SecuritySettingsForm from '@/components/admin/SecuritySettingsForm'
 
 export const metadata: Metadata = {
     title: 'Pengaturan Website',
@@ -34,6 +36,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     const loginBackgroundUrl = await getLoginBackgroundUrl()
     const waNumber = await getWaNumber()
     const basic = await getBasicSettings()
+    const sealantId = await getSealantMaterialId()
+    const { data: materials } = await supabase.from('materials').select('id,name').eq('is_active', true).order('name')
+    const security = await getSecuritySettings()
 
     return (
         <div className="p-8 h-full overflow-y-auto">
@@ -59,6 +64,18 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 <h2 className="text-lg font-semibold mb-4 text-gray-700">Informasi Umum</h2>
                 <div className="divider mb-6" />
                 <BasicSettingsForm siteName={basic.siteName} supportEmail={basic.supportEmail} supportPhone={basic.supportPhone} contactAddress={basic.contactAddress} contactHours={basic.contactHours} companyWebsite={basic.companyWebsite} instagramUrl={basic.instagramUrl} facebookUrl={basic.facebookUrl} tiktokUrl={basic.tiktokUrl} youtubeUrl={basic.youtubeUrl} />
+            </div>
+            
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mt-6">
+                <h2 className="text-lg font-semibold mb-4 text-gray-700">Kalkulator</h2>
+                <div className="divider mb-6" />
+                <SealantMaterialForm currentId={sealantId} materials={(materials as Array<{ id: string; name: string }> | null) ?? []} />
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mt-6">
+                <h2 className="text-lg font-semibold mb-4 text-gray-700">Keamanan Funnel</h2>
+                <div className="divider mb-6" />
+                <SecuritySettingsForm blockedIps={security.blockedIps} rateWindowMin={security.rateWindowMin} rateMax={security.rateMax} />
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mt-6">

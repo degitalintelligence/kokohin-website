@@ -48,8 +48,8 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
   const [leadInfo, dispatchLead] = useReducer(leadReducer, { name: '', whatsapp: '' })
   const [projectId, setProjectId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [materials, setMaterials] = useState<Material[]>([])
-  const [zones, setZones] = useState<Zone[]>([])
+  const [materials, setMaterials] = useState<Array<Pick<Material, 'id' | 'name' | 'unit'>>>([])
+  const [zones, setZones] = useState<Array<Pick<Zone, 'id' | 'name' | 'markup_percentage' | 'flat_fee'>>>([])
   const [catalogData, setCatalogData] = useState<Catalog | null>(null)
   const [catalogAddons, setCatalogAddons] = useState<(CatalogAddon & { material?: Material })[]>([])
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([])
@@ -238,25 +238,27 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const supabase = createClient()
         const [
-          { data: zonesData, error: zonesError },
-          { data: materialsData, error: materialsError },
-          { data: logoSetting },
+          zonesRes,
+          materialsRes,
+          logoRes,
         ] = await Promise.all([
-          supabase.from('zones').select('*').eq('is_active', true).order('name'),
-          supabase.from('materials').select('*').eq('category', 'frame').eq('is_active', true).order('name'),
-          supabase.from('site_settings').select('value').eq('key', 'logo_url').maybeSingle(),
+          fetch('/api/public/zones', { cache: 'no-store' }).then(r => r.json() as Promise<{ zones?: Array<{ id: string; name: string; markup_percentage: number; flat_fee: number }> }>).catch(() => ({ zones: [] })),
+          fetch('/api/public/materials?category=frame', { cache: 'no-store' }).then(r => r.json() as Promise<{ materials?: Array<{ id: string; name: string; unit: string }> }>).catch(() => ({ materials: [] })),
+          fetch('/api/site-settings/logo-url', { cache: 'no-store' }).then(r => r.ok ? r.json() as Promise<{ logo_url?: string | null }> : ({ logo_url: null })).catch(() => ({ logo_url: null })),
         ])
-        if (zonesError || materialsError) {
+        if (!zonesRes) {
           throw new Error('Gagal memuat data kalkulator')
         }
-        const safeZones = zonesData ?? []
-        const safeMaterials = materialsData ?? []
+        const safeZones = (zonesRes?.zones ?? [])
+        const safeMaterials = (materialsRes?.materials ?? []).map(m => ({
+          id: m.id,
+          name: m.name,
+          unit: m.unit as Material['unit'],
+        }))
         setZones(safeZones)
         setMaterials(safeMaterials)
-         const typedLogo = logoSetting as { value?: string } | null
-         setLogoUrl(typedLogo?.value ?? null)
+        setLogoUrl(logoRes?.logo_url ?? null)
         if (safeMaterials.length > 0) {
           setInput((prev) => ({ ...prev, materialId: prev.materialId ?? safeMaterials[0].id }))
         }
@@ -297,35 +299,52 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
 
       try {
         const supabase = createClient()
-        const { data, error } = await supabase
-          .from('catalogs')
-          .select('*, atap:atap_id(*), rangka:rangka_id(*), catalog_addons(id, basis, qty_per_basis, is_optional, material:material_id(id, name, base_price_per_unit, unit, category))')
-          .eq('id', input.catalogId)
-          .eq('is_active', true)
-          .maybeSingle()
+        const [catRes, addonsRes] = await Promise.all([
+          fetch(`/api/public/catalogs?id=${encodeURIComponent(input.catalogId)}`, { cache: 'no-store' }).then(r => r.json() as Promise<{ catalog?: Catalog | null }>),
+          supabase.from('catalog_addons')
+            .select('id, basis, qty_per_basis, is_optional, material_id')
+            .eq('catalog_id', input.catalogId)
+        ])
 
-        if (error || !data) {
+        const catalog = catRes.catalog ?? null
+        if (!catalog) {
           setCatalogData(null)
           setCatalogAddons([])
           setSelectedAddonIds([])
           return
         }
 
-        type CatalogWithAddons = Catalog & {
-          catalog_addons?: (CatalogAddon & { material?: Material | Material[] })[]
-        }
-        const typed = data as CatalogWithAddons
-        const normalizedAddons =
-          (typed.catalog_addons ?? []).map(a => ({
-            ...a,
-            material: Array.isArray(a.material) ? a.material[0] : a.material
-          }))
-        setCatalogData(typed as Catalog)
-        setCatalogAddons(normalizedAddons)
+        const baseAddons = (addonsRes.data ?? []) as Array<CatalogAddon & { material_id?: string | null }>
+        const enriched = await Promise.all(
+          baseAddons.map(async (a) => {
+            const matId = a.material_id || ''
+            if (!matId) return { ...a, material: { name: 'Addon', base_price_per_unit: 0, unit: '' } as unknown as Material }
+            try {
+              const r = await fetch(`/api/public/materials?id=${encodeURIComponent(matId)}`, { cache: 'no-store' })
+              if (!r.ok) return { ...a, material: { name: 'Addon', base_price_per_unit: 0, unit: '' } as unknown as Material }
+              const j = await r.json() as { material?: Partial<Material> }
+              const m = j.material || {}
+              return {
+                ...a,
+                material: {
+                  id: matId,
+                  name: String(m.name || 'Addon'),
+                  base_price_per_unit: Number(m.base_price_per_unit || 0),
+                  unit: String(m.unit || 'unit')
+                } as unknown as Material
+              }
+            } catch {
+              return { ...a, material: { name: 'Addon', base_price_per_unit: 0, unit: '' } as unknown as Material }
+            }
+          })
+        )
+
+        setCatalogData(catalog)
+        setCatalogAddons(enriched)
         setSelectedAddonIds([])
 
-        if (data.rangka_id) {
-          setInput((prev) => ({ ...prev, materialId: data.rangka_id }))
+        if (catalog.rangka_id) {
+          setInput((prev) => ({ ...prev, materialId: catalog.rangka_id as string }))
         }
 
         setTimeout(() => {
