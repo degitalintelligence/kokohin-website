@@ -3,7 +3,7 @@
 }
 
 .header {
-  @apply bg-white border border-gray-200 rounded-lg p-6 flex items-center justify-between mb-6;
+  @apply bg-white border border-gray-200 rounded-lg p-6 flex items-center justify-between mb-6 shadow-sm;
 }
 
 .title {
@@ -15,7 +15,7 @@
 }
 
 .section {
-  @apply bg-white border border-gray-200 rounded-lg mt-6;
+  @apply bg-white border border-gray-200 rounded-lg mt-6 shadow-sm overflow-hidden;
 }
 
 .sectionHeader {
@@ -88,4 +88,24 @@
 
 .bold {
   @apply font-semibold text-gray-900;
+}
+
+.table thead {
+  @apply bg-gray-50 text-gray-500 font-medium border-b border-gray-200;
+}
+
+.table th {
+  @apply px-4 py-3 whitespace-nowrap;
+}
+
+.table td {
+  @apply px-4 py-3 align-middle;
+}
+
+.table tbody tr {
+  @apply border-b border-gray-100;
+}
+
+.table tbody tr:hover {
+  @apply bg-gray-50;
 }

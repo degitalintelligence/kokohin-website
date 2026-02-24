@@ -2,16 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
-import { Check, Star, Shield, TrendingUp, Package } from 'lucide-react'
 import type { Catalog } from '@/lib/types'
 
 
-const features = [
-  { icon: Shield, text: 'Garansi Material 1 Tahun' },
-  { icon: Check, text: 'Survey & Konsultasi Gratis' },
-  { icon: Star, text: 'Free Maintenance 1 Tahun' },
-  { icon: TrendingUp, text: 'Harga Terjangkau' }
-]
 const FALLBACK_WA = '628000000000'
 
 export default function CatalogGrid() {
@@ -100,32 +93,6 @@ export default function CatalogGrid() {
   
   return (
     <div className="max-w-7xl mx-auto p-6 md:p-8">
-      {/* Header */}
-      <div className="text-center mb-12">
-        <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full mb-4">
-          <Package className="w-4 h-4 text-primary" />
-          <span className="text-sm font-semibold text-primary">PAKET POPULER</span>
-        </div>
-        <h2 className="text-4xl md:text-5xl font-bold text-primary-dark mb-6">
-          Pilihan Paket Kanopi Terbaik
-        </h2>
-        <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-          Dari kanopi standar hingga custom premium, kami menawarkan solusi lengkap dengan harga transparan.
-        </p>
-      </div>
-      
-      {/* Features */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
-        {features.map((feature, index) => (
-          <div key={index} className="flex flex-col items-center text-center p-4 bg-white rounded-xl shadow-sm border border-gray-100">
-            <div className="p-3 bg-primary/10 rounded-full mb-3">
-              <feature.icon className="w-6 h-6 text-primary" />
-            </div>
-            <span className="font-medium text-gray-800">{feature.text}</span>
-          </div>
-        ))}
-      </div>
-      
       {presentCategories.length > 0 && (
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-8">
           <div className="flex flex-wrap items-center gap-2">

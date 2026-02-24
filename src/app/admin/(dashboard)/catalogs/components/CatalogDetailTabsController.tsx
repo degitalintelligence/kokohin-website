@@ -39,7 +39,7 @@ export default function CatalogDetailTabsController({ addonsCount = 0 }: { addon
     if (next && next !== active) {
       setTimeout(() => setActive(next as TabKey), 0)
     }
-  }, [])
+  }, [parseHash, active])
 
   useEffect(() => {
     const handler = () => {

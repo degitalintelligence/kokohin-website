@@ -40,7 +40,7 @@ export default async function AdminCatalogDetailPage({
     .single()
 
   // Fetch all active materials in one go for efficiency
-  const { data: allMaterials, error: materialsError } = await supabase
+  const { data: allMaterials } = await supabase
     .from('materials')
     .select('id, name, category, base_price_per_unit, unit')
     .eq('is_active', true)
