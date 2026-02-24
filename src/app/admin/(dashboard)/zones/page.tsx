@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { MapPin, TrendingUp, BadgeDollarSign } from 'lucide-react'
 import styles from '../page.module.css'
+import ZoneRow from './components/ZoneRow'
 
 const escapeCsvValue = (value: string | number | boolean | null | undefined) => {
   const text = value === null || value === undefined ? '' : String(value)
@@ -36,7 +37,7 @@ const buildZonesCsv = (zones: Array<{
   return [header.join(','), ...rows.map((row) => row.join(','))].join('\n')
 }
 
-import DeleteZoneButton from './components/DeleteZoneButton'
+// 
 
 export default async function AdminZonesPage() {
   const supabase = await createClient()
@@ -127,56 +128,23 @@ export default async function AdminZonesPage() {
             <table className={styles.table}>
               <thead>
                 <tr>
-                  <th>Urutan</th>
+                  <th className="w-10"></th>
+                  <th className="hidden sm:table-cell">Urutan</th>
                   <th>Nama Zona</th>
-                  <th>Kota/Kecamatan</th>
+                  <th className="hidden md:table-cell">Kota/Kecamatan</th>
                   <th>Markup %</th>
-                  <th>Flat Fee</th>
-                  <th>Deskripsi</th>
-                  <th>Status</th>
+                  <th className="hidden lg:table-cell">Flat Fee</th>
+                  <th className="hidden lg:table-cell">Deskripsi</th>
+                  <th className="hidden sm:table-cell">Status</th>
                   <th>Aksi</th>
                 </tr>
               </thead>
               <tbody>
                 {zones?.map((zone, index) => (
-                  <tr key={zone.id}>
-                    <td className={styles.bold}>
-                      <div className="w-8 h-8 flex items-center justify-center bg-primary/10 rounded-full">
-                        {zone.order_index ?? index + 1}
-                      </div>
-                    </td>
-                    <td className={styles.bold}>{zone.name}</td>
-                    <td>
-                      <div className="text-sm text-gray-700">{zone.cities?.join(', ') || 'Semua'}</div>
-                    </td>
-                    <td className={styles.bold}>
-                      <span className={`${styles.badge} ${zone.markup_percentage > 0 ? styles.badge_new : styles.badge_closed}`}>
-                        {formatPercentage(zone.markup_percentage)}
-                      </span>
-                    </td>
-                    <td className={styles.bold}>
-                      {zone.flat_fee ? formatCurrency(zone.flat_fee) : '—'}
-                    </td>
-                    <td className={styles.muted} style={{ maxWidth: 200 }}>
-                      {zone.description || '—'}
-                    </td>
-                    <td>
-                      <span className={`${styles.badge} ${(zone.is_active ?? true) ? styles.badge_quoted : styles.badge_closed}`}>
-                        {(zone.is_active ?? true) ? 'Aktif' : 'Nonaktif'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="flex gap-2">
-                        <Link href={`/admin/zones/${zone.id}`} className="btn btn-outline-dark btn-sm">
-                          Edit
-                        </Link>
-                        <DeleteZoneButton id={zone.id} label="Hapus" className="btn btn-outline-danger btn-sm" />
-                      </div>
-                    </td>
-                  </tr>
+                  <ZoneRow key={zone.id} zone={zone} index={index} />
                 ))}
                 {(!zones || zones.length === 0) && (
-                  <tr><td colSpan={8} className={styles.empty}>Belum ada zona. <Link href="/admin/zones/new">Tambah zona pertama</Link></td></tr>
+                  <tr><td colSpan={9} className={styles.empty}>Belum ada zona. <Link href="/admin/zones/new">Tambah zona pertama</Link></td></tr>
                 )}
               </tbody>
             </table>

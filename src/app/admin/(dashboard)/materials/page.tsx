@@ -6,6 +6,7 @@ import styles from '../page.module.css'
 import ImportCsvForm from './components/ImportCsvForm'
 import { ALLOWED_MATERIALS_ROLES, isRoleAllowed } from '@/lib/rbac'
 import { revalidatePath } from 'next/cache'
+import MaterialRow from './components/MaterialRow'
 
 type MaterialImportData = {
   id?: string
@@ -476,11 +477,6 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
       maximumFractionDigits: 0
     }).format(amount)
   }
-
-  const formatLengthUnit = (lengthPerUnit: number | null) => {
-    if (!lengthPerUnit) return 'Satuan'
-    return lengthPerUnit === 1 ? 'Satuan' : `${lengthPerUnit}m`
-  }
   const csvContent = buildMaterialsCsv(materials ?? [])
   const csvHref = `data:text/csv;charset=utf-8,${encodeURIComponent(csvContent)}`
 
@@ -573,52 +569,23 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
             <table className={styles.table}>
               <thead>
                 <tr>
+                  <th className="w-10"></th>
                   <th>Nama</th>
-                  <th>Kategori</th>
-                  <th>Satuan</th>
+                  <th className="hidden md:table-cell">Kategori</th>
+                  <th className="hidden md:table-cell">Satuan</th>
                   <th>Harga Dasar</th>
-                  <th>Panjang per Unit</th>
-                  <th>Waste Calculation</th>
-                  <th>Status</th>
+                  <th className="hidden lg:table-cell">Panjang per Unit</th>
+                  <th className="hidden lg:table-cell">Waste Calculation</th>
+                  <th className="hidden sm:table-cell">Status</th>
                   <th>Aksi</th>
                 </tr>
               </thead>
               <tbody>
-                {materials?.map(material => (
-                  <tr key={material.id}>
-                    <td className={styles.bold}>{material.name}</td>
-                    <td>
-                      <span className={`${styles.badge} ${material.category === 'atap' ? styles.badge_new : styles.badge_contacted}`}>
-                        {material.category}
-                      </span>
-                    </td>
-                    <td>{material.unit}</td>
-                    <td className={styles.bold}>{formatCurrency(material.base_price_per_unit)}</td>
-                    <td>{formatLengthUnit(material.length_per_unit)}</td>
-                    <td>
-                      <span className={`${styles.badge} ${material.length_per_unit && material.length_per_unit > 1 ? styles.badge_quoted : styles.badge_closed}`}>
-                        {material.length_per_unit && material.length_per_unit > 1 ? 'Math.ceil()' : 'Satuan'}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`${styles.badge} ${material.is_active ? styles.badge_quoted : styles.badge_closed}`}>
-                        {material.is_active ? 'Aktif' : 'Nonaktif'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="flex gap-2">
-                        <Link href={`/admin/materials/${material.id}`} className="btn btn-outline-dark btn-sm">
-                          Edit
-                        </Link>
-                        <button className="btn btn-outline-danger btn-sm">
-                          Hapus
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                {materials?.map((material) => (
+                  <MaterialRow key={material.id} material={material} />
                 ))}
                 {(!materials || materials.length === 0) && (
-                  <tr><td colSpan={8} className={styles.empty}>Belum ada material. <Link href="/admin/materials/new">Tambah material pertama</Link></td></tr>
+                  <tr><td colSpan={9} className={styles.empty}>Belum ada material. <Link href="/admin/materials/new">Tambah material pertama</Link></td></tr>
                 )}
               </tbody>
             </table>

@@ -79,7 +79,7 @@
 }
 
 .tableWrap {
-  @apply overflow-x-auto;
+  @apply overflow-x-hidden;
 }
 
 .table {
@@ -95,11 +95,11 @@
 }
 
 .table th {
-  @apply px-4 py-3 whitespace-nowrap;
+  @apply px-4 py-3 whitespace-normal break-words;
 }
 
 .table td {
-  @apply px-4 py-3 align-middle;
+  @apply px-4 py-3 align-middle break-words;
 }
 
 .table tbody tr {

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { HardHat, BadgeDollarSign, CheckCircle2, Target } from 'lucide-react'
 import styles from '../page.module.css'
+import ProjectRow from './components/ProjectRow'
 
 const escapeCsvValue = (value: string | number | boolean | null | undefined) => {
   const text = value === null || value === undefined ? '' : String(value)
@@ -37,14 +38,7 @@ const buildProjectsCsv = (projects: Array<{
   return [header.join(','), ...rows.map((row) => row.join(','))].join('\n')
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  'New': { label: 'Baru', color: 'badge_new' },
-  'Surveyed': { label: 'Surveyed', color: 'badge_contacted' },
-  'Quoted': { label: 'Ditawarkan', color: 'badge_quoted' },
-  'Deal': { label: 'Deal', color: 'badge_closed' },
-  'Lost': { label: 'Lost', color: 'badge_closed' },
-  'Need Manual Quote': { label: 'Manual Quote', color: 'badge_new' }
-}
+//
 
 export default async function AdminProjectsPage() {
   const supabase = await createClient()
@@ -82,13 +76,7 @@ export default async function AdminProjectsPage() {
     }).format(amount)
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    })
-  }
+  //
 
   // Calculate stats
   const totalValue = projects.reduce((sum, p) => sum + (p.estimation?.total_selling_price || 0), 0)
@@ -164,75 +152,24 @@ export default async function AdminProjectsPage() {
             <table className={styles.table}>
               <thead>
                 <tr>
+                  <th className="w-10"></th>
                   <th>Customer</th>
-                  <th>Telepon</th>
-                  <th>Alamat</th>
-                  <th>Zona</th>
+                  <th className="hidden md:table-cell">Telepon</th>
+                  <th className="hidden lg:table-cell">Alamat</th>
+                  <th className="hidden md:table-cell">Zona</th>
                   <th>Total Harga</th>
-                  <th>Versi</th>
-                  <th>Status</th>
-                  <th>Tanggal</th>
+                  <th className="hidden sm:table-cell">Versi</th>
+                  <th className="hidden sm:table-cell">Status</th>
+                  <th className="hidden md:table-cell">Tanggal</th>
                   <th>Aksi</th>
                 </tr>
               </thead>
               <tbody>
-                {projects?.map(project => {
-                  const statusConfig = STATUS_CONFIG[project.status] || { label: project.status, color: 'badge_closed' }
-                  const zoneName = project.zone?.name || '—'
-                  const totalPrice = project.estimation?.total_selling_price || 0
-                  
-                  return (
-                    <tr key={project.id}>
-                      <td className={styles.bold}>{project.customer_name}</td>
-                      <td>
-                        <a 
-                          href={`https://wa.me/${project.phone.replace(/\D/g, '')}`} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-primary hover:underline"
-                        >
-                          {project.phone}
-                        </a>
-                      </td>
-                      <td className={styles.muted} style={{ maxWidth: 180 }}>
-                        {project.address}
-                      </td>
-                      <td>
-                        <span className={`${styles.badge} ${project.zone_id ? styles.badge_new : styles.badge_closed}`}>
-                          {zoneName}
-                        </span>
-                      </td>
-                      <td className={styles.bold}>
-                        {totalPrice > 0 ? formatCurrency(totalPrice) : '—'}
-                      </td>
-                      <td>
-                        {project.estimation?.version_number ? (
-                          <span className={`${styles.badge} ${styles.badge_new}`}>
-                            V{project.estimation.version_number}
-                          </span>
-                        ) : '—'}
-                      </td>
-                      <td>
-                        <span className={`${styles.badge} ${styles[statusConfig.color]}`}>
-                          {statusConfig.label}
-                        </span>
-                      </td>
-                      <td className={styles.muted}>{formatDate(project.created_at)}</td>
-                      <td>
-                        <div className="flex gap-2">
-                          <Link href={`/admin/projects/${project.id}`} className="btn btn-outline-dark btn-sm">
-                            Detail
-                          </Link>
-                          <Link href={`/admin/projects/${project.id}/edit`} className="btn btn-outline-dark btn-sm">
-                            Edit
-                          </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
+                {projects?.map(project => (
+                  <ProjectRow key={project.id} project={project} />
+                ))}
                 {projects.length === 0 && (
-                  <tr><td colSpan={8} className={styles.empty}>Belum ada proyek. <Link href="/admin/projects/new">Tambah proyek pertama</Link></td></tr>
+                  <tr><td colSpan={10} className={styles.empty}>Belum ada proyek. <Link href="/admin/projects/new">Tambah proyek pertama</Link></td></tr>
                 )}
               </tbody>
             </table>
