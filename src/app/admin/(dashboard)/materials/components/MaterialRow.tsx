@@ -42,6 +42,9 @@ export default function MaterialRow({ material }: { material: Material }) {
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-controls={`mat-row-details-${material.id}`}
+            aria-label={open ? `Sembunyikan detail ${material.name}` : `Tampilkan detail ${material.name}`}
             className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
           >
             {open ? <ChevronUp className="h-3 w-3 text-[#E30613]" /> : <ChevronDown className="h-3 w-3 text-[#E30613]" />}
@@ -55,7 +58,7 @@ export default function MaterialRow({ material }: { material: Material }) {
         <td className={styles.bold}>{formatCurrency(material.base_price_per_unit)}</td>
         <td className="hidden lg:table-cell">{formatLengthUnit(material.length_per_unit)}</td>
         <td className="hidden lg:table-cell">
-          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${wasteClass}`}>{wasteLabel}</span>
+          <span title="Waste batangan dibulatkan ke atas (Math.ceil)" className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${wasteClass}`}>{wasteLabel}</span>
         </td>
         <td className="hidden sm:table-cell">
           <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}`}>{material.is_active ? 'Aktif' : 'Nonaktif'}</span>
@@ -74,13 +77,13 @@ export default function MaterialRow({ material }: { material: Material }) {
       {open && (
         <tr className="bg-gray-50 border-t border-gray-200">
           <td colSpan={9} className="p-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm transition-opacity duration-200">
+            <div id={`mat-row-details-${material.id}`} role="region" aria-label={`Detail material ${material.name}`} className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm transition-opacity duration-200">
               <div>
                 <div className="text-xs text-gray-500">Ringkasan</div>
                 <div className="mt-1"><span className="text-gray-500">Kategori: </span><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${categoryClass}`}>{material.category}</span></div>
                 <div className="mt-1"><span className="text-gray-500">Satuan: </span><span className="font-medium text-gray-900">{material.unit}</span></div>
                 <div className="mt-1"><span className="text-gray-500">Panjang/Unit: </span><span className="font-medium text-gray-900">{formatLengthUnit(material.length_per_unit)}</span></div>
-                <div className="mt-1"><span className="text-gray-500">Waste: </span><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${wasteClass}`}>{wasteLabel}</span></div>
+                <div className="mt-1"><span className="text-gray-500">Waste: </span><span title="Waste batangan dibulatkan ke atas (Math.ceil)" className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${wasteClass}`}>{wasteLabel}</span></div>
                 <div className="mt-1"><span className="text-gray-500">Status: </span><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}`}>{material.is_active ? 'Aktif' : 'Nonaktif'}</span></div>
               </div>
               <div>

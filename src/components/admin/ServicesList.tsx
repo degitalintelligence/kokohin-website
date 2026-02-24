@@ -61,9 +61,9 @@ export default function ServicesList({ services: initial }: { services: Service[
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" aria-busy={loading || undefined}>
       <div className="flex items-center justify-between">
-        <button onClick={toggleAll} className="btn btn-outline flex items-center gap-2">
+        <button onClick={toggleAll} aria-pressed={selectAll} aria-label="Pilih semua layanan" className="btn btn-outline flex items-center gap-2">
           {selectAll ? <CheckSquare size={16} /> : <Square size={16} />}
           Pilih Semua
         </button>
@@ -78,7 +78,7 @@ export default function ServicesList({ services: initial }: { services: Service[
       </div>
 
       {message && (
-        <div className={`p-3 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+        <div role="status" aria-live="polite" className={`p-3 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
           {message.text}
         </div>
       )}
@@ -94,6 +94,7 @@ export default function ServicesList({ services: initial }: { services: Service[
                   className="w-5 h-5 accent-[#E30613]"
                   checked={checked}
                   onChange={() => toggleOne(svc.id)}
+                  aria-label={`Pilih layanan ${svc.name}`}
                 />
                 <div>
                   <div className="font-semibold text-gray-900">{svc.name}</div>

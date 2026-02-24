@@ -57,7 +57,7 @@ export async function createZone(formData: FormData) {
   }
 
   revalidatePath('/admin/zones')
-  redirect('/admin/zones')
+  redirect('/admin/zones?notice=created')
 }
 
 export async function updateZone(formData: FormData) {
@@ -118,7 +118,7 @@ export async function updateZone(formData: FormData) {
   }
 
   revalidatePath('/admin/zones')
-  redirect('/admin/zones')
+  redirect('/admin/zones?notice=updated')
 }
 
 export async function deleteZone(id: string) {

@@ -123,6 +123,7 @@ export interface Catalog {
     base_price_per_m2: number
     addons?: CatalogAddon[]
     is_active: boolean
+    is_popular?: boolean
     created_at: string
     updated_at: string
 }

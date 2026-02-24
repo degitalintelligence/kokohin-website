@@ -196,7 +196,7 @@ export async function createCatalog(formData: FormData) {
   revalidatePath('/admin/catalogs/new')
   revalidatePath('/kalkulator')
   revalidatePath('/katalog')
-  redirect('/admin/catalogs')
+  redirect('/admin/catalogs?notice=created')
 }
 
 export async function updateCatalog(formData: FormData) {
@@ -335,7 +335,7 @@ export async function updateCatalog(formData: FormData) {
   revalidatePath(`/admin/catalogs/${id}`)
   revalidatePath('/kalkulator')
   revalidatePath('/katalog')
-  redirect('/admin/catalogs')
+  redirect('/admin/catalogs?notice=updated')
 }
 
 export async function deleteCatalog(formData: FormData) {
@@ -368,7 +368,7 @@ export async function deleteCatalog(formData: FormData) {
   }
 
   revalidatePath('/admin/catalogs')
-  redirect('/admin/catalogs')
+  redirect('/admin/catalogs?notice=deleted')
 }
 
 export async function importCatalogAddons(formData: FormData) {

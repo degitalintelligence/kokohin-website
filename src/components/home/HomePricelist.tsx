@@ -27,11 +27,13 @@ export default function HomePricelist({ onSelectType }: Props) {
   const [catalogs, setCatalogs] = useState<HomeCatalog[]>([])
   const [catalogLoading, setCatalogLoading] = useState(true)
   const [catalogError, setCatalogError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const pageSize = 8
 
   useEffect(() => {
     const fetchCatalogs = async () => {
       try {
-        const res = await fetch('/api/public/catalogs', { cache: 'no-store' })
+        const res = await fetch('/api/public/catalogs?popular=1&limit=6', { cache: 'no-store' })
         if (!res.ok) {
           setCatalogError('Gagal memuat katalog')
           setCatalogs([])
@@ -92,6 +94,9 @@ export default function HomePricelist({ onSelectType }: Props) {
       return cat === catalogFilter
     })
   }, [catalogFilter, catalogs])
+  const totalPages = Math.max(1, Math.ceil(filteredCatalogs.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const pageItems = filteredCatalogs.slice((currentPage - 1) * pageSize, (currentPage) * pageSize)
 
   const formatRupiah = (amount: number) => new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -104,8 +109,8 @@ export default function HomePricelist({ onSelectType }: Props) {
     <section id="pricelist" className="py-16 bg-gray-50 border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-8">
-          <h2 className="text-3xl font-extrabold mb-4 text-primary-dark">Pricelist & Paket Populer</h2>
-          <p className="text-gray-600 max-w-2xl mx-auto font-medium">Temukan inspirasi kombinasi material terbaik.</p>
+          <h2 className="text-3xl font-extrabold mb-4 text-primary-dark">Produk Populer</h2>
+          <p className="text-gray-600 max-w-2xl mx-auto font-medium">Pilihan paket favorit pelanggan kami.</p>
         </div>
         <div className="flex justify-center mb-10">
           <div className="inline-flex bg-white p-1 rounded-lg border border-gray-200">
@@ -155,8 +160,9 @@ export default function HomePricelist({ onSelectType }: Props) {
         ) : catalogError ? (
           <div className="text-center text-red-600">Gagal memuat katalog.</div>
         ) : (
+          <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {filteredCatalogs.map((katalog) => {
+            {pageItems.map((katalog) => {
               const catalogType = katalog.atap_id ? 'kanopi' : 'pagar'
               return (
                 <div key={katalog.id} className="bg-white rounded-2xl overflow-hidden shadow-lg border border-gray-100 flex flex-col group hover:shadow-xl transition-shadow">
@@ -217,7 +223,35 @@ export default function HomePricelist({ onSelectType }: Props) {
               )
             })}
           </div>
+          {filteredCatalogs.length > pageSize && (
+            <div className="mt-8 flex items-center justify-center gap-2 text-sm">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 disabled:opacity-50 hover:bg-gray-50"
+              >
+                Sebelumnya
+              </button>
+              <div className="px-2">
+                Halaman <span className="font-semibold">{currentPage}</span> dari{' '}
+                <span className="font-semibold">{totalPages}</span>
+              </div>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 disabled:opacity-50 hover:bg-gray-50"
+              >
+                Berikutnya
+              </button>
+            </div>
+          )}
+          </>
         )}
+        <div className="mt-10 text-center">
+          <a href="/katalog" className="inline-flex items-center justify-center rounded-lg border-2 border-primary-dark text-primary-dark px-6 py-3 font-bold hover:bg-primary-dark hover:text-white transition-colors">
+            Lihat Semua Produk
+          </a>
+        </div>
       </div>
     </section>
   )

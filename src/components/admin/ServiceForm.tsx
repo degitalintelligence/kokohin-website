@@ -18,6 +18,8 @@ type Props = {
   }>
   onSubmit: (formData: FormData) => void | Promise<void>
   submitLabel: string
+  formId?: string
+  hideInternalSubmit?: boolean
 }
 
 function toSlug(input: string) {
@@ -48,7 +50,7 @@ async function compressImage(file: File, quality = 0.8, maxWidth = 1000): Promis
   return blob
 }
 
-export default function ServiceForm({ defaultValues, onSubmit, submitLabel }: Props) {
+export default function ServiceForm({ defaultValues, onSubmit, submitLabel, formId, hideInternalSubmit }: Props) {
   const [preview, setPreview] = useState<string | null>(defaultValues?.image_url || null)
   const [desc, setDesc] = useState<string>(defaultValues?.description_html || '')
   const [uploading, setUploading] = useState(false)
@@ -94,20 +96,20 @@ export default function ServiceForm({ defaultValues, onSubmit, submitLabel }: Pr
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form id={formId} onSubmit={handleSubmit} className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Nama Layanan</label>
+          <label className="label">Nama Layanan</label>
           <input name="name" defaultValue={defaultValues?.name || ''} required className="input" placeholder="Contoh: Kanopi Baja Ringan" />
         </div>
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Slug</label>
+          <label className="label">Slug</label>
           <input name="slug" defaultValue={defaultValues?.slug || ''} className="input" placeholder="kanopi-baja-ringan" />
         </div>
       </div>
 
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-2">Deskripsi (Rich Text)</label>
+        <label className="label">Deskripsi (Rich Text)</label>
         <div className="flex items-center gap-2 mb-2">
           <button type="button" className="btn btn-outline px-3 py-1" onClick={() => exec('bold')}>B</button>
           <button type="button" className="btn btn-outline px-3 py-1" onClick={() => exec('italic')}>I</button>
@@ -127,18 +129,18 @@ export default function ServiceForm({ defaultValues, onSubmit, submitLabel }: Pr
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Ikon (nama lucide)</label>
+          <label className="label">Ikon (nama lucide)</label>
           <input name="icon" defaultValue={defaultValues?.icon || ''} className="input" placeholder="Hammer / Wrench / ShieldCheck" />
         </div>
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Urutan Tampil</label>
+          <label className="label">Urutan Tampil</label>
           <input name="order" type="number" defaultValue={defaultValues?.order ?? 0} className="input" />
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Thumbnail</label>
+          <label className="label">Thumbnail</label>
           <input ref={fileRef} type="file" accept="image/*" className="input" onChange={handleFileChange} />
           {preview && (
             <div className="mt-3 relative w-full h-48 rounded-md overflow-hidden border">
@@ -147,7 +149,7 @@ export default function ServiceForm({ defaultValues, onSubmit, submitLabel }: Pr
           )}
         </div>
         <div className="space-y-2">
-          <label className="block text-sm font-semibold text-gray-700">Status</label>
+          <label className="label">Status</label>
           <select name="is_active" defaultValue={String(defaultValues?.is_active ?? true)} className="input">
             <option value="true">Aktif</option>
             <option value="false">Non-aktif</option>
@@ -157,25 +159,27 @@ export default function ServiceForm({ defaultValues, onSubmit, submitLabel }: Pr
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Meta Title</label>
+          <label className="label">Meta Title</label>
           <input name="meta_title" defaultValue={defaultValues?.meta_title || ''} className="input" />
         </div>
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Meta Description</label>
+          <label className="label">Meta Description</label>
           <input name="meta_description" defaultValue={defaultValues?.meta_description || ''} className="input" />
         </div>
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Meta Keywords</label>
+          <label className="label">Meta Keywords</label>
           <input name="meta_keywords" defaultValue={defaultValues?.meta_keywords || ''} className="input" />
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-500">Semua tombol aksi berwarna merah #E30613</div>
-        <button type="submit" disabled={uploading} className="btn btn-primary">
-          {uploading ? 'Mengunggah…' : submitLabel}
-        </button>
-      </div>
+      {!hideInternalSubmit && (
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-gray-500">Semua tombol aksi berwarna merah #E30613</div>
+          <button type="submit" disabled={uploading} className="btn btn-primary">
+            {uploading ? 'Mengunggah…' : submitLabel}
+          </button>
+        </div>
+      )}
     </form>
   )
 }

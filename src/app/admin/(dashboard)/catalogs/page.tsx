@@ -2,7 +2,7 @@ import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { FolderOpen, BadgeDollarSign, BarChart3, Search } from 'lucide-react'
+import { FolderOpen, BadgeDollarSign, BarChart3, Search, CheckCircle, AlertTriangle } from 'lucide-react'
 import { relNameFrom } from '@/lib/utils'
 import ImportCsvForm from './components/ImportCsvForm'
 import CatalogsListClient from './components/CatalogsListClient'
@@ -17,7 +17,7 @@ async function importCatalogs(formData: FormData) {
   if (!user && !bypass) redirect('/admin/login')
   const text = await file.text()
   const rows = parseCsv(text)
-  if (rows.length === 0) return
+  if (rows.length === 0) return redirect('/admin/catalogs?notice=imported')
   const [header, ...dataRows] = rows
   const index = (key: string) => header.findIndex((h) => h.toLowerCase() === key)
   const payload = dataRows.map((row) => {
@@ -46,7 +46,7 @@ async function importCatalogs(formData: FormData) {
     const { error: updErr } = await supabase.from('catalogs').update(p).eq('title', p.title)
     if (updErr) console.error('Update catalog error:', updErr, 'title:', p.title)
   }
-  redirect('/admin/catalogs')
+  redirect('/admin/catalogs?notice=imported')
 }
 
 
@@ -123,8 +123,8 @@ const parseCsv = (text: string) => {
   return rows
 }
 
-export default async function AdminCatalogsPage({ searchParams }: { searchParams: Promise<{ hmin?: string; hmax?: string; sort?: string }> }) {
-  const { hmin, hmax, sort } = await searchParams
+export default async function AdminCatalogsPage({ searchParams }: { searchParams: Promise<{ hmin?: string; hmax?: string; sort?: string; error?: string; notice?: string }> }) {
+  const { hmin, hmax, sort, error: errorParam, notice } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
@@ -187,6 +187,7 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
       base_price_unit: unit,
       hpp_per_unit: (c as { hpp_per_unit?: number | null }).hpp_per_unit ?? null,
       is_active: !!(c as { is_active?: boolean | null }).is_active,
+      is_popular: !!(c as { is_popular?: boolean | null }).is_popular,
       created_at: ((c as { created_at?: string | null }).created_at ?? null),
       atap_id: ((c as { atap_id?: string | null }).atap_id ?? null),
       rangka_id: ((c as { rangka_id?: string | null }).rangka_id ?? null),
@@ -222,6 +223,40 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
 
         {/* Content Area */}
         <div className="flex-1 overflow-auto p-8">
+        {Boolean(errorParam || notice) && (
+          <div className="mb-4">
+            {errorParam && (
+              <div className="flex items-center gap-2 p-3 rounded-md border border-red-200 bg-red-50 text-red-700">
+                <AlertTriangle className="w-4 h-4" />
+                <span>{decodeURIComponent(errorParam)}</span>
+              </div>
+            )}
+            {!errorParam && notice === 'created' && (
+              <div className="flex items-center gap-2 p-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <CheckCircle className="w-4 h-4" />
+                <span>Katalog berhasil dibuat</span>
+              </div>
+            )}
+            {!errorParam && notice === 'updated' && (
+              <div className="flex items-center gap-2 p-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <CheckCircle className="w-4 h-4" />
+                <span>Katalog berhasil diperbarui</span>
+              </div>
+            )}
+            {!errorParam && notice === 'deleted' && (
+              <div className="flex items-center gap-2 p-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <CheckCircle className="w-4 h-4" />
+                <span>Katalog berhasil dihapus</span>
+              </div>
+            )}
+            {!errorParam && notice === 'imported' && (
+              <div className="flex items-center gap-2 p-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <CheckCircle className="w-4 h-4" />
+                <span>Import CSV selesai</span>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 my-6">
           <div className="bg-white border border-gray-200 rounded-lg p-5 flex items-start">

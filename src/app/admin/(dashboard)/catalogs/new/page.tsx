@@ -7,6 +7,7 @@ import CatalogBaseFields from '../components/CatalogBaseFields'
 import CatalogAddonsEditor from '../components/CatalogAddonsEditor'
 import styles from '../../page.module.css'
 import { createCatalog } from '@/app/actions/catalogs'
+import CatalogSaveButton from '../components/CatalogSaveButton'
 
 export default async function AdminCatalogNewPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error: errorMessage } = await searchParams
@@ -34,9 +35,7 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
             <Link href="/admin/catalogs" className="btn btn-outline-dark">
               ← Kembali
             </Link>
-            <button type="submit" form="newCatalogForm" className="btn btn-primary">
-              Simpan Katalog
-            </button>
+            <CatalogSaveButton formId="newCatalogForm" label="Simpan Katalog" />
           </div>
         </div>
 
@@ -56,11 +55,11 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
           <form id="newCatalogForm" action={createCatalog} className="p-6 space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-2">Nama Paket *</label>
+                <label className="label">Nama Paket *</label>
                 <input
                   type="text"
                   name="title"
-                  className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
+                  className="input"
                   placeholder="Contoh: Paket Minimalis Atap Alderon"
                   required
                 />
@@ -70,11 +69,11 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
 
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium mb-2">Harga Dasar per Satuan (Rp) *</label>
+                  <label className="label">Harga Dasar per Satuan (Rp) *</label>
                   <input
                     type="number"
                     name="base_price_per_m2"
-                    className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
+                    className="input"
                     placeholder="0"
                     min="0"
                     step="1000"
@@ -82,8 +81,8 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Satuan</label>
-                  <select name="base_price_unit" className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613] bg-white">
+                  <label className="label">Satuan</label>
+                  <select name="base_price_unit" className="input bg-white">
                     <option value="m2">m²</option>
                     <option value="m1">m¹</option>
                     <option value="unit">unit</option>
@@ -94,11 +93,11 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
 
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-1">
-                  <label className="block text-sm font-medium mb-2">Tenaga Kerja (Rp)</label>
+                  <label className="label">Tenaga Kerja (Rp)</label>
                   <input
                     type="number"
                     name="labor_cost"
-                    className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
+                    className="input"
                     placeholder="0"
                     min="0"
                     step="1000"
@@ -107,11 +106,11 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                   <p className="text-xs text-gray-500 mt-1">Mengikuti satuan harga dasar</p>
                 </div>
                 <div className="col-span-1">
-                  <label className="block text-sm font-medium mb-2">Transport (Rp)</label>
+                  <label className="label">Transport (Rp)</label>
                   <input
                     type="number"
                     name="transport_cost"
-                    className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
+                    className="input"
                     placeholder="0"
                     min="0"
                     step="1000"
@@ -120,11 +119,11 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                   <p className="text-xs text-gray-500 mt-1">Biaya flat sekali proyek</p>
                 </div>
                 <div className="col-span-1">
-                  <label className="block text-sm font-medium mb-2">Margin (%)</label>
+                  <label className="label">Margin (%)</label>
                   <input
                     type="number"
                     name="margin_percentage"
-                    className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
+                    className="input"
                     placeholder="0"
                     min="0"
                     step="1"
@@ -134,12 +133,12 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium mb-2">Upload Gambar (Opsional)</label>
+                <label className="label">Upload Gambar (Opsional)</label>
                 <input
                   type="file"
                   name="image_file"
                   accept="image/*"
-                  className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
+                  className="input"
                 />
                 <p className="text-xs text-gray-500 mt-1">Format: JPG, PNG, WEBP (Max 2MB)</p>
               </div>

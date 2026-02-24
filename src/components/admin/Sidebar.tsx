@@ -46,7 +46,7 @@ export default function Sidebar() {
         flex items-center gap-3 px-6 py-3 text-sm font-medium transition-all border-l-[3px]
         ${isActive(href) 
             ? 'bg-[#E30613]/10 text-[#ff3a47] border-l-[#E30613] font-semibold' 
-            : 'text-white/50 hover:bg-white/5 hover:text-white/90 border-l-transparent hover:border-l-white/15'}
+            : 'text-white/70 hover:bg-white/5 hover:text-white/90 border-l-transparent hover:border-l-white/15'}
     `
 
     return (

@@ -61,7 +61,7 @@ export async function createMaterial(formData: FormData) {
   revalidatePath('/admin/catalogs/new')
   revalidatePath('/admin/catalogs/[id]')
   revalidatePath('/katalog')
-  redirect('/admin/materials')
+  redirect('/admin/materials?notice=created')
 }
 
 export async function updateMaterial(formData: FormData) {
@@ -123,7 +123,7 @@ export async function updateMaterial(formData: FormData) {
   revalidatePath('/admin/catalogs/new')
   revalidatePath('/admin/catalogs/[id]')
   revalidatePath('/katalog')
-  redirect('/admin/materials')
+  redirect('/admin/materials?notice=updated')
 }
 
 export async function deleteMaterial(id: string) {

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp, Loader2, MoreHorizontal, Search } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, MoreHorizontal, Search, Star } from 'lucide-react'
 
 type Unit = 'm2' | 'm1' | 'unit'
 
@@ -15,6 +15,7 @@ type CatalogItem = {
   base_price_unit: Unit
   hpp_per_unit: number | null
   is_active: boolean
+  is_popular?: boolean
   created_at: string | null
   atap_id: string | null
   rangka_id: string | null
@@ -47,14 +48,46 @@ export default function CatalogsListClient({ catalogs }: Props) {
   const [pageSize, setPageSize] = useState(10)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+  const [onlyPopular, setOnlyPopular] = useState(false)
+  const [rowsState, setRowsState] = useState<CatalogItem[]>(catalogs)
+  const [confirm, setConfirm] = useState<{ id: string; nextVal: boolean; title: string } | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setRowsState(catalogs)
+  }, [catalogs])
 
   useEffect(() => {
     const id = window.setTimeout(() => setPage(1), 0)
     return () => window.clearTimeout(id)
   }, [query, sortKey, pageSize])
 
+  useEffect(() => {
+    if (menuOpenId) {
+      setTimeout(() => {
+        const first = document.querySelector(`#row-menu-\${menuOpenId} a`) as HTMLAnchorElement | null
+        first?.focus()
+      }, 0)
+    }
+    const onDocClick = (e: MouseEvent) => {
+      if (!menuOpenId) return
+      const t = e.target as HTMLElement
+      const within = t.closest(`[data-menu-id="${menuOpenId}"]`)
+      if (!within) setMenuOpenId(null)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpenId(null)
+    }
+    document.addEventListener('click', onDocClick)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('click', onDocClick)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpenId])
+
   const processed = useMemo(() => {
-    const hppsSorted = catalogs
+    const hppsSorted = rowsState
       .map((c) => Number(c.hpp_per_unit || 0))
       .filter((v) => v > 0)
       .sort((a, b) => a - b)
@@ -83,7 +116,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
       }
     }
     const q = query.trim().toLowerCase()
-    let rows = catalogs.slice()
+    let rows = rowsState.slice()
     if (q) {
       rows = rows.filter((c) => {
         return (
@@ -92,6 +125,9 @@ export default function CatalogsListClient({ catalogs }: Props) {
           c.rangkaName.toLowerCase().includes(q)
         )
       })
+    }
+    if (onlyPopular) {
+      rows = rows.filter((c) => !!c.is_popular)
     }
     rows.sort((a, b) => {
       if (sortKey === 'recent') {
@@ -124,7 +160,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
         priorityClassName: p.className,
       }
     })
-  }, [catalogs, query, sortKey])
+  }, [rowsState, query, sortKey, onlyPopular])
 
   const isFiltering = query.trim().length > 0
 
@@ -149,6 +185,27 @@ export default function CatalogsListClient({ catalogs }: Props) {
     return 'bg-gray-100 text-gray-800'
   }
 
+  const openConfirm = (id: string, nextVal: boolean, title: string) => {
+    setConfirm({ id, nextVal, title })
+  }
+
+  const doConfirm = async () => {
+    if (!confirm) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/admin/catalogs/popular', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: confirm.id, is_popular: confirm.nextVal })
+      })
+      if (!res.ok) return
+      setRowsState((prev) => prev.map((c) => (c.id === confirm.id ? { ...c, is_popular: confirm.nextVal } : c)))
+    } finally {
+      setSaving(false)
+      setConfirm(null)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -159,13 +216,24 @@ export default function CatalogsListClient({ catalogs }: Props) {
             placeholder="Cari paket berdasarkan nama, atap, atau rangka..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            aria-label="Cari paket"
             className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613] focus-visible:ring-2 focus-visible:ring-[#E30613]"
           />
         </div>
         <div className="flex flex-wrap gap-3 justify-between md:justify-end">
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={onlyPopular}
+              onChange={(e) => setOnlyPopular(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-[#E30613] focus:ring-[#E30613]"
+            />
+            Hanya populer
+          </label>
           <select
             value={sortKey}
             onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
+            aria-label="Urutkan daftar katalog"
             className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613] focus-visible:ring-2 focus-visible:ring-[#E30613]"
           >
             <option value="recent">Terbaru</option>
@@ -178,6 +246,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
           <select
             value={pageSize}
             onChange={(e) => setPageSize(Number(e.target.value) || 10)}
+            aria-label="Jumlah item per halaman"
             className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613] focus-visible:ring-2 focus-visible:ring-[#E30613]"
           >
             <option value={10}>10 / halaman</option>
@@ -188,21 +257,61 @@ export default function CatalogsListClient({ catalogs }: Props) {
       </div>
 
       {isFiltering && (
-        <div className="flex items-center gap-2 text-xs text-gray-400">
+        <div className="flex items-center gap-2 text-xs text-gray-400" role="status" aria-live="polite">
           <Loader2 className="h-3 w-3 animate-spin" />
           <span>Menyaring katalog...</span>
         </div>
       )}
 
+      {confirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onClick={() => !saving && setConfirm(null)} />
+          <div className="relative w-full max-w-md bg-white rounded-xl border border-gray-200 shadow-xl p-6">
+            <h3 className="text-lg font-bold text-gray-900">Ubah Status Populer</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              {`Tandai paket "`}<span className="font-semibold text-gray-900">{confirm.title}</span>{`" sebagai `}
+              <span className="font-semibold">{confirm.nextVal ? 'populer' : 'tidak populer'}</span>
+              {`?`}
+            </p>
+            {saving && (
+              <div className="mt-4 text-sm text-gray-600 flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Menyimpan perubahan...</span>
+              </div>
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => !saving && setConfirm(null)}
+                disabled={saving}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-bold"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={doConfirm}
+                disabled={saving}
+                className="px-4 py-2 rounded-lg bg-[#E30613] text-white hover:bg-[#c10510] font-bold"
+              >
+                {confirm.nextVal ? 'Tandai Populer' : 'Batalkan Populer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="hidden lg:block overflow-x-hidden">
-        <table className="w-full table-fixed text-left border-collapse">
-          <thead>
+        <table id="catalogs-table" className="w-full table-fixed text-left border-collapse">
+          <caption className="sr-only">Daftar paket katalog</caption>
+          <thead className="sticky top-0 z-10">
               <tr className="bg-white border-b border-gray-200 text-xs md:text-sm">
-              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[30%]">Nama Paket</th>
+              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[30%]" aria-sort={sortKey === 'title_asc' ? 'ascending' : undefined}>Nama Paket</th>
               <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[12%] hidden xl:table-cell">Jenis</th>
-              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[18%]">Harga/Unit</th>
-              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[14%]">HPP/Unit</th>
+              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[18%]" aria-sort={sortKey === 'price_asc' ? 'ascending' : sortKey === 'price_desc' ? 'descending' : undefined}>Harga/Unit</th>
+              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[14%]" aria-sort={sortKey === 'hpp_asc' ? 'ascending' : sortKey === 'hpp_desc' ? 'descending' : undefined}>HPP/Unit</th>
               <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[12%] hidden xl:table-cell">Estimasi</th>
+              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[8%]">Popular</th>
               <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[8%]">Status</th>
               <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap text-right w-[8%]">Aksi</th>
             </tr>
@@ -224,6 +333,9 @@ export default function CatalogsListClient({ catalogs }: Props) {
                       <button
                         type="button"
                         onClick={() => handleToggleExpand(catalog.id)}
+                        aria-expanded={isExpanded}
+                        aria-controls={`row-details-${catalog.id}`}
+                        aria-label={isExpanded ? `Sembunyikan detail ${catalog.title}` : `Tampilkan detail ${catalog.title}`}
                         className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
                       >
                         {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -241,6 +353,12 @@ export default function CatalogsListClient({ catalogs }: Props) {
                             : '-'}
                         </div>
                       </div>
+                      {catalog.is_popular ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#E30613] text-white" title="Produk populer">
+                          <Star className="w-3 h-3" />
+                          POPULER
+                        </span>
+                      ) : null}
                     </div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap hidden xl:table-cell">
@@ -254,7 +372,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
                       <div>
                         <div className="text-sm text-gray-900">{formatCurrency(catalog.hpp_per_unit)}</div>
                         <div className="mt-1">
-                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.priorityClassName}`}>{catalog.priorityLabel}</span>
+                          <span title="Prioritas berdasarkan HPP relatif" className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.priorityClassName}`}>{catalog.priorityLabel}</span>
                         </div>
                       </div>
                     ) : (
@@ -266,12 +384,28 @@ export default function CatalogsListClient({ catalogs }: Props) {
                     <div>Estimasi {sampleQty} {unitLabel}</div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!catalog.is_popular}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          openConfirm(catalog.id, !catalog.is_popular, catalog.title)
+                        }}
+                        readOnly
+                        aria-label={catalog.is_popular ? 'Batal populer' : 'Tandai populer'}
+                        className="h-4 w-4 rounded border-gray-300 text-[#E30613] focus:ring-[#E30613] cursor-pointer"
+                      />
+                    </label>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                       {catalog.is_active ? 'Aktif' : 'Nonaktif'}
                     </span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="relative flex items-center justify-end gap-1">
+                    <div className="relative flex items-center justify-end gap-1" data-menu-id={catalog.id}>
                       <Link
                         href={`/admin/catalogs/${catalog.id}`}
                         className="px-3 py-1.5 rounded-md border border-gray-300 text-xs text-gray-800 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
@@ -281,20 +415,33 @@ export default function CatalogsListClient({ catalogs }: Props) {
                       <button
                         type="button"
                         onClick={() => handleToggleMenu(catalog.id)}
+                        aria-label="Buka menu tindakan"
+                        aria-haspopup="menu"
+                        aria-expanded={isMenuOpen}
+                        aria-controls={`row-menu-${catalog.id}`}
+                        id={`row-menu-button-${catalog.id}`}
                         className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
                       >
                         <MoreHorizontal className="h-4 w-4" />
                       </button>
                       {isMenuOpen && (
-                        <div className="absolute right-0 top-8 z-20 w-40 rounded-md border border-gray-200 bg-white text-xs shadow-lg">
+                        <div
+                          id={`row-menu-${catalog.id}`}
+                          role="menu"
+                          aria-labelledby={`row-menu-button-${catalog.id}`}
+                          tabIndex={-1}
+                          className="absolute right-0 top-8 z-20 w-44 rounded-md border border-gray-200 bg-white text-xs shadow-lg"
+                        >
                           <Link
                             href={`/admin/catalogs/${catalog.id}`}
+                            role="menuitem"
                             className="block px-3 py-2 hover:bg-gray-50 text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
                           >
                             Edit paket
                           </Link>
                           <Link
                             href={`/kalkulator?catalog_id=${catalog.id}`}
+                            role="menuitem"
                             className="block px-3 py-2 hover:bg-gray-50 text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
                           >
                             Buka di kalkulator
@@ -306,8 +453,8 @@ export default function CatalogsListClient({ catalogs }: Props) {
                 </tr>
                 {isExpanded && (
                   <tr className="bg-gray-50 border-t border-gray-200">
-                    <td colSpan={7} className="p-4">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <td colSpan={8} className="p-4">
+                      <div id={`row-details-${catalog.id}`} role="region" aria-label={`Detail katalog ${catalog.title}`} className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                         <div>
                           <div className="text-xs text-gray-500">Ringkasan</div>
                           <div className="mt-1"><span className="text-gray-500">Jenis: </span><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${typeClass}`}>{typeLabel}</span></div>
@@ -321,7 +468,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
                             {typeof catalog.hpp_per_unit === 'number' && catalog.hpp_per_unit > 0 ? (
                               <>
                                 <span className="text-gray-800">{formatCurrency(catalog.hpp_per_unit)}</span>
-                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.priorityClassName}`}>{catalog.priorityLabel}</span>
+                                <span title="Prioritas berdasarkan HPP relatif" className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.priorityClassName}`}>{catalog.priorityLabel}</span>
                               </>
                             ) : (
                               <span className="text-gray-500">-</span>
@@ -389,9 +536,16 @@ export default function CatalogsListClient({ catalogs }: Props) {
                       : '-'}
                   </div>
                 </div>
-                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                  {catalog.is_active ? 'Aktif' : 'Nonaktif'}
-                </span>
+                <div className="flex items-center gap-2">
+                  {catalog.is_popular ? (
+                    <span className="px-2 inline-flex items-center gap-1 text-[10px] leading-5 font-bold rounded-full bg-[#E30613] text-white">
+                      <Star className="w-3 h-3" /> POPULER
+                    </span>
+                  ) : null}
+                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    {catalog.is_active ? 'Aktif' : 'Nonaktif'}
+                  </span>
+                </div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-700">
                 <div>
@@ -423,7 +577,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
                   <span className="font-semibold text-gray-800">{formatCurrency(estimatedPrice)}</span>
                 </div>
                 {typeof catalog.hpp_per_unit === 'number' && catalog.hpp_per_unit > 0 && (
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.priorityClassName}`}>{catalog.priorityLabel}</span>
+                  <span title="Prioritas berdasarkan HPP relatif" className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.priorityClassName}`}>{catalog.priorityLabel}</span>
                 )}
               </div>
               <div className="mt-4 flex items-center justify-end gap-2">
@@ -450,7 +604,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
         )}
       </div>
 
-      <div className="mt-2 flex flex-col gap-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-2 flex flex-col gap-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between" role="status" aria-live="polite">
         <div>
           Menampilkan{' '}
           <span className="font-semibold">
@@ -463,6 +617,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
             type="button"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={currentPage === 1}
+            aria-controls="catalogs-table"
             className="inline-flex items-center rounded-md border border-gray-300 px-2 py-1 text-[11px] text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-gray-50 transition-colors"
           >
             Sebelumnya
@@ -475,6 +630,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
             type="button"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={currentPage === totalPages}
+            aria-controls="catalogs-table"
             className="inline-flex items-center rounded-md border border-gray-300 px-2 py-1 text-[11px] text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-gray-50 transition-colors"
           >
             Berikutnya

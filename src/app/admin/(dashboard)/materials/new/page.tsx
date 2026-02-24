@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import styles from '../../page.module.css'
 import { createMaterial } from '@/app/actions/materials'
+import CatalogSaveButton from '../../catalogs/components/CatalogSaveButton'
 
 export default async function AdminMaterialNewPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error: errorMessage } = await searchParams
@@ -23,9 +24,7 @@ export default async function AdminMaterialNewPage({ searchParams }: { searchPar
             <Link href="/admin/materials" className="btn btn-outline-dark">
               ← Kembali
             </Link>
-            <button type="submit" form="newMaterialForm" className="btn btn-primary">
-              Simpan Material
-            </button>
+            <CatalogSaveButton formId="newMaterialForm" label="Simpan Material" />
           </div>
         </div>
 
@@ -42,31 +41,31 @@ export default async function AdminMaterialNewPage({ searchParams }: { searchPar
             )}
             <div className="grid grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium mb-2">Kode Material *</label>
+                <label className="label">Kode Material *</label>
                 <input
                   type="text"
                   name="code"
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="input"
                   placeholder="MAT-001"
                   required
                 />
                 <p className="text-sm text-gray-500 mt-1">Kode unik untuk material</p>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Nama Material *</label>
+                <label className="label">Nama Material *</label>
                 <input
                   type="text"
                   name="name"
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="input"
                   placeholder="Baja Ringan 0.75mm"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Kategori *</label>
+                <label className="label">Kategori *</label>
                 <select
                   name="category"
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="input"
                   required
                 >
                   <option value="">Pilih Kategori</option>
@@ -77,10 +76,10 @@ export default async function AdminMaterialNewPage({ searchParams }: { searchPar
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Satuan *</label>
+                <label className="label">Satuan *</label>
                 <select
                   name="unit"
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="input"
                   required
                 >
                   <option value="">Pilih Satuan</option>
@@ -93,26 +92,26 @@ export default async function AdminMaterialNewPage({ searchParams }: { searchPar
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Harga Dasar per Unit *</label>
+                <label className="label">Harga Dasar per Unit *</label>
                 <input
                   type="number"
                   name="base_price_per_unit"
                   min="0"
                   step="1000"
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="input"
                   placeholder="0"
                   required
                 />
                 <p className="text-sm text-gray-500 mt-1">Harga dasar sebelum markup zona</p>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Panjang per Unit (meter)</label>
+                <label className="label">Panjang per Unit (meter)</label>
                 <input
                   type="number"
                   name="length_per_unit"
                   min="0.01"
                   step="0.01"
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="input"
                   placeholder="6"
                 />
                 <p className="text-sm text-gray-500 mt-1">

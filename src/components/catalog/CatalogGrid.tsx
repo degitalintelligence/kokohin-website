@@ -16,6 +16,7 @@ export default function CatalogGrid() {
   const [sort, setSort] = useState<'price_asc' | 'price_desc' | 'name_asc'>('price_asc')
   const [q, setQ] = useState('')
   const [waNumber, setWaNumber] = useState(FALLBACK_WA)
+  const [popularOnly, setPopularOnly] = useState(false)
 
   useEffect(() => {
     const fetchCatalogs = async () => {
@@ -70,7 +71,9 @@ export default function CatalogGrid() {
       default: return 'Lainnya'
     }
   }
-  const filtered = catalogs.filter(c => category === 'all' ? true : c.category === category)
+  const filtered = catalogs
+    .filter(c => category === 'all' ? true : c.category === category)
+    .filter(c => popularOnly ? !!c.is_popular : true)
   const searched = filtered.filter(c => c.title.toLowerCase().includes(q.trim().toLowerCase()))
   const sorted = [...searched].sort((a, b) => {
     if (sort === 'price_asc') return (a.base_price_per_m2 || 0) - (b.base_price_per_m2 || 0)
@@ -115,6 +118,15 @@ export default function CatalogGrid() {
             ))}
           </div>
           <div className="flex items-center gap-2 w-full md:w-auto">
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={popularOnly}
+                onChange={(e) => setPopularOnly(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-[#E30613] focus:ring-[#E30613]"
+              />
+              Populer saja
+            </label>
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as typeof sort)}
@@ -177,12 +189,13 @@ export default function CatalogGrid() {
               }`}
               onClick={() => setSelectedCatalog(catalog.id)}
             >
-              {/* Badge */}
-              <div className="absolute top-4 left-4 z-10">
-                <div className="px-3 py-1 bg-primary text-white text-xs font-bold rounded-full">
-                  POPULER
+              {catalog.is_popular ? (
+                <div className="absolute top-4 left-4 z-10">
+                  <div className="px-3 py-1 bg-primary text-white text-xs font-bold rounded-full">
+                    POPULER
+                  </div>
                 </div>
-              </div>
+              ) : null}
               
               {/* Image */}
               <div className="h-48 overflow-hidden bg-gray-100 relative">
@@ -197,7 +210,7 @@ export default function CatalogGrid() {
               
               {/* Content */}
               <div className="p-6">
-                <h3 className="text-xl font-bold text-primary-dark mb-3 line-clamp-2">
+                <h3 className="text-xl font-bold text-primary-dark mb-3 whitespace-normal break-words">
                   {catalog.title}
                 </h3>
                 <div className="mb-2">
@@ -211,33 +224,55 @@ export default function CatalogGrid() {
                 
                 <div className="space-y-4 mb-6">
                   <div>
-                    <div className="flex items-baseline gap-2">
+                    <div className="flex flex-col">
                       <span className="text-sm text-gray-500 font-medium">Mulai dari</span>
-                      <span className="text-2xl font-bold text-primary">
-                        {formatRupiah(catalog.base_price_per_m2)}
-                      </span>
-                      <span className="text-gray-500">
-                        {`/${unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : 'unit'}`}
-                      </span>
+                      <div className="mt-1">
+                        <span className="text-2xl font-bold text-primary">
+                          {formatRupiah(catalog.base_price_per_m2)}
+                        </span>
+                        <span className="text-gray-500">
+                          {`/${unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : 'unit'}`}
+                        </span>
+                      </div>
                     </div>
                     <p className="text-sm text-gray-600">
                       Estimasi {sampleQty}{unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : ' unit'}: <span className="font-semibold">{formatRupiah(estimatedPrice)}</span>
                     </p>
                   </div>
                   
+                  {(catalog.atap?.name || catalog.rangka?.name) && (
+                    <div className="pb-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">Material yang digunakan:</h4>
+                      <ul className="space-y-2">
+                        {catalog.atap?.name && (
+                          <li className="flex items-start gap-2 text-sm">
+                            <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
+                            <span>Atap: {catalog.atap.name}</span>
+                          </li>
+                        )}
+                        {catalog.rangka?.name && (
+                          <li className="flex items-start gap-2 text-sm">
+                            <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
+                            <span>Rangka: {catalog.rangka.name}</span>
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                  
                   <div className="pt-4 border-t border-gray-100">
                     <h4 className="text-sm font-semibold text-gray-700 mb-2">Termasuk:</h4>
                     <ul className="space-y-2">
-                      <li className="flex items-center gap-2 text-sm">
-                        <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+                      <li className="flex items-start gap-2 text-sm">
+                        <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
                         <span>Material berkualitas</span>
                       </li>
-                      <li className="flex items-center gap-2 text-sm">
-                        <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+                      <li className="flex items-start gap-2 text-sm">
+                        <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
                         <span>Pemasangan profesional</span>
                       </li>
-                      <li className="flex items-center gap-2 text-sm">
-                        <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+                      <li className="flex items-start gap-2 text-sm">
+                        <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
                         <span>Garansi instalasi</span>
                       </li>
                     </ul>

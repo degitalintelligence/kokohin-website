@@ -68,7 +68,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <button
             type="button"
             aria-label="Toggle sidebar"
-            className="inline-flex items-center justify-center w-10 h-10 rounded-md text-[#1D1D1B] hover:bg-gray-100 active:bg-gray-200"
+            className="inline-flex items-center justify-center w-10 h-10 rounded-md text-[#1D1D1B] hover:bg-gray-100 active:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
             onClick={() => setOpen(v => !v)}
           >
             <Menu className="w-6 h-6" />

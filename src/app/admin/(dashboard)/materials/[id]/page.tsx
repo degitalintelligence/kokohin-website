@@ -4,6 +4,7 @@ import Link from 'next/link'
 import styles from '../../page.module.css'
 import { updateMaterial } from '@/app/actions/materials'
 import DeleteMaterialButton from '../components/DeleteMaterialButton'
+import CatalogSaveButton from '../../catalogs/components/CatalogSaveButton'
 
 export default async function AdminMaterialDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -53,9 +54,7 @@ export default async function AdminMaterialDetailPage({ params }: { params: Prom
             ← Kembali
           </Link>
           <DeleteMaterialButton id={material.id} />
-          <button type="submit" form="editMaterialForm" className="btn btn-primary">
-            Simpan Perubahan
-          </button>
+          <CatalogSaveButton formId="editMaterialForm" />
         </div>
       </div>
 
@@ -69,31 +68,31 @@ export default async function AdminMaterialDetailPage({ params }: { params: Prom
           
           <div className="grid grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium mb-2">Kode Material</label>
+              <label className="label">Kode Material</label>
               <input
                 type="text"
                 name="code"
                 defaultValue={material.code}
-                className="w-full px-4 py-2 border rounded-md"
+                className="input"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Nama Material</label>
+              <label className="label">Nama Material</label>
               <input
                 type="text"
                 name="name"
                 defaultValue={material.name}
-                className="w-full px-4 py-2 border rounded-md"
+                className="input"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Kategori</label>
+              <label className="label">Kategori</label>
               <select
                 name="category"
                 defaultValue={material.category}
-                className="w-full px-4 py-2 border rounded-md"
+                className="input"
                 required
               >
                 <option value="atap">Atap</option>
@@ -103,11 +102,11 @@ export default async function AdminMaterialDetailPage({ params }: { params: Prom
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Satuan</label>
+              <label className="label">Satuan</label>
               <select
                 name="unit"
                 defaultValue={material.unit}
-                className="w-full px-4 py-2 border rounded-md"
+                className="input"
                 required
               >
                 <option value="batang">Batang</option>
@@ -119,24 +118,24 @@ export default async function AdminMaterialDetailPage({ params }: { params: Prom
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Harga Dasar (Rp)</label>
+              <label className="label">Harga Dasar (Rp)</label>
               <input
                 type="number"
                 name="base_price_per_unit"
                 defaultValue={material.base_price_per_unit}
-                className="w-full px-4 py-2 border rounded-md"
+                className="input"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Panjang per Unit (meter)</label>
+              <label className="label">Panjang per Unit (meter)</label>
               <input
                 type="number"
                 name="length_per_unit"
                 defaultValue={material.length_per_unit ?? 1}
                 min={0.01}
                 step={0.01}
-                className="w-full px-4 py-2 border rounded-md"
+                className="input"
               />
             </div>
             <div className="col-span-2">

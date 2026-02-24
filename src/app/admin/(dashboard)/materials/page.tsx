@@ -1,7 +1,7 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Boxes, BadgeDollarSign, Ruler } from 'lucide-react'
+import { Boxes, BadgeDollarSign, Ruler, CheckCircle, AlertTriangle } from 'lucide-react'
 import styles from '../page.module.css'
 import ImportCsvForm from './components/ImportCsvForm'
 import { ALLOWED_MATERIALS_ROLES, isRoleAllowed } from '@/lib/rbac'
@@ -336,8 +336,8 @@ const parseCsv = (text: string) => {
   return rows
 }
 
-export default async function AdminMaterialsPage({ searchParams }: { searchParams: Promise<{ category?: string; import?: string }> }) {
-  const { category: rawCategory, import: importStatus } = await searchParams
+export default async function AdminMaterialsPage({ searchParams }: { searchParams: Promise<{ category?: string; import?: string; error?: string; notice?: string }> }) {
+  const { category: rawCategory, import: importStatus, error: errorParam, notice } = await searchParams
   const allowedCategories = new Set(['atap', 'frame', 'aksesoris', 'lainnya'])
   const activeCategory = rawCategory && allowedCategories.has(rawCategory) ? rawCategory as 'atap'|'frame'|'aksesoris'|'lainnya' : null
   const supabase = await createClient()
@@ -388,6 +388,28 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
           </div>
         </div>
 
+        {(errorParam || notice) && (
+          <div className="px-8">
+            {errorParam && (
+              <div className="flex items-center gap-2 p-3 rounded-md border border-red-200 bg-red-50 text-red-700">
+                <AlertTriangle className="w-4 h-4" />
+                <span>{decodeURIComponent(errorParam)}</span>
+              </div>
+            )}
+            {!errorParam && notice === 'created' && (
+              <div className="flex items-center gap-2 p-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <CheckCircle className="w-4 h-4" />
+                <span>Material berhasil dibuat</span>
+              </div>
+            )}
+            {!errorParam && notice === 'updated' && (
+              <div className="flex items-center gap-2 p-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <CheckCircle className="w-4 h-4" />
+                <span>Material berhasil diperbarui</span>
+              </div>
+            )}
+          </div>
+        )}
       {/* Stats */}
       <div className={styles.statsGrid}>
           <div className={`${styles.statCard} ${styles.accentCard}`}>

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import styles from '../../page.module.css'
 import { updateZone } from '@/app/actions/zones'
 import DeleteZoneButton from '../components/DeleteZoneButton'
+import CatalogSaveButton from '../../catalogs/components/CatalogSaveButton'
 
 export default async function AdminZoneEditPage({
   params,
@@ -38,9 +39,12 @@ export default async function AdminZoneEditPage({
             <h1 className={styles.title}>Edit Zona</h1>
             <p className={styles.sub}>Perbarui detail zona markup</p>
           </div>
-          <Link href="/admin/zones" className="btn btn-outline-dark">
-            ← Kembali
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/admin/zones" className="btn btn-outline-dark">
+              ← Kembali
+            </Link>
+            <CatalogSaveButton formId="editZoneForm" label="Simpan Perubahan" />
+          </div>
         </div>
 
       {errorMsg && (
@@ -50,29 +54,29 @@ export default async function AdminZoneEditPage({
         )}
 
         <div className={styles.section}>
-          <form action={updateZone} className="p-6 space-y-6">
+          <form id="editZoneForm" action={updateZone} className="p-6 space-y-6">
             <input type="hidden" name="id" value={zone.id} />
             
             <div className="grid grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium mb-2">Nama Zona *</label>
+                <label className="label">Nama Zona *</label>
                 <input
                   type="text"
                   name="name"
                   defaultValue={zone.name}
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="input"
                   placeholder="Contoh: Jakarta Selatan"
                   required
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-2">Markup (%) *</label>
+                <label className="label">Markup (%) *</label>
                 <input
                   type="number"
                   name="markup_percentage"
                   defaultValue={zone.markup_percentage}
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="input"
                   placeholder="0"
                   step="0.01"
                   required
@@ -81,12 +85,12 @@ export default async function AdminZoneEditPage({
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Flat Fee (Rp)</label>
+                <label className="label">Flat Fee (Rp)</label>
                 <input
                   type="number"
                   name="flat_fee"
                   defaultValue={zone.flat_fee}
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="input"
                   placeholder="0"
                   min="0"
                 />
@@ -94,23 +98,23 @@ export default async function AdminZoneEditPage({
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Urutan Tampil</label>
+                <label className="label">Urutan Tampil</label>
                 <input
                   type="number"
                   name="order_index"
                   defaultValue={zone.order_index ?? 99}
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="input"
                   placeholder="1"
                   min="1"
                 />
               </div>
 
               <div className="col-span-2">
-                <label className="block text-sm font-medium mb-2">Kota/Kecamatan (Opsional)</label>
+                <label className="label">Kota/Kecamatan (Opsional)</label>
                 <textarea
                   name="cities"
                   defaultValue={zone.cities?.join(', ')}
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="input"
                   placeholder="Pisahkan dengan koma. Contoh: Kebayoran Baru, Cilandak, Jagakarsa"
                   rows={2}
                 ></textarea>
@@ -120,11 +124,11 @@ export default async function AdminZoneEditPage({
               </div>
 
               <div className="col-span-2">
-                <label className="block text-sm font-medium mb-2">Deskripsi (Opsional)</label>
+                <label className="label">Deskripsi (Opsional)</label>
                 <textarea
                   name="description"
                   defaultValue={zone.description}
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="input"
                   placeholder="Catatan internal"
                   rows={2}
                 ></textarea>
@@ -150,9 +154,6 @@ export default async function AdminZoneEditPage({
                 <Link href="/admin/zones" className="btn btn-outline-dark">
                   Batal
                 </Link>
-                <button type="submit" className="btn btn-primary">
-                  Simpan Perubahan
-                </button>
               </div>
             </div>
           </form>

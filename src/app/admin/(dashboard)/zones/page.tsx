@@ -1,7 +1,7 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { MapPin, TrendingUp, BadgeDollarSign } from 'lucide-react'
+import { MapPin, TrendingUp, BadgeDollarSign, CheckCircle, AlertTriangle } from 'lucide-react'
 import styles from '../page.module.css'
 import ZoneRow from './components/ZoneRow'
 
@@ -39,7 +39,10 @@ const buildZonesCsv = (zones: Array<{
 
 // 
 
-export default async function AdminZonesPage() {
+export default async function AdminZonesPage({ searchParams }: { searchParams?: Promise<{ error?: string; notice?: string }> }) {
+  const sp = searchParams ? await searchParams : {}
+  const errorParam = sp?.error
+  const notice = sp?.notice
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
@@ -84,6 +87,28 @@ export default async function AdminZonesPage() {
           </Link>
         </div>
 
+        {(errorParam || notice) && (
+          <div className="px-8">
+            {errorParam && (
+              <div className="flex items-center gap-2 p-3 rounded-md border border-red-200 bg-red-50 text-red-700">
+                <AlertTriangle className="w-4 h-4" />
+                <span>{decodeURIComponent(errorParam)}</span>
+              </div>
+            )}
+            {!errorParam && notice === 'created' && (
+              <div className="flex items-center gap-2 p-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <CheckCircle className="w-4 h-4" />
+                <span>Zona berhasil dibuat</span>
+              </div>
+            )}
+            {!errorParam && notice === 'updated' && (
+              <div className="flex items-center gap-2 p-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+                <CheckCircle className="w-4 h-4" />
+                <span>Zona berhasil diperbarui</span>
+              </div>
+            )}
+          </div>
+        )}
         {/* Stats */}
         <div className={styles.statsGrid}>
           <div className={`${styles.statCard} ${styles.accentCard}`}>

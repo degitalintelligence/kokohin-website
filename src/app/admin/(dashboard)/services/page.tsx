@@ -3,8 +3,12 @@ import { redirect } from 'next/navigation'
 import styles from '../page.module.css'
 import Link from 'next/link'
 import ServicesList from '@/components/admin/ServicesList'
+import { CheckCircle, AlertTriangle } from 'lucide-react'
 
-export default async function AdminServicesPage() {
+export default async function AdminServicesPage({ searchParams }: { searchParams?: Promise<{ error?: string; notice?: string }> }) {
+  const sp = searchParams ? await searchParams : {}
+  const errorParam = sp?.error
+  const notice = sp?.notice
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
@@ -39,6 +43,35 @@ export default async function AdminServicesPage() {
         </div>
         <Link href="/admin/services/new" className="btn btn-primary">Tambah Layanan</Link>
       </div>
+
+      {(errorParam || notice) && (
+        <div className="px-8">
+          {errorParam && (
+            <div className="flex items-center gap-2 p-3 rounded-md border border-red-200 bg-red-50 text-red-700">
+              <AlertTriangle className="w-4 h-4" />
+              <span>{decodeURIComponent(errorParam)}</span>
+            </div>
+          )}
+          {!errorParam && notice === 'created' && (
+            <div className="flex items-center gap-2 p-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+              <CheckCircle className="w-4 h-4" />
+              <span>Layanan berhasil dibuat</span>
+            </div>
+          )}
+          {!errorParam && notice === 'updated' && (
+            <div className="flex items-center gap-2 p-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+              <CheckCircle className="w-4 h-4" />
+              <span>Layanan berhasil diperbarui</span>
+            </div>
+          )}
+          {!errorParam && notice === 'deleted' && (
+            <div className="flex items-center gap-2 p-3 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700">
+              <CheckCircle className="w-4 h-4" />
+              <span>Layanan berhasil dihapus</span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className={styles.section}>
         <div className="p-6"><ServicesList services={items} /></div>

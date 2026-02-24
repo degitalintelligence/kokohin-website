@@ -4,9 +4,11 @@ import Link from 'next/link'
 import styles from '../../page.module.css'
 import ServiceForm from '@/components/admin/ServiceForm'
 import { deleteService, updateService } from '@/app/actions/servicesAdmin'
+import CatalogSaveButton from '../../catalogs/components/CatalogSaveButton'
 
-export default async function AdminServiceEditPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AdminServiceEditPage({ params, searchParams }: { params: Promise<{ id: string }>, searchParams: Promise<{ error?: string }> }) {
   const { id } = await params
+  const { error: errorMessage } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
@@ -35,7 +37,7 @@ export default async function AdminServiceEditPage({ params }: { params: Promise
     if ('error' in res && res.error) {
       redirect(`/admin/services/${id}?error=${encodeURIComponent(res.error)}`)
     }
-    redirect('/admin/services')
+    redirect('/admin/services?notice=updated')
   }
 
   async function onDelete() {
@@ -44,7 +46,7 @@ export default async function AdminServiceEditPage({ params }: { params: Promise
     if ('error' in res && res.error) {
       redirect(`/admin/services/${id}?error=${encodeURIComponent(res.error)}`)
     }
-    redirect('/admin/services')
+    redirect('/admin/services?notice=deleted')
   }
 
   return (
@@ -59,12 +61,20 @@ export default async function AdminServiceEditPage({ params }: { params: Promise
             <button className="btn btn-outline text-red-600 border-red-200 hover:bg-red-50">Hapus</button>
           </form>
           <Link href="/admin/services" className="btn btn-outline-dark">← Kembali</Link>
+          <CatalogSaveButton formId="serviceFormEdit" label="Simpan Perubahan" />
         </div>
       </div>
 
       <div className={styles.section}>
         <div className="p-6">
+          {errorMessage && (
+            <div className="p-3 mb-4 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+              {decodeURIComponent(errorMessage)}
+            </div>
+          )}
           <ServiceForm
+            formId="serviceFormEdit"
+            hideInternalSubmit
             defaultValues={{
               name: svc.name,
               slug: svc.slug,
