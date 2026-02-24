@@ -166,7 +166,7 @@ export default function HomePricelist({ onSelectType }: Props) {
               const catalogType = katalog.atap_id ? 'kanopi' : 'pagar'
               return (
                 <div key={katalog.id} className="bg-white rounded-2xl overflow-hidden shadow-lg border border-gray-100 flex flex-col group hover:shadow-xl transition-shadow">
-                  <div className="relative h-56 overflow-hidden">
+                  <div className="relative aspect-[4/3] overflow-hidden">
                     <Image
                       src={katalog.image_url ?? 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop'}
                       alt={katalog.title}

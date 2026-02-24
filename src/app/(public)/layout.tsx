@@ -1,6 +1,7 @@
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
 import { MessageCircle } from 'lucide-react'
+import { createClient } from '@/lib/supabase/server'
 
 export default async function PublicLayout({
     children,
@@ -20,11 +21,13 @@ export default async function PublicLayout({
         backgroundUrl = null
     }
     try {
-        const res = await fetch('/api/site-settings/wa-number', { cache: 'no-store' })
-        if (res.ok) {
-            const json = (await res.json()) as { wa_number?: string | null }
-            waNumber = json.wa_number ?? null
-        }
+        const supabase = await createClient()
+        const { data } = await supabase
+            .from('site_settings')
+            .select('value')
+            .eq('key', 'wa_number')
+            .maybeSingle()
+        waNumber = (data as { value?: string } | null)?.value ?? null
     } catch {
         waNumber = null
     }

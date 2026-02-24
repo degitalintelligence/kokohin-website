@@ -52,7 +52,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 text-primary-dark font-sans">
       {/* Hero Section */}
-      <section className="relative pt-24 pb-16 md:pt-32 md:pb-24 overflow-hidden bg-primary-dark text-white">
+      <section className="relative pt-20 pb-12 md:pt-24 md:pb-16 overflow-hidden bg-primary-dark text-white">
         {/* Background Image */}
         {heroBgUrl && (
           <div className="absolute inset-0 z-0">
@@ -69,15 +69,20 @@ export default function HomePage() {
           </div>
         )}
 
-        <div className="container relative z-10 text-center">
+        <div className="container relative z-10">
+          <div className="text-center flex flex-col items-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 mb-6 animate-fade-in-up shadow-lg">
             <ShieldCheck size={16} className="text-primary drop-shadow-md" />
             <span className="text-sm font-semibold tracking-wide drop-shadow-md">GARANSI KONSTRUKSI 1 TAHUN</span>
           </div>
           
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tight mb-6 leading-tight max-w-5xl mx-auto drop-shadow-2xl">
-            Ahlinya Kanopi, Pagar, &amp; Railing <br />
-            <span className="text-primary drop-shadow-lg">Transparan: tanpa biaya siluman!</span>
+          <h1 className="font-extrabold tracking-tighter mb-6 leading-[1.15] max-w-[92vw] md:max-w-6xl lg:max-w-7xl mx-auto drop-shadow-2xl text-center px-3 sm:px-0">
+            <span className="block whitespace-normal md:whitespace-nowrap mx-auto w-auto text-[clamp(1.1rem,7.2vw,2.4rem)] sm:text-4xl md:text-6xl lg:text-7xl">
+              Ahlinya Kanopi, Pagar &amp; Railing
+            </span>
+            <span className="block whitespace-normal md:whitespace-nowrap mx-auto w-auto text-primary drop-shadow-lg text-[clamp(1rem,6.6vw,2.2rem)] sm:text-4xl md:text-6xl lg:text-7xl">
+              Transparan: tanpa biaya siluman!
+            </span>
           </h1>
           <p className="text-lg md:text-xl text-gray-100 mb-10 max-w-2xl mx-auto font-medium drop-shadow-lg">Struktur teliti, eksekusi rapi, produk bergaransi.</p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
@@ -87,6 +92,7 @@ export default function HomePage() {
             <Link href="/katalog" className="flex items-center justify-center gap-2 bg-white font-bold py-4 px-8 rounded-md text-lg text-primary-dark hover:bg-gray-100 transition-colors shadow-xl hover:shadow-2xl hover:-translate-y-1 transform duration-200">
               Lihat Pricelist
             </Link>
+          </div>
           </div>
         </div>
       </section>

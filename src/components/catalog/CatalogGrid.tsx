@@ -198,7 +198,7 @@ export default function CatalogGrid() {
               ) : null}
               
               {/* Image */}
-              <div className="h-48 overflow-hidden bg-gray-100 relative">
+              <div className="relative aspect-[4/3] overflow-hidden bg-gray-100">
                 <Image
                   src={catalog.image_url || 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop'}
                   alt={catalog.title}
