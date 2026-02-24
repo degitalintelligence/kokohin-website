@@ -165,10 +165,13 @@ export interface EstimationItem {
     id: string
     estimation_id: string
     estimation?: Estimation
-    material_id: string
+    material_id?: string | null
+    catalog_id?: string | null
+    description?: string | null
     material?: Material
     qty_needed: number
     qty_charged: number
+    unit?: string | null
     subtotal: number
     created_at: string
 }
@@ -191,6 +194,7 @@ export interface CalculatorInput {
     panjang: number
     lebar: number
     tinggi?: number
+    unitQty?: number
     materialId?: string
     catalogId?: string
     zoneId?: string
@@ -201,6 +205,8 @@ export interface CalculatorInput {
 
 export interface CalculatorResult {
     luas: number
+    unitUsed?: 'm2' | 'm1' | 'unit'
+    computedQty?: number
     materialCost: number
     wasteCost: number
     totalHpp: number

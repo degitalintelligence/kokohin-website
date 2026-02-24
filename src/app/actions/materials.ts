@@ -18,7 +18,7 @@ export async function createMaterial(formData: FormData) {
     .eq('id', user.id)
     .maybeSingle()
   const role = (profile as { role?: string } | null)?.role ?? null
-  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
     return redirect('/admin/leads')
   }
 
@@ -74,7 +74,7 @@ export async function updateMaterial(formData: FormData) {
     .eq('id', user.id)
     .maybeSingle()
   const role = (profile as { role?: string } | null)?.role ?? null
-  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
     return redirect('/admin/leads')
   }
 
@@ -133,7 +133,7 @@ export async function deleteMaterial(id: string) {
     .eq('id', user.id)
     .maybeSingle()
   const role = (profile as { role?: string } | null)?.role ?? null
-  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
     throw new Error('Forbidden')
   }
 

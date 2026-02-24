@@ -2,11 +2,11 @@ import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { AlertTriangle } from 'lucide-react'
-import { createCatalog } from '@/app/actions/catalogs'
-import styles from '../../page.module.css'
-import CatalogAddonsEditor from '../components/CatalogAddonsEditor'
-import CatalogBaseFields from '../components/CatalogBaseFields'
 import CatalogEstimatePreview from '../components/CatalogEstimatePreview'
+import CatalogBaseFields from '../components/CatalogBaseFields'
+import CatalogAddonsEditor from '../components/CatalogAddonsEditor'
+import styles from '../../page.module.css'
+import { createCatalog } from '@/app/actions/catalogs'
 
 export default async function AdminCatalogNewPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error: errorMessage } = await searchParams
@@ -60,7 +60,7 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                 <input
                   type="text"
                   name="title"
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
                   placeholder="Contoh: Paket Minimalis Atap Alderon"
                   required
                 />
@@ -74,7 +74,7 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                   <input
                     type="number"
                     name="base_price_per_m2"
-                    className="w-full px-4 py-2 border rounded-md"
+                    className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
                     placeholder="0"
                     min="0"
                     step="1000"
@@ -83,7 +83,7 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">Satuan</label>
-                  <select name="base_price_unit" className="w-full px-4 py-2 border rounded-md">
+                  <select name="base_price_unit" className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613] bg-white">
                     <option value="m2">m²</option>
                     <option value="m1">m¹</option>
                     <option value="unit">unit</option>
@@ -98,7 +98,7 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                   <input
                     type="number"
                     name="labor_cost"
-                    className="w-full px-4 py-2 border rounded-md"
+                    className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
                     placeholder="0"
                     min="0"
                     step="1000"
@@ -111,7 +111,7 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                   <input
                     type="number"
                     name="transport_cost"
-                    className="w-full px-4 py-2 border rounded-md"
+                    className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
                     placeholder="0"
                     min="0"
                     step="1000"
@@ -124,7 +124,7 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                   <input
                     type="number"
                     name="margin_percentage"
-                    className="w-full px-4 py-2 border rounded-md"
+                    className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
                     placeholder="0"
                     min="0"
                     step="1"
@@ -139,7 +139,7 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                   type="file"
                   name="image_file"
                   accept="image/*"
-                  className="w-full px-4 py-2 border rounded-md"
+                  className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
                 />
                 <p className="text-xs text-gray-500 mt-1">Format: JPG, PNG, WEBP (Max 2MB)</p>
               </div>
@@ -150,7 +150,7 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                   name="is_active"
                   id="is_active"
                   defaultChecked={true}
-                  className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+                  className="w-4 h-4 text-[#E30613] border-gray-300 rounded focus:ring-[#E30613]"
                 />
                 <label htmlFor="is_active" className="ml-2 text-sm text-gray-700">
                   Katalog Aktif (Tampilkan di Website)

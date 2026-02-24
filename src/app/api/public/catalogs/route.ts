@@ -12,6 +12,7 @@ type CatalogRow = {
   atap_id: string | null
   rangka_id: string | null
   base_price_per_m2: number | null
+  base_price_unit?: 'm2' | 'm1' | 'unit' | null
   atap?: RawRel
   rangka?: RawRel
   is_active?: boolean
@@ -34,7 +35,7 @@ export async function GET(request: Request) {
   if (id) {
     const { data, error } = await supabase
       .from('catalogs')
-      .select('id, title, image_url, category, atap_id, rangka_id, base_price_per_m2, atap:atap_id(name), rangka:rangka_id(name), is_active')
+      .select('id, title, image_url, category, atap_id, rangka_id, base_price_per_m2, base_price_unit, atap:atap_id(name), rangka:rangka_id(name), is_active')
       .eq('id', id)
       .maybeSingle()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -49,6 +50,7 @@ export async function GET(request: Request) {
         atap_id: row.atap_id,
         rangka_id: row.rangka_id,
         base_price_per_m2: row.base_price_per_m2,
+        base_price_unit: row.base_price_unit ?? null,
         atap: unwrapRel(row.atap ?? null),
         rangka: unwrapRel(row.rangka ?? null)
       }
@@ -57,7 +59,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await supabase
     .from('catalogs')
-    .select('id, title, image_url, category, atap_id, rangka_id, base_price_per_m2, atap:atap_id(name), rangka:rangka_id(name)')
+    .select('id, title, image_url, category, atap_id, rangka_id, base_price_per_m2, base_price_unit, atap:atap_id(name), rangka:rangka_id(name)')
     .eq('is_active', true)
     .order('created_at', { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -70,6 +72,7 @@ export async function GET(request: Request) {
     atap_id: row.atap_id,
     rangka_id: row.rangka_id,
     base_price_per_m2: row.base_price_per_m2,
+    base_price_unit: row.base_price_unit ?? null,
     atap: unwrapRel(row.atap ?? null),
     rangka: unwrapRel(row.rangka ?? null)
   }))

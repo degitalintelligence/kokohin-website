@@ -45,7 +45,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="relative flex h-screen bg-[#f4f5f7] font-sans overflow-hidden">
+    <div className="relative flex h-screen bg-[#f4f5f7] font-sans">
       <div
         className={`fixed md:static z-50 md:z-auto h-[100svh] md:h-auto transform transition-transform duration-300 ease-in-out ${open ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}
         style={{ width: 240 }}
@@ -59,7 +59,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       />
 
       <div
-        className="flex-1 flex flex-col min-w-0 relative pt-14 md:pt-0"
+        className="flex-1 flex flex-col min-w-0 min-h-0 relative pt-14 md:pt-0 overflow-y-auto overscroll-contain"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}

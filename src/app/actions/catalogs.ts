@@ -33,6 +33,64 @@ async function uploadImage(file: File, supabase: SupabaseClient) {
   return publicUrl
 }
 
+async function updateHppPerUnit(catalogId: string) {
+  const supabase = await createClient()
+
+  // 1. Fetch components
+  const { data: hppComponents, error: fetchError } = await supabase
+    .from('catalog_hpp_components')
+    .select('quantity, material_id')
+    .eq('catalog_id', catalogId)
+
+  if (fetchError) {
+    console.error(`[HPP Update] Error fetching HPP components for catalog ${catalogId}:`, fetchError)
+    return
+  }
+
+  if (!hppComponents || hppComponents.length === 0) {
+    await supabase.from('catalogs').update({ hpp_per_unit: 0 }).eq('id', catalogId)
+    return
+  }
+
+  // 2. Get unique material IDs
+  const materialIds = [...new Set(hppComponents.map(c => c.material_id).filter(Boolean))]
+  if (materialIds.length === 0) {
+    await supabase.from('catalogs').update({ hpp_per_unit: 0 }).eq('id', catalogId)
+    return
+  }
+
+  // 3. Fetch materials
+  const { data: materials, error: materialsError } = await supabase
+    .from('materials')
+    .select('id, base_price_per_unit')
+    .in('id', materialIds)
+
+  if (materialsError) {
+    console.error(`[HPP Update] Error fetching materials for HPP calculation for catalog ${catalogId}:`, materialsError)
+    return
+  }
+
+  // 4. Create price map
+  const priceMap = new Map((materials ?? []).map(m => [m.id, m.base_price_per_unit]))
+
+  // 5. Calculate total HPP
+  const totalHpp = hppComponents.reduce((sum, component) => {
+    const quantity = Number(component.quantity || 0)
+    const price = Number(priceMap.get(component.material_id) || 0)
+    return sum + (quantity * price)
+  }, 0)
+
+  // 6. Update catalog
+  const { error: updateError } = await supabase
+    .from('catalogs')
+    .update({ hpp_per_unit: Math.round(totalHpp) })
+    .eq('id', catalogId)
+
+  if (updateError) {
+    console.error(`[HPP Update] Error updating HPP for catalog ${catalogId}:`, updateError)
+  }
+}
+
 export async function createCatalog(formData: FormData) {
   const supabase = await createClient()
 
@@ -46,7 +104,7 @@ export async function createCatalog(formData: FormData) {
     .eq('id', user.id)
     .maybeSingle()
   const role = (profile as { role?: string } | null)?.role ?? null
-  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
     return redirect('/admin/leads')
   }
 
@@ -132,6 +190,8 @@ export async function createCatalog(formData: FormData) {
     }
   }
 
+  try { await updateHppPerUnit(catalogId) } catch {}
+
   revalidatePath('/admin/catalogs')
   revalidatePath('/admin/catalogs/new')
   revalidatePath('/kalkulator')
@@ -141,138 +201,134 @@ export async function createCatalog(formData: FormData) {
 
 export async function updateCatalog(formData: FormData) {
   const supabase = await createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return redirect('/admin/login')
-  }
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-  const role = (profile as { role?: string } | null)?.role ?? null
-  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
-    return redirect('/admin/leads')
-  }
-
   const id = formData.get('id') as string
-  const title = formData.get('title') as string
-  const category = formData.get('category') as string
-  const basePriceStr = formData.get('base_price_per_m2') as string
-  const basePriceUnit = ((formData.get('base_price_unit') as string) || 'm2') as 'm2' | 'm1' | 'unit'
-  const atapId = (formData.get('atap_id') as string) || ''
-  const rangkaId = (formData.get('rangka_id') as string) || ''
-  const addonsJson = (formData.get('addons_json') as string) || '[]'
-  const imageFile = formData.get('image_file') as File
-  const currentImageUrl = (formData.get('current_image_url') as string) || ''
-  const isActive = formData.get('is_active') === 'on'
-  const laborCostStr = (formData.get('labor_cost') as string) || '0'
-  const transportCostStr = (formData.get('transport_cost') as string) || '0'
-  const marginPercentageStr = (formData.get('margin_percentage') as string) || '0'
 
-  if (!id) {
-    return redirect('/admin/catalogs?error=ID%20katalog%20tidak%20valid')
-  }
-
-  if (!title || !basePriceStr) {
-    return redirect(`/admin/catalogs/${id}?error=Nama%20paket%20dan%20harga%20dasar%20wajib%20diisi`)
-  }
-
-  const basePrice = parseFloat(basePriceStr)
-  if (isNaN(basePrice)) {
-    return redirect(`/admin/catalogs/${id}?error=Harga%20harus%20berupa%20angka`)
-  }
-  const laborCost = parseFloat(laborCostStr) || 0
-  const transportCost = parseFloat(transportCostStr) || 0
-  const marginPercentage = Math.max(0, Math.min(100, parseFloat(marginPercentageStr) || 0))
-  if (category === 'kanopi' && !atapId) {
-    return redirect(`/admin/catalogs/${id}?error=Kategori%20Kanopi%20wajib%20memilih%20Material%20Atap`)
-  }
-  const allowedUnits = new Set(['m2', 'm1', 'unit'])
-  const safeUnit = allowedUnits.has(basePriceUnit) ? basePriceUnit : 'm2'
-
-  let addons: Array<{ id?: string; material_id: string; basis?: 'm2'|'m1'|'unit'; qty_per_basis?: number; is_optional: boolean }> = []
   try {
-    addons = JSON.parse(addonsJson) ?? []
-  } catch {
-    addons = []
-  }
-
-  let imageUrl = currentImageUrl
-  const newImageUrl = await uploadImage(imageFile, supabase)
-  if (newImageUrl) {
-    imageUrl = newImageUrl
-  }
-
-  const payload = {
-    title,
-    category,
-    base_price_per_m2: basePrice,
-    base_price_unit: safeUnit,
-    labor_cost: laborCost,
-    transport_cost: transportCost,
-    margin_percentage: marginPercentage,
-    atap_id: atapId || null,
-    rangka_id: rangkaId || null,
-    image_url: imageUrl || null,
-    is_active: isActive,
-  }
-
-  const { error: updErr } = await supabase.from('catalogs').update(payload).eq('id', id)
-  if (updErr) {
-    return redirect(`/admin/catalogs/${id}?error=Gagal%20mengupdate%20katalog:%20${encodeURIComponent(updErr.message)}`)
-  }
-
-  // Sync addons
-  const { data: existingAddons } = await supabase
-    .from('catalog_addons')
-    .select('id')
-    .eq('catalog_id', id)
-
-  const existingIds = new Set((existingAddons ?? []).map((x: { id: string }) => x.id))
-  const providedIds = new Set(addons.filter((a) => a.id).map((a) => a.id as string))
-
-  // Delete removed
-  const toDelete = [...existingIds].filter((eid) => !providedIds.has(eid))
-  if (toDelete.length > 0) {
-    const { error: delErr } = await supabase.from('catalog_addons').delete().in('id', toDelete)
-    if (delErr) {
-      return redirect(`/admin/catalogs/${id}?error=Gagal%20menghapus%20addon:%20${encodeURIComponent(delErr.message)}`)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return redirect('/admin/login')
     }
-  }
-
-  // Upsert existing
-  const toUpdate = addons.filter((a) => a.id)
-  for (const a of toUpdate) {
-    const { error: uErr } = await supabase
-      .from('catalog_addons')
-      .update({
-        material_id: a.material_id,
-        basis: (a.basis === 'm1' || a.basis === 'unit') ? a.basis : 'm2',
-        qty_per_basis: typeof a.qty_per_basis === 'number' ? a.qty_per_basis : 0,
-        is_optional: !!a.is_optional,
-      })
-      .eq('id', a.id as string)
-    if (uErr) {
-      return redirect(`/admin/catalogs/${id}?error=Gagal%20mengupdate%20addon:%20${encodeURIComponent(uErr.message)}`)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle()
+    const role = (profile as { role?: string } | null)?.role ?? null
+    if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
+      return redirect('/admin/leads')
     }
-  }
 
-  // Insert new
-  const toInsert = addons.filter((a) => !a.id)
-  if (toInsert.length > 0) {
-    const rows = toInsert.map((a) => ({
-      catalog_id: id,
-      material_id: a.material_id,
-      basis: (a.basis === 'm1' || a.basis === 'unit') ? a.basis : 'm2',
-      qty_per_basis: typeof a.qty_per_basis === 'number' ? a.qty_per_basis : 0,
-      is_optional: !!a.is_optional,
-    }))
-    const { error: insErr } = await supabase.from('catalog_addons').insert(rows)
-    if (insErr) {
-      return redirect(`/admin/catalogs/${id}?error=Gagal%20menambah%20addon:%20${encodeURIComponent(insErr.message)}`)
+    if (!id) {
+      throw new Error('ID katalog tidak valid')
     }
+
+    const title = formData.get('title') as string
+    const category = formData.get('category') as string
+    const basePriceStr = formData.get('base_price_per_m2') as string
+    const basePriceUnit = ((formData.get('base_price_unit') as string) || 'm2') as 'm2' | 'm1' | 'unit'
+    const atapId = (formData.get('atap_id') as string) || ''
+    const rangkaId = (formData.get('rangka_id') as string) || ''
+    const addonsJson = (formData.get('addons_json') as string) || '[]'
+    const hppComponentsJson = (formData.get('hpp_components_json') as string) || '[]'
+    const imageFile = formData.get('image_file') as File
+    const currentImageUrl = (formData.get('current_image_url') as string) || ''
+    const isActive = formData.get('is_active') === 'on'
+    const marginPercentageStr = (formData.get('margin_percentage') as string) || '0'
+
+    if (!title || !basePriceStr) {
+      throw new Error('Nama paket dan harga dasar wajib diisi')
+    }
+
+    const basePrice = parseFloat(basePriceStr)
+    if (isNaN(basePrice)) {
+      throw new Error('Harga harus berupa angka')
+    }
+    const marginPercentage = Math.max(0, Math.min(100, parseFloat(marginPercentageStr) || 0))
+    if (category === 'kanopi' && !atapId) {
+      throw new Error('Kategori Kanopi wajib memilih Material Atap')
+    }
+    const allowedUnits = new Set(['m2', 'm1', 'unit'])
+    const safeUnit = allowedUnits.has(basePriceUnit) ? basePriceUnit : 'm2'
+
+    const addons: Array<{ id?: string; material_id: string; basis?: 'm2'|'m1'|'unit'; qty_per_basis?: number; is_optional: boolean }> = JSON.parse(addonsJson) ?? []
+    const hppComponents: Array<{ id?: string; material_id: string; quantity: number }> = JSON.parse(hppComponentsJson) ?? []
+
+    let imageUrl = currentImageUrl
+    const newImageUrl = await uploadImage(imageFile, supabase)
+    if (newImageUrl) {
+      imageUrl = newImageUrl
+    }
+
+    const payload = {
+      title,
+      category,
+      base_price_per_m2: basePrice,
+      base_price_unit: safeUnit,
+      margin_percentage: marginPercentage,
+      atap_id: atapId || null,
+      rangka_id: rangkaId || null,
+      image_url: imageUrl || null,
+      is_active: isActive,
+    }
+
+    const { error: updErr } = await supabase.from('catalogs').update(payload).eq('id', id)
+    if (updErr) {
+      throw new Error(`Gagal mengupdate katalog: ${updErr.message}`)
+    }
+
+    // Sync HPP Components
+    const { data: existingHppComponents } = await supabase.from('catalog_hpp_components').select('id').eq('catalog_id', id)
+    const existingHppIds = new Set((existingHppComponents ?? []).map((x: { id: string }) => x.id))
+    const providedHppIds = new Set(hppComponents.filter((c) => c.id).map((c) => c.id as string))
+
+    const hppToDelete = [...existingHppIds].filter((eid) => !providedHppIds.has(eid))
+    if (hppToDelete.length > 0) {
+      const { error: delErr } = await supabase.from('catalog_hpp_components').delete().in('id', hppToDelete)
+      if (delErr) throw new Error(`Gagal menghapus komponen HPP: ${delErr.message}`)
+    }
+
+    for (const c of hppComponents.filter((c) => c.id)) {
+      const { error: uErr } = await supabase.from('catalog_hpp_components').update({ material_id: c.material_id, quantity: typeof c.quantity === 'number' ? c.quantity : 0 }).eq('id', c.id as string)
+      if (uErr) throw new Error(`Gagal mengupdate komponen HPP: ${uErr.message}`)
+    }
+
+    const hppToInsert = hppComponents.filter((c) => !c.id && c.material_id)
+    if (hppToInsert.length > 0) {
+      const rows = hppToInsert.map((c) => ({ catalog_id: id, material_id: c.material_id, quantity: Number(c.quantity) > 0 ? Number(c.quantity) : 1 }))
+      const { error: insErr } = await supabase.from('catalog_hpp_components').insert(rows)
+      if (insErr) throw new Error(`Gagal menambah komponen HPP: ${insErr.message}`)
+    }
+
+    // Sync addons
+    const { data: existingAddons } = await supabase.from('catalog_addons').select('id').eq('catalog_id', id)
+    const existingIds = new Set((existingAddons ?? []).map((x: { id: string }) => x.id))
+    const providedIds = new Set(addons.filter((a) => a.id).map((a) => a.id as string))
+
+    const toDelete = [...existingIds].filter((eid) => !providedIds.has(eid))
+    if (toDelete.length > 0) {
+      const { error: delErr } = await supabase.from('catalog_addons').delete().in('id', toDelete)
+      if (delErr) throw new Error(`Gagal menghapus addon: ${delErr.message}`)
+    }
+
+    for (const a of addons.filter((a) => a.id)) {
+      const { error: uErr } = await supabase.from('catalog_addons').update({ material_id: a.material_id, basis: (a.basis === 'm1' || a.basis === 'unit') ? a.basis : 'm2', qty_per_basis: typeof a.qty_per_basis === 'number' ? a.qty_per_basis : 0, is_optional: !!a.is_optional }).eq('id', a.id as string)
+      if (uErr) throw new Error(`Gagal mengupdate addon: ${uErr.message}`)
+    }
+
+    const toInsert = addons.filter((a) => !a.id)
+    if (toInsert.length > 0) {
+      const rows = toInsert.map((a) => ({ catalog_id: id, material_id: a.material_id, basis: (a.basis === 'm1' || a.basis === 'unit') ? a.basis : 'm2', qty_per_basis: typeof a.qty_per_basis === 'number' ? a.qty_per_basis : 0, is_optional: !!a.is_optional }))
+      const { error: insErr } = await supabase.from('catalog_addons').insert(rows)
+      if (insErr) throw new Error(`Gagal menambah addon: ${insErr.message}`)
+    }
+
+    await updateHppPerUnit(id)
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred'
+    console.error(`[FATAL] Error in updateCatalog for ID ${id}:`, error)
+    const redirectUrl = id ? `/admin/catalogs/${id}` : '/admin/catalogs'
+    return redirect(`${redirectUrl}?error=${encodeURIComponent(errorMessage)}`)
   }
 
   revalidatePath('/admin/catalogs')
@@ -296,7 +352,7 @@ export async function deleteCatalog(formData: FormData) {
     .eq('id', user.id)
     .maybeSingle()
   const role = (profile as { role?: string } | null)?.role ?? null
-  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
     return redirect('/admin/leads')
   }
 
@@ -327,7 +383,7 @@ export async function importCatalogAddons(formData: FormData) {
     .eq('id', user.id)
     .maybeSingle()
   const role = (profile as { role?: string } | null)?.role ?? null
-  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
     return redirect('/admin/leads')
   }
 
@@ -583,6 +639,8 @@ export async function importCatalogAddons(formData: FormData) {
       }
     }
   }
+
+  try { await updateHppPerUnit(catalogId) } catch {}
 
   revalidatePath('/admin/catalogs')
   revalidatePath(`/admin/catalogs/${catalogId}`)

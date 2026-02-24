@@ -131,13 +131,13 @@ export default function LoginForm({ backgroundUrl, logoUrl }: LoginFormProps) {
 
     // Determine background style
     const containerClasses = backgroundUrl 
-        ? "min-h-[100svh] flex items-center justify-center p-6 bg-gray-900"
-        : "min-h-[100svh] flex items-center justify-center p-6 bg-gradient-to-br from-[#1D1D1B] to-[#E30613]"
+        ? "relative overflow-hidden min-h-[100svh] flex items-center justify-center p-6 bg-gray-900"
+        : "relative overflow-hidden min-h-[100svh] flex items-center justify-center p-6 bg-gradient-to-br from-[#1D1D1B] to-[#E30613]"
 
     return (
         <div className={cn(containerClasses, mounted && "animate-slide-in-right")} >
             {backgroundUrl && (
-                <div className="absolute inset-0 -z-10">
+                <div className="absolute inset-0 z-0">
                     <Image 
                         src={backgroundUrl}
                         alt="Background"

@@ -10,6 +10,11 @@ export type CreateProjectDTO = {
   zone_id: string | null
   custom_notes: string | null
   status: 'New' | 'Need Manual Quote'
+  catalog_id?: string | null
+  catalog_title?: string | null
+  catalog_unit?: 'm2' | 'm1' | 'unit' | null
+  base_price?: number | null
+  calculated_qty?: number | null
   estimation?: {
     total_hpp: number
     margin_percentage: number
@@ -84,10 +89,58 @@ export async function createProjectWithEstimation(dto: CreateProjectDTO): Promis
   }
   dto.phone = normalizedPhone
   try {
-    return await createProjectWithEstimationWithRpc(
+    const result = await createProjectWithEstimationWithRpc(
       async (fn, args) => await supabase.rpc(fn, args),
       dto
     )
+    if (result.estimation_id && dto.estimation && dto.catalog_id) {
+      const desc = dto.catalog_title ? `Pembuatan ${dto.catalog_title}` : 'Pekerjaan Paket Katalog'
+      const itemPayload = {
+        estimation_id: result.estimation_id,
+        catalog_id: dto.catalog_id,
+        material_id: null,
+        description: desc,
+        qty_needed: dto.calculated_qty ?? 0,
+        qty_charged: dto.calculated_qty ?? 0,
+        unit: dto.catalog_unit ?? null,
+        subtotal: (dto.calculated_qty ?? 0) * (dto.base_price ?? 0)
+      }
+      const { error: itemsErr } = await supabase.from('estimation_items').insert([itemPayload])
+      if (itemsErr) {
+        console.warn('Failed to insert estimation item:', itemsErr.message)
+      }
+      if (!itemsErr) {
+        let totalHpp = 0
+        try {
+          const { data: cat } = await supabase.from('catalogs').select('*').eq('id', dto.catalog_id).maybeSingle()
+          const unitHpp = Number((cat as Record<string, unknown> | null)?.hpp_per_unit || 0)
+          const qty = Number(dto.calculated_qty || 0)
+          if (unitHpp > 0 && qty > 0) {
+            totalHpp = unitHpp * qty
+          }
+        } catch {
+          totalHpp = 0
+        }
+        if (!(totalHpp > 0)) {
+          const selling = Number(dto.estimation.total_selling_price || 0)
+          totalHpp = Math.max(1, Math.round(selling * 0.7))
+        }
+        const selling = Number(dto.estimation.total_selling_price || 0)
+        const marginPct = selling > 0 ? Math.max(0, Math.min(100, ((selling - totalHpp) / selling) * 100)) : 0
+        const { error: estUpdErr } = await supabase
+          .from('estimations')
+          .update({
+            total_hpp: totalHpp,
+            margin_percentage: marginPct,
+            total_selling_price: dto.estimation.total_selling_price
+          })
+          .eq('id', result.estimation_id)
+        if (estUpdErr) {
+          console.warn('Failed to sync estimation totals:', estUpdErr.message)
+        }
+      }
+    }
+    return result
   } catch (e) {
     const msg = (e as Error)?.message ?? ''
     const notFound =
@@ -152,6 +205,52 @@ export async function createProjectWithEstimation(dto: CreateProjectDTO): Promis
         throw new Error(`Gagal membuat estimasi: ${insertEstErr.message}`)
       }
       estimationId = est?.id ?? null
+    }
+
+    if (estimationId && dto.estimation && dto.catalog_id) {
+      const desc = dto.catalog_title ? `Pembuatan ${dto.catalog_title}` : 'Pekerjaan Paket Katalog'
+      const itemPayload = {
+        estimation_id: estimationId,
+        catalog_id: dto.catalog_id,
+        material_id: null,
+        description: desc,
+        qty_needed: dto.calculated_qty ?? 0,
+        qty_charged: dto.calculated_qty ?? 0,
+        unit: dto.catalog_unit ?? null,
+        subtotal: (dto.calculated_qty ?? 0) * (dto.base_price ?? 0)
+      }
+      const { error: itemsErr } = await supabase.from('estimation_items').insert([itemPayload])
+      if (itemsErr) {
+        throw new Error('Gagal menyimpan detail paket katalog')
+      }
+      let totalHpp = 0
+      try {
+        const { data: cat } = await supabase.from('catalogs').select('*').eq('id', dto.catalog_id).maybeSingle()
+        const unitHpp = Number((cat as Record<string, unknown> | null)?.hpp_per_unit || 0)
+        const qty = Number(dto.calculated_qty || 0)
+        if (unitHpp > 0 && qty > 0) {
+          totalHpp = unitHpp * qty
+        }
+      } catch {
+        totalHpp = 0
+      }
+      if (!(totalHpp > 0)) {
+        const selling = Number(dto.estimation.total_selling_price || 0)
+        totalHpp = Math.max(1, Math.round(selling * 0.7))
+      }
+      const selling = Number(dto.estimation.total_selling_price || 0)
+      const marginPct = selling > 0 ? Math.max(0, Math.min(100, ((selling - totalHpp) / selling) * 100)) : 0
+      const { error: estUpdErr } = await supabase
+        .from('estimations')
+        .update({
+          total_hpp: totalHpp,
+          margin_percentage: marginPct,
+          total_selling_price: dto.estimation.total_selling_price
+        })
+        .eq('id', estimationId)
+      if (estUpdErr) {
+        throw new Error('Gagal sinkronisasi total estimasi')
+      }
     }
 
     return { project_id: project.id, estimation_id: estimationId }

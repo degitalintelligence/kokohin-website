@@ -12,6 +12,7 @@ type HomeCatalog = {
   atap_id: string | null
   rangka_id: string | null
   base_price_per_m2: number
+  base_price_unit?: 'm2' | 'm1' | 'unit'
   category?: 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya'
   atap?: { name: string | null } | null
   rangka?: { name: string | null } | null
@@ -45,6 +46,7 @@ export default function HomePricelist({ onSelectType }: Props) {
             atap_id: string | null
             rangka_id: string | null
             base_price_per_m2: number | null
+            base_price_unit?: 'm2' | 'm1' | 'unit' | null
             atap?: { name: string | null } | null
             rangka?: { name: string | null } | null
           }>
@@ -57,6 +59,7 @@ export default function HomePricelist({ onSelectType }: Props) {
           atap_id: item.atap_id ?? null,
           rangka_id: item.rangka_id ?? null,
           base_price_per_m2: item.base_price_per_m2 ?? 0,
+          base_price_unit: item.base_price_unit ?? 'm2',
           atap: item.atap ?? null,
           rangka: item.rangka ?? null
         }))
@@ -185,7 +188,23 @@ export default function HomePricelist({ onSelectType }: Props) {
                     <div className="mb-6">
                       <p className="text-xs font-bold text-gray-400 uppercase mb-1">Mulai Dari</p>
                       <span className="text-2xl font-extrabold text-primary">{formatRupiah(katalog.base_price_per_m2)}</span>
-                      <span className="text-gray-500 text-sm"> / m²</span>
+                      <span className="text-gray-500 text-sm">
+                        {` / ${katalog.base_price_unit === 'm2' ? 'm²' : katalog.base_price_unit === 'm1' ? 'm¹' : 'unit'}`}
+                      </span>
+                      <div className="mt-2">
+                        <span
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-primary text-white"
+                          title={
+                            katalog.base_price_unit === 'm2'
+                              ? 'Kalkulasi: m² = panjang × lebar'
+                              : katalog.base_price_unit === 'm1'
+                                ? 'Kalkulasi: m¹ = panjang'
+                                : 'Kalkulasi: unit = jumlah'
+                          }
+                        >
+                          Satuan: {katalog.base_price_unit === 'm2' ? 'm²' : katalog.base_price_unit === 'm1' ? 'm¹' : 'unit'}
+                        </span>
+                      </div>
                     </div>
                     <button
                       onClick={() => onSelectType(catalogType, katalog.id)}

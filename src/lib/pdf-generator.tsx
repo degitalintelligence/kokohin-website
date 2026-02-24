@@ -349,22 +349,18 @@ const QuotationDocument = (data: PdfQuotationData) => {
             </View>
             
             {/* Table Rows */}
-            {data.items.map((item, index) => (
-              <View key={item.id} style={styles.tableRow}>
-                <Text style={[styles.tableCell, { width: '40%' }]}>
-                  {item.material?.name || `Material ${index + 1}`}
-                </Text>
-                <Text style={[styles.tableCell, { width: '15%', textAlign: 'right' }]}>
-                  {item.qty_charged}
-                </Text>
-                <Text style={[styles.tableCell, { width: '15%', textAlign: 'right' }]}>
-                  {item.material?.unit || 'unit'}
-                </Text>
-                <Text style={[styles.tableCell, { width: '30%', textAlign: 'right' }]}>
-                  {formatCurrency(item.subtotal)}
-                </Text>
-              </View>
-            ))}
+            {data.items.map((item, index) => {
+              const name = item.description || item.material?.name || `Item ${index + 1}`
+              const unit = (item.unit as string | null) || item.material?.unit || 'unit'
+              return (
+                <View key={item.id} style={styles.tableRow}>
+                  <Text style={[styles.tableCell, { width: '40%' }]}>{name}</Text>
+                  <Text style={[styles.tableCell, { width: '15%', textAlign: 'right' }]}>{item.qty_charged}</Text>
+                  <Text style={[styles.tableCell, { width: '15%', textAlign: 'right' }]}>{unit}</Text>
+                  <Text style={[styles.tableCell, { width: '30%', textAlign: 'right' }]}>{formatCurrency(item.subtotal)}</Text>
+                </View>
+              )
+            })}
           </View>
         </View>
 

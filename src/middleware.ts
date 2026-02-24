@@ -66,10 +66,34 @@ export async function middleware(request: NextRequest) {
         pathname.startsWith('/admin/materials') ||
         pathname.startsWith('/admin/zones') ||
         pathname.startsWith('/admin/settings')
-    if (isSensitiveAdminRoute && !isRoleAllowed(userRole, ALLOWED_MATERIALS_ROLES, userEmail)) {
-        const leadsUrl = request.nextUrl.clone()
-        leadsUrl.pathname = '/admin/leads'
-        return NextResponse.redirect(leadsUrl)
+    if (isSensitiveAdminRoute) {
+        // First, allow via metadata/email override
+        if (!isRoleAllowed(userRole, ALLOWED_MATERIALS_ROLES, userEmail)) {
+            // Fallback: fetch role from profiles table to avoid false negatives
+            if (user) {
+                try {
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('role')
+                        .eq('id', user.id)
+                        .maybeSingle()
+                    const dbRole = (profile as { role?: string } | null)?.role ?? null
+                    if (!isRoleAllowed(dbRole, ALLOWED_MATERIALS_ROLES, userEmail)) {
+                        const leadsUrl = request.nextUrl.clone()
+                        leadsUrl.pathname = '/admin/leads'
+                        return NextResponse.redirect(leadsUrl)
+                    }
+                } catch {
+                    const leadsUrl = request.nextUrl.clone()
+                    leadsUrl.pathname = '/admin/leads'
+                    return NextResponse.redirect(leadsUrl)
+                }
+            } else {
+                const leadsUrl = request.nextUrl.clone()
+                leadsUrl.pathname = '/admin/leads'
+                return NextResponse.redirect(leadsUrl)
+            }
+        }
     }
 
     if (isLoginPage && isAuthenticated) {

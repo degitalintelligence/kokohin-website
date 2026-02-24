@@ -197,7 +197,9 @@ export default function CatalogGrid() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
           {sorted.map((catalog) => {
-          const estimatedPrice = calculatePriceForArea(catalog.base_price_per_m2, 10)
+          const unit = catalog.base_price_unit ?? 'm2'
+          const sampleQty = unit === 'unit' ? 1 : 10
+          const estimatedPrice = calculatePriceForArea(catalog.base_price_per_m2, sampleQty)
           const isSelected = selectedCatalog === catalog.id
           
           return (
@@ -231,6 +233,14 @@ export default function CatalogGrid() {
                 <h3 className="text-xl font-bold text-primary-dark mb-3 line-clamp-2">
                   {catalog.title}
                 </h3>
+                <div className="mb-2">
+                  <span
+                    className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-primary text-white"
+                    title={unit === 'm2' ? 'Kalkulasi: m² = panjang × lebar' : unit === 'm1' ? 'Kalkulasi: m¹ = panjang' : 'Kalkulasi: unit = jumlah'}
+                  >
+                    Satuan: {unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : 'unit'}
+                  </span>
+                </div>
                 
                 <div className="space-y-4 mb-6">
                   <div>
@@ -239,10 +249,12 @@ export default function CatalogGrid() {
                       <span className="text-2xl font-bold text-primary">
                         {formatRupiah(catalog.base_price_per_m2)}
                       </span>
-                      <span className="text-gray-500">/m²</span>
+                      <span className="text-gray-500">
+                        {`/${unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : 'unit'}`}
+                      </span>
                     </div>
                     <p className="text-sm text-gray-600">
-                      Estimasi 10m²: <span className="font-semibold">{formatRupiah(estimatedPrice)}</span>
+                      Estimasi {sampleQty}{unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : ' unit'}: <span className="font-semibold">{formatRupiah(estimatedPrice)}</span>
                     </p>
                   </div>
                   

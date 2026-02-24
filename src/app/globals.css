@@ -44,6 +44,22 @@
   .btn-outline {
     @apply border-2 border-primary text-primary hover:bg-primary hover:text-white;
   }
+  
+  .btn-outline-dark {
+    @apply border border-gray-300 text-gray-700 bg-white hover:bg-gray-50;
+  }
+
+  .btn-outline-danger {
+    @apply border-2 border-red-600 text-red-600 bg-white hover:bg-red-50;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
 
   .container {
     @apply w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;

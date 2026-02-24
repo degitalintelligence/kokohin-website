@@ -96,10 +96,18 @@ export default function ResultPanel({
       )}
 
       <div className="space-y-4">
-        <div className="flex justify-between items-center py-3 border-b border-white/20">
-          <span>Luas Area</span>
-          <span className="font-bold">{formatNumber(result.luas)} m²</span>
-        </div>
+        {(() => {
+          const unit = result.unitUsed || 'm2'
+          const value = unit === 'm2' ? result.luas : (result.computedQty ?? result.luas)
+          const unitLabel = unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : 'unit'
+          const title = unit === 'm2' ? 'Luas Area' : unit === 'm1' ? 'Panjang' : 'Jumlah'
+          return (
+            <div className="flex justify-between items-center py-3 border-b border-white/20">
+              <span>{title}</span>
+              <span className="font-bold">{formatNumber(value)} {unitLabel}</span>
+            </div>
+          )
+        })()}
         <div className="pt-4">
           <div className="flex justify-between items-center">
             <span className="text-lg">Estimasi Harga</span>
@@ -135,9 +143,9 @@ export default function ResultPanel({
               zoneName={zoneName}
               logoUrl={logoUrl}
               specifications={result.breakdown?.map(item => item.name).join(', ') || 'Paket Pekerjaan Kanopi'}
-              projectArea={result.luas}
+              projectArea={result.unitUsed === 'm2' ? result.luas : (result.computedQty ?? result.luas)}
               projectType={'Pekerjaan Pembuatan Kanopi'}
-              areaUnit="m²"
+              areaUnit={result.unitUsed === 'm2' ? 'm²' : result.unitUsed === 'm1' ? 'm¹' : 'pcs'}
             />
           }
           fileName={`Penawaran_Kokohin_${leadName.replace(/\s+/g, '_')}.pdf`}

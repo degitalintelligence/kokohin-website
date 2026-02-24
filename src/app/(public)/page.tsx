@@ -97,7 +97,6 @@ export default function HomePage() {
           <div className="relative overflow-hidden mx-auto max-w-5xl rounded-3xl bg-gradient-to-br from-white to-gray-50 p-8 md:p-12 border border-gray-100 shadow-sm">
             <div className="absolute -top-6 -left-6 w-32 h-32 bg-primary/10 blur-3xl rounded-full pointer-events-none" />
             <div className="absolute -bottom-8 -right-8 w-40 h-40 bg-primary/5 blur-3xl rounded-full pointer-events-none" />
-            <div className="absolute inset-0 opacity-[0.08] bg-[radial-gradient(circle_at_2px_2px,_#000_1px,_transparent_1.5px)] bg-[length:18px_18px]" />
             <div className="relative z-10">
               <h2 className="text-2xl md:text-3xl font-extrabold text-primary-dark text-center mb-3">
                 Ubah Ruang Terbuka Anda jadi Aman, Nyaman, dan Menginspirasi!

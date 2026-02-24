@@ -1,10 +1,11 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { FolderOpen, BadgeDollarSign, BarChart3 } from 'lucide-react'
+import Image from 'next/image'
+import { FolderOpen, BadgeDollarSign, BarChart3, Search } from 'lucide-react'
 import { relNameFrom } from '@/lib/utils'
-import styles from '../page.module.css'
 import ImportCsvForm from './components/ImportCsvForm'
+import CatalogsListClient from './components/CatalogsListClient'
 
 async function importCatalogs(formData: FormData) {
   'use server'
@@ -29,6 +30,7 @@ async function importCatalogs(formData: FormData) {
       rangka_id: row[index('rangka_id')] || null,
       base_price_per_m2: basePrice ? Number(basePrice) : 0,
       base_price_unit: (row[index('base_price_unit')] as ('m2'|'m1'|'unit')) || 'm2',
+      hpp_per_unit: basePrice ? Number(basePrice) : 0,
       is_active: isActiveValue ? ['true', '1', 'yes'].includes(String(isActiveValue).toLowerCase()) : true
     }
   })
@@ -47,137 +49,8 @@ async function importCatalogs(formData: FormData) {
   redirect('/admin/catalogs')
 }
 
-async function importFenceRailingCatalogPreset() {
-  'use server'
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const bypass = await isDevBypass()
-  if (!user && !bypass) redirect('/admin/login')
-  const raw = `Kategori,SKU,Nama_Produk_Komersial,Rangka_Utama,Cover_atau_Isian,Target_Market,Estimasi_HPP_m2_Rp,Harga_Jual_Bawah_m2_Rp,Harga_Jual_Atas_m2_Rp,Copywriting_Angle
-Kanopi,KNP-01,Kanopi Lite Shield,Baja Ringan C75,Spandek Pasir 0.30mm,Kos-kosan / Kontrakan / Entry Level,200000,280000,350000,Proteksi maksimal budget minimal. Bebas bising hujan tanpa bikin kantong jebol.
-Kanopi,KNP-02,Kanopi Urban Minimalist,Hollow Galvanis 4x4,Spandek Pasir 0.30mm,Rumah Subsidi / Cluster Standar,300000,450000,550000,Look besi kokoh anti-karat dengan atap peredam suara. Upgrade pinter buat rumah pertamamu.
-Kanopi,KNP-03,Kanopi Chill Breeze (Best Seller),Hollow Galvanis 4x6,Alderon Twinwall 10mm,Cluster Menengah / Renovasi Rumah,550000,750000,950000,Carport adem kayak pakai AC alam. Investasi biar cat mobil awet & nongkrong di teras makin pewe.
-Kanopi,KNP-04,Kanopi Sky Clear,Hollow Galvanis 4x6 / 5x10,SolarFlat 1.2mm,Rumah Tropis Modern / Cafe,650000,900000,1200000,Pencahayaan natural tanpa takut bocor. Aesthetic semi-outdoor ala cafe kekinian di teras sendiri.
-Kanopi,KNP-05,Kanopi Sultan Glass,Hollow 5x10 / Baja WF,Kaca Tempered 8mm,Rumah Mewah / High-end Commercial,1200000,1800000,2500000,Kemewahan transparan tanpa kompromi. View langit 100% clear dengan struktur kokoh industrial.
-Pagar,PGR-01,Pagar Basic Grid,Hollow Hitam 4x4,Besi Nako / Hollow 2x4,Fungsional / Security First,300000,450000,600000,Garis tegas proteksi jelas. Solusi aman yang nggak neko-neko buat jaga rumah lo.
-Pagar,PGR-02,Pagar Tropical Wood,Hollow Galvanis 4x6,GRC Woodplank / WPC,Pecinta Nature / Modern Tropis,450000,650000,900000,Vibe villa Bali di depan rumah. Hangatnya tekstur kayu dengan durabilitas baja anti-rayap.
-Pagar,PGR-03,Pagar Urban Industrial,Hollow Galvanis 4x6,Expanded Metal / Perforated,Anak Muda / Arsitektur Kontemporer,500000,750000,1000000,Raw maskulin sirkulasi udara plong tapi privasi tetap aman. Pagar idaman Gen Z.
-Pagar,PGR-04,Pagar Signature Cut,Hollow Galvanis 5x10,Plat Besi Laser Cut Custom,Rumah Mewah / Desain Eksklusif,800000,1200000,1800000,Satu-satunya di komplek lo. Motif custom sesuai karakter bukan sekadar pagar ini karya seni.
-Railing,RLG-01,Railing Core Minimalis,Hollow Galvanis 4x4,Hollow Galvanis 2x4,Rumah 2 Lantai Standar,350000,500000,700000,Aman kokoh desain clean. Bikin area tangga lo nggak kelihatan sempit dan sumpek.
-Railing,RLG-02,Railing Warm Grip,Hollow Galvanis 4x4,Handrail Kayu Solid + Jari Besi,Klasik Modern,450000,700000,900000,Sentuhan kayu natural di setiap pegangan. Elegan dan gak dingin pas dipegang pagi hari.
-Railing,RLG-03,Railing Infinity Glass,Stainless Steel / Hollow Tebal,Kaca Tempered 8mm,Rumah Mewah / Balkon View,900000,1500000,2200000,Unobstructed view. Nikmati pemandangan balkon lo 100% tanpa kehalang jeruji besi.`
-  const rows = parseCsv(raw)
-  const [header, ...dataRows] = rows
-  const idx = (key: string) => header.findIndex((h) => h.toLowerCase() === key.toLowerCase())
-  const catMap = (v: string): 'kanopi'|'pagar'|'railing'|'aksesoris'|'lainnya' => {
-    const t = v.toLowerCase()
-    if (t.includes('kanopi')) return 'kanopi'
-    if (t.includes('pagar')) return 'pagar'
-    if (t.includes('railing')) return 'railing'
-    return 'lainnya'
-  }
-  const payload = dataRows.map((row) => {
-    const category = catMap(row[idx('Kategori')] || '')
-    const title = row[idx('Nama_Produk_Komersial')] || ''
-    const baseHigh = Number(row[idx('Harga_Jual_Atas_m2_Rp')] || '0')
-    return {
-      title,
-      image_url: null,
-      category,
-      atap_id: null,
-      rangka_id: null,
-      base_price_per_m2: baseHigh,
-      base_price_unit: 'm2' as const,
-      is_active: true
-    }
-  })
-  const { data: existing } = await supabase.from('catalogs').select('id,title')
-  const existingSet = new Set((existing ?? []).map((c: { title: string }) => c.title))
-  const toInsert = payload.filter(p => !existingSet.has(p.title))
-  const toUpdate = payload.filter(p => existingSet.has(p.title))
-  if (toInsert.length > 0) {
-    const { error: insErr } = await supabase.from('catalogs').insert(toInsert)
-    if (insErr) console.error('Insert fence/railing catalogs error:', insErr)
-  }
-  for (const p of toUpdate) {
-    const { error: updErr } = await supabase.from('catalogs').update(p).eq('title', p.title)
-    if (updErr) console.error('Update fence/railing catalog error:', updErr, 'title:', p.title)
-  }
-  redirect('/admin/catalogs')
-}
-async function importKokohinPreset() {
-  'use server'
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const bypass = await isDevBypass()
-  if (!user && !bypass) redirect('/admin/login')
-  const raw = `Kategori_Atap,Material_Utama,Varian_Tipe,Ketebalan_Umum,Satuan_Harga,Estimasi_Harga_Bawah_Rp,Estimasi_Harga_Atas_Rp,Karakteristik_Fisik,Aesthetic_Positioning
-Metal / Baja,Spandek Polos,Galvalum / Zincalume,0.25 - 0.50 mm,Meter Lari,45000,75000,Ringan tipis sangat berisik saat hujan panas.,Industrial budget / Proyek fungsional.
-Metal / Baja,Spandek Pasir,Berlapis pasir & lem,0.30 - 0.50 mm,Meter Lari,65000,95000,Meredam suara hujan tekstur kasar.,Fungsional dengan UX lebih baik.
-Metal / Baja,Spandek Transparan,Plastik / PET,0.8 - 1.2 mm,Meter Lari,90000,130000,Tembus cahaya biasa untuk skylight.,Fungsional (pencahayaan alami).
-Metal / Baja,Spandek Lapis Peredam,Lapis Aluminium Foil,0.30 - 0.40 mm,Meter Lari,95000,140000,Ada insulasi panas bawaan di bawah.,Industrial upgrade.
-uPVC,Alderon Twinwall,Double Layer (Berongga),10 mm,Meter Lari,180000,240000,Sangat kaku meredam panas & suara maksimal.,Menengah ke atas. Clean modern sejuk.
-uPVC,Alderon RS,Single Layer (Tanpa Rongga),1.2 - 1.5 mm,Meter Lari,75000,100000,Lebih ringan tidak sekedap Twinwall.,Alternatif hemat uPVC.
-Polycarbonate,Polycarbonate Multi-wall,Twinlite / Solarlite,4 - 6 mm,Meter Lari,250000,350000,Berongga lentur tembus cahaya (harga konversi dari roll).,Modern 2010s look. Rentan jamur di rongga.
-Polycarbonate,Polycarbonate Solid Flat,SolarFlat / EZ-Lock,1.2 - 3 mm,Meter Lari,250000,450000,Solid tanpa rongga bening seperti kaca tidak mudah pecah.,Modern kontemporer. Alternatif kaca.
-Polycarbonate,Polycarbonate Gelombang,SolarTuff,0.8 mm,Meter Lari,150000,190000,Bening bergelombang kuat UV protection.,Tropical modern / Semi-outdoor vibe.
-Kaca,Kaca Tempered,Clear / Dark / Frosted,8 - 12 mm,Meter Persegi,800000,1500000,Keras pecah jadi butiran jagung aman sangat berat.,Sangat premium. Clean luxury minimalis.
-Kaca,Kaca Laminated,Dua lapis kaca + PVB,5+5 - 6+6 mm,Meter Persegi,1200000,2500000,Sangat aman kaca tetap menempel di film jika pecah.,Ultra-premium. Biasa untuk skylight gedung.
-Plastik / Akrilik,Akrilik (Acrylic),Bening / Susu,2 - 5 mm,Meter Persegi,400000,700000,Lebih ringan dari kaca rawan baret.,Alternatif kaca kurang tahan cuaca jangka panjang.
-Membrane,Kain Membran PVC,Agtex / Serge Ferrari,700 - 950 gsm,Meter Persegi,400000,900000,Fleksibel ditarik tahan cuaca ekstrem (Harga material saja).,Ikonik komersial futuristik resort vibe.
-Bitumen,Atap Onduline,Gelombang Cellulosa,3 mm,Meter Persegi,90000,110000,Ringan lentur kedap suara tidak berkarat.,Rustic natural atau gaya Eropa klasik.
-Bitumen,Genteng Aspal,Flat berlapis pasir,3 mm,Meter Persegi,150000,250000,Butuh alas multiplek sangat kedap suara elegan.,American classic / gaya rumah tropis mewah.
-Kain / Kanvas,Awning Sunbrella,Kain Acrylic Tahan Air,Bervariasi,Meter Lari,600000,900000,Bisa dilipat/digulung warna pudar 5-7 tahun.,Boutique cafe klasik gaya Eropa.
-Aluminium,Louver / Sunlouvre,Sirip Aluminium,Bervariasi,Meter Persegi,1800000,2500000,Bisa dibuka-tutup manual/motor (Harga biasanya include pasang).,Smart home high-end patio fungsional dinamis.
-Renewable Energy,Solar Panel (BIPV),Mono / Poly,Bervariasi,Meter Persegi,1500000,3000000,Berfungsi ganda atap & listrik (Sangat fluktuatif).,Futuristik eco-friendly investasi jangka panjang.
-Tradisional,Bambu / Rumbia / Sirap,Material Alam,Bervariasi,Meter Persegi,50000,150000,Rentan cuaca butuh maintenance ekstra.,Tropical resort eco-tourism rustic.`
-  const rows = parseCsv(raw)
-  const [header, ...dataRows] = rows
-  const idx = (key: string) => header.findIndex((h) => h.toLowerCase() === key.toLowerCase())
-  const toTitle = (m: string, v: string, t: string) => [m, v, t].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
-  const unitFrom = (u: string): 'm2'|'m1'|'unit' => {
-    const s = (u || '').toLowerCase()
-    if (s.includes('meter lari')) return 'm1'
-    if (s.includes('meter persegi')) return 'm2'
-    return 'm2'
-  }
-  const { data: materials } = await supabase.from('materials').select('id,name,category')
-  const findAtapId = (name: string) => {
-    const t = (name || '').toLowerCase()
-    const found = (materials ?? []).find(m => m.category === 'atap' && m.name.toLowerCase().includes(t))
-    return found ? found.id : null
-  }
-  const payload = dataRows.map((row) => {
-    const materialUtama = row[idx('Material_Utama')] || ''
-    const varian = row[idx('Varian_Tipe')] || ''
-    const ketebalan = row[idx('Ketebalan_Umum')] || ''
-    const satuan = row[idx('Satuan_Harga')] || ''
-    const hi = Number(row[idx('Estimasi_Harga_Atas_Rp')] || '0')
-    return {
-      title: toTitle(materialUtama, varian, ketebalan),
-      image_url: null,
-      category: 'kanopi',
-      atap_id: findAtapId(materialUtama),
-      rangka_id: null,
-      base_price_per_m2: hi,
-      base_price_unit: unitFrom(satuan),
-      is_active: true
-    }
-  })
-  const { data: existing } = await supabase.from('catalogs').select('id,title')
-  const existingSet = new Set((existing ?? []).map((c: { title: string }) => c.title))
-  const toInsert = payload.filter(p => !existingSet.has(p.title))
-  const toUpdate = payload.filter(p => existingSet.has(p.title))
-  if (toInsert.length > 0) {
-    const { error: insErr } = await supabase.from('catalogs').insert(toInsert)
-    if (insErr) console.error('Insert preset catalogs error:', insErr)
-  }
-  for (const p of toUpdate) {
-    const { error: updErr } = await supabase.from('catalogs').update(p).eq('title', p.title)
-    if (updErr) console.error('Update preset catalog error:', updErr, 'title:', p.title)
-  }
-  redirect('/admin/catalogs')
-}
+
+
 const escapeCsvValue = (value: string | number | boolean | null | undefined) => {
   const text = value === null || value === undefined ? '' : String(value)
   if (/[",\n]/.test(text)) {
@@ -192,15 +65,19 @@ const buildCatalogsCsv = (catalogs: Array<{
   atap_id: string | null
   rangka_id: string | null
   base_price_per_m2: number
+  base_price_unit?: 'm2'|'m1'|'unit'
+  hpp_per_unit?: number | null
   is_active: boolean
 }>) => {
-  const header = ['title', 'image_url', 'atap_id', 'rangka_id', 'base_price_per_m2', 'is_active']
+  const header = ['title', 'image_url', 'atap_id', 'rangka_id', 'base_price_per_m2', 'base_price_unit', 'hpp_per_unit', 'is_active']
   const rows = catalogs.map((c) => [
     escapeCsvValue(c.title),
     escapeCsvValue(c.image_url),
     escapeCsvValue(c.atap_id),
     escapeCsvValue(c.rangka_id),
     escapeCsvValue(c.base_price_per_m2),
+    escapeCsvValue(c.base_price_unit ?? 'm2'),
+    escapeCsvValue(c.hpp_per_unit ?? ''),
     escapeCsvValue(c.is_active)
   ])
   return [header.join(','), ...rows.map((row) => row.join(','))].join('\n')
@@ -246,21 +123,38 @@ const parseCsv = (text: string) => {
   return rows
 }
 
-export default async function AdminCatalogsPage() {
+export default async function AdminCatalogsPage({ searchParams }: { searchParams: Promise<{ hmin?: string; hmax?: string; sort?: string }> }) {
+  const { hmin, hmax, sort } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
   if (!user && !bypass) redirect('/admin/login')
 
   // Fetch catalogs with related materials
-  const { data: catalogs, error } = await supabase
+  let query = supabase
     .from('catalogs')
     .select(`
       *,
       atap:atap_id(name, category),
       rangka:rangka_id(name, category)
     `)
-    .order('created_at', { ascending: false })
+  const minVal = hmin ? Number(hmin) : NaN
+  const maxVal = hmax ? Number(hmax) : NaN
+  if (!isNaN(minVal)) {
+    query = query.gte('hpp_per_unit', Math.max(0, Math.floor(minVal)))
+  }
+  if (!isNaN(maxVal)) {
+    query = query.lte('hpp_per_unit', Math.max(0, Math.floor(maxVal)))
+  }
+  const s = (sort || '').toLowerCase()
+  if (s === 'hpp_asc') {
+    query = query.order('hpp_per_unit', { ascending: true, nullsFirst: true })
+  } else if (s === 'hpp_desc') {
+    query = query.order('hpp_per_unit', { ascending: false, nullsFirst: false })
+  } else {
+    query = query.order('created_at', { ascending: false })
+  }
+  const { data: catalogs, error } = await query
 
   if (error) {
     console.error('Error fetching catalogs:', error)
@@ -275,156 +169,137 @@ export default async function AdminCatalogsPage() {
     }).format(amount)
   }
 
-  const getCatalogType = (catalog: { atap_id: string | null, rangka_id: string | null }) => {
-    if (catalog.atap_id && catalog.rangka_id) return 'Paket Lengkap'
-    if (catalog.atap_id) return 'Hanya Atap'
-    if (catalog.rangka_id) return 'Hanya Rangka'
-    return 'Custom'
-  }
+  const sumByUnit = { m2: 0, m1: 0, unit: 0 as number }
+  ;(catalogs ?? []).forEach((c) => {
+    const u = ((c as { base_price_unit?: 'm2'|'m1'|'unit' | null }).base_price_unit ?? 'm2') as 'm2' | 'm1' | 'unit'
+    const v = Number((c as { base_price_per_m2?: number | null }).base_price_per_m2 || 0)
+    sumByUnit[u] += v
+  })
+
+  const mappedCatalogs = (catalogs ?? []).map((c) => {
+    const unit = ((c as { base_price_unit?: 'm2'|'m1'|'unit' | null }).base_price_unit ?? 'm2') as 'm2' | 'm1' | 'unit'
+    return {
+      id: String((c as { id: string }).id),
+      title: String((c as { title: string }).title),
+      atapName: relNameFrom((c as { atap?: { name: string | null } | null }).atap),
+      rangkaName: relNameFrom((c as { rangka?: { name: string | null } | null }).rangka),
+      base_price_per_m2: Number((c as { base_price_per_m2?: number | null }).base_price_per_m2 || 0),
+      base_price_unit: unit,
+      hpp_per_unit: (c as { hpp_per_unit?: number | null }).hpp_per_unit ?? null,
+      is_active: !!(c as { is_active?: boolean | null }).is_active,
+      created_at: ((c as { created_at?: string | null }).created_at ?? null),
+      atap_id: ((c as { atap_id?: string | null }).atap_id ?? null),
+      rangka_id: ((c as { rangka_id?: string | null }).rangka_id ?? null),
+    }
+  })
   const csvContent = buildCatalogsCsv(catalogs ?? [])
   const csvHref = `data:text/csv;charset=utf-8,${encodeURIComponent(csvContent)}`
 
   return (
-    <div className={`${styles.main} flex-1 h-full`}>
-      {/* Main */}
-      <div className={styles.header}>
-          <div>
-            <h1 className={styles.title}>Manajemen Katalog Paket</h1>
-            <p className={styles.sub}>Paket kanopi standar yang ditawarkan ke customer</p>
-          </div>
-          <div className="flex gap-2">
-            <Link href="/admin/catalogs/new" className="btn btn-primary">
-              + Buat Paket Baru
-            </Link>
-          </div>
-        </div>
+    <div className="flex-1 flex flex-col h-full overflow-hidden">
+        {/* Header */}
+        <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 flex-shrink-0 z-10">
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">Manajemen Katalog Paket</h2>
+              <p className="text-sm text-gray-500 mt-1">Paket kanopi standar yang ditawarkan ke customer</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                <input type="text" placeholder="Cari ID/Nama..." className="pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613]" />
+              </div>
+              <div className="w-10 h-10 rounded-full bg-gray-200 border-2 border-white shadow-sm overflow-hidden">
+                <Image
+                  src="https://ui-avatars.com/api/?name=Admin+Katalog&background=1D1D1B&color=fff"
+                  alt="Avatar Admin Katalog"
+                  width={40}
+                  height={40}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            </div>
+          </header>
 
-        <div className={styles.statsGrid}>
-          <div className={`${styles.statCard} ${styles.accentCard}`}>
-            <div className={styles.statIcon}>
-              <FolderOpen className="w-5 h-5" />
+        {/* Content Area */}
+        <div className="flex-1 overflow-auto p-8">
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 my-6">
+          <div className="bg-white border border-gray-200 rounded-lg p-5 flex items-start">
+            <div className="bg-[#E30613]/10 text-[#E30613] rounded-lg p-3">
+              <FolderOpen className="w-6 h-6" />
             </div>
-            <div className={styles.statValue}>{catalogs?.length ?? 0}</div>
-            <div className={styles.statLabel}>Total Paket</div>
+            <div className="ml-4">
+              <p className="text-3xl font-bold text-gray-900">{catalogs?.length ?? 0}</p>
+              <p className="text-sm text-gray-500">Total Paket</p>
+            </div>
           </div>
-          <div className={styles.statCard}>
-            <div className={styles.statIcon}>
-              <BadgeDollarSign className="w-5 h-5" />
+          <div className="bg-white border border-gray-200 rounded-lg p-5 flex items-start">
+            <div className="bg-gray-100 text-gray-600 rounded-lg p-3">
+              <BadgeDollarSign className="w-6 h-6" />
             </div>
-            <div className={styles.statValue}>
-              {formatCurrency(catalogs?.reduce((sum, c) => sum + (c.base_price_per_m2 || 0), 0) || 0)}
+            <div className="ml-4">
+              <div className="text-lg font-semibold text-gray-900">
+                <div>m²: {formatCurrency(sumByUnit.m2)}</div>
+                <div>m¹: {formatCurrency(sumByUnit.m1)}</div>
+                <div>unit: {formatCurrency(sumByUnit.unit)}</div>
+              </div>
+              <p className="text-sm text-gray-500">Ringkasan Nilai per Satuan</p>
             </div>
-            <div className={styles.statLabel}>Total Nilai per m²</div>
           </div>
-          <div className={styles.statCard}>
-            <div className={styles.statIcon}>
-              <BarChart3 className="w-5 h-5" />
+          <div className="bg-white border border-gray-200 rounded-lg p-5 flex items-start">
+            <div className="bg-gray-100 text-gray-600 rounded-lg p-3">
+              <BarChart3 className="w-6 h-6" />
             </div>
-            <div className={styles.statValue}>
-              {catalogs?.filter(c => c.is_active).length ?? 0}
+            <div className="ml-4">
+              <p className="text-3xl font-bold text-gray-900">
+                {catalogs?.filter(c => c.is_active).length ?? 0}
+              </p>
+              <p className="text-sm text-gray-500">Paket Aktif</p>
             </div>
-            <div className={styles.statLabel}>Paket Aktif</div>
           </div>
         </div>
 
         {/* Catalogs Table */}
-        <div className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <h2 className={styles.sectionTitle}>
-              Semua Paket ({catalogs?.length ?? 0})
-            </h2>
-            <div className="flex gap-2">
-              <ImportCsvForm importCatalogs={importCatalogs} importPreset={importKokohinPreset} importPresetSecondary={importFenceRailingCatalogPreset} />
-              <a href={csvHref} download="catalogs.csv" className="btn btn-outline-dark btn-sm">Export CSV</a>
-              <button className="btn btn-outline-dark btn-sm">Filter</button>
+        <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Daftar Paket</h2>
+              <p className="text-sm text-gray-500 mt-1">Total {catalogs?.length ?? 0} paket ditemukan.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link href="/admin/catalogs/new" className="btn btn-primary btn-sm">
+                + Buat Paket Baru
+              </Link>
+              <a href={csvHref} download="catalogs.csv" className="btn btn-outline-dark btn-sm">
+                Export CSV
+              </a>
+              <ImportCsvForm importCatalogs={importCatalogs} />
             </div>
           </div>
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Nama Paket</th>
-                  <th>Jenis</th>
-                  <th>Atap</th>
-                  <th>Rangka</th>
-                  <th>Harga per m²</th>
-                  <th>Estimasi 10m²</th>
-                  <th>Status</th>
-                  <th>Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {catalogs?.map(catalog => {
-                  const estimatedPrice = (catalog.base_price_per_m2 || 0) * 10
-                  return (
-                    <tr key={catalog.id}>
-                      <td className={styles.bold}>{catalog.title}</td>
-                      <td>
-                        <span className={`${styles.badge} ${styles.badge_new}`}>
-                          {getCatalogType(catalog)}
-                        </span>
-                      </td>
-                      <td>{relNameFrom(catalog.atap)}</td>
-                      <td>{relNameFrom(catalog.rangka)}</td>
-                      <td className={styles.bold}>{formatCurrency(catalog.base_price_per_m2)}</td>
-                      <td>{formatCurrency(estimatedPrice)}</td>
-                      <td>
-                        <span className={`${styles.badge} ${catalog.is_active ? styles.badge_quoted : styles.badge_closed}`}>
-                          {catalog.is_active ? 'Aktif' : 'Nonaktif'}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="flex gap-2">
-                          <Link href={`/admin/catalogs/${catalog.id}`} className="btn btn-outline-dark btn-sm">
-                            Edit
-                          </Link>
-                          <button className="btn btn-outline-danger btn-sm">
-                            Hapus
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-                {(!catalogs || catalogs.length === 0) && (
-                  <tr><td colSpan={8} className={styles.empty}>Belum ada paket katalog. <Link href="/admin/catalogs/new">Buat paket pertama</Link></td></tr>
-                )}
-              </tbody>
-            </table>
+          <div className="p-5">
+            <CatalogsListClient catalogs={mappedCatalogs} />
           </div>
-        </div>
+        </section>
 
         {/* Info Panel */}
-        <div className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <h2 className={styles.sectionTitle}>Cara Kerja Paket Katalog</h2>
+        <div className="mt-6 bg-white border border-gray-200 rounded-lg">
+          <div className="p-5 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">Cara Kerja Paket Katalog</h2>
           </div>
-          <div className="p-6">
-            <div className="grid grid-cols-3 gap-6">
-              <div>
-                <h3 className="font-bold text-primary-dark mb-2">1. Paket Standar</h3>
-                <p className="text-gray-600 text-sm">
-                  Kombinasi material atap + rangka dengan harga per m² yang fixed. 
-                  Customer dapat menghitung estimasi langsung di kalkulator.
-                </p>
-              </div>
-              <div>
-                <h3 className="font-bold text-primary-dark mb-2">2. Escape Hatch</h3>
-                <p className="text-gray-600 text-sm">
-                  Jika customer memilih &apos;Custom&apos; di kalkulator, sistem akan bypass auto‑calculation 
-                  dan menandai proyek sebagai &apos;Need Manual Quote&apos;.
-                </p>
-              </div>
-              <div>
-                <h3 className="font-bold text-primary-dark mb-2">3. Dynamic Pricing</h3>
-                <p className="text-gray-600 text-sm">
-                  Harga paket dapat dikalikan dengan zona markup (persentase + flat fee) 
-                  berdasarkan lokasi customer.
-                </p>
-              </div>
-            </div>
+          <div className="p-5 text-sm text-gray-600 space-y-4">
+            <p>
+              <strong>Katalog Paket</strong> adalah template produk yang akan digunakan oleh tim sales untuk membuat penawaran. Setiap paket memiliki harga dasar dan komponen material (atap & rangka) yang sudah ditentukan.
+            </p>
+            <p>
+              Anda dapat <strong>membuat, mengubah, atau menonaktifkan</strong> paket kapan saja. Perubahan akan langsung terlihat di aplikasi kalkulator sales.
+            </p>
+            <p>
+              Gunakan fitur <strong>Import/Export CSV</strong> untuk mengelola data dalam jumlah besar dengan lebih mudah menggunakan spreadsheet editor seperti Microsoft Excel atau Google Sheets.
+            </p>
+
           </div>
         </div>
+      </div>
     </div>
   )
 }

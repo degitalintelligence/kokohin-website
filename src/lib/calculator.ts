@@ -77,9 +77,14 @@ export function calculateCatalogPrice(
   basePriceValue: number,
   unit: 'm2' | 'm1' | 'unit' = 'm2',
   panjang = 0,
-  lebar = 0
+  lebar = 0,
+  quantityOverride?: number
 ): number {
   let quantity = 1
+  if (typeof quantityOverride === 'number' && !Number.isNaN(quantityOverride)) {
+    quantity = Math.max(0, quantityOverride)
+    return basePriceValue * quantity
+  }
   if (unit === 'm2') {
     quantity = Math.max(0, panjang) * Math.max(0, lebar)
   } else if (unit === 'm1') {
@@ -212,9 +217,19 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
 
     const row = catalog as CatalogRow
     const unit = (row.base_price_unit ?? 'm2')
-    const basePrice = calculateCatalogPrice(row.base_price_per_m2 ?? 0, unit, input.panjang, input.lebar)
-    const laborCostUnit = calculateCatalogPrice(row.labor_cost ?? 0, unit, input.panjang, input.lebar)
-    const transportCost = row.transport_cost ?? 0
+    const computedQty =
+      unit === 'm2'
+        ? Math.max(0, input.panjang) * Math.max(0, input.lebar)
+        : unit === 'm1'
+          ? Math.max(0, input.panjang)
+          : Math.max(0, input.unitQty ?? 1)
+    const basePrice = calculateCatalogPrice(
+      row.base_price_per_m2 ?? 0,
+      unit,
+      input.panjang,
+      input.lebar,
+      computedQty
+    )
 
     // Fetch catalog addons with material info
     type AddonWithMaterial = {
@@ -268,7 +283,7 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
       } else if (basis === 'm1') {
         multiplier = Math.max(0, input.panjang)
       } else {
-        multiplier = 1
+        multiplier = Math.max(0, input.unitQty ?? 1)
       }
       return sum + price * qty * multiplier
     }, 0)
@@ -285,10 +300,8 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
         }
       } catch {}
     }
-    const hppBeforeMargin = basePrice + addonCost + laborCostUnit + transportCost
-    const marginPct = row.margin_percentage ?? 0
-    const totalHpp = hppBeforeMargin * (1 + (marginPct / 100))
-    const estimatedPrice = applyZoneMarkup(totalHpp, markupPercentage, flatFee)
+    const priceBeforeMarkup = basePrice + addonCost
+    const estimatedPrice = applyZoneMarkup(priceBeforeMarkup, markupPercentage, flatFee)
 
     // Validasi auto-upsell constraints
     const warnings: string[] = []
@@ -345,10 +358,12 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
 
     return {
       luas,
-      materialCost: totalHpp,
+      unitUsed: unit,
+      computedQty,
+      materialCost: 0,
       wasteCost: 0,
-      totalHpp,
-      marginPercentage: marginPct,
+      totalHpp: 0,
+      marginPercentage: 0,
       markupPercentage,
       flatFee,
       totalSellingPrice: estimatedPrice,
@@ -362,7 +377,7 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
         } else if (basis === 'm1') {
           multiplier = Math.max(0, input.panjang)
         } else {
-          multiplier = 1
+          multiplier = Math.max(0, input.unitQty ?? 1)
         }
         const qtyNeeded = qtyBasis * multiplier
         const pricePerUnit = a.material?.base_price_per_unit ?? 0
