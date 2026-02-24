@@ -181,6 +181,7 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
     return {
       id: String((c as { id: string }).id),
       title: String((c as { title: string }).title),
+      category: ((c as { category?: 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya' | null }).category ?? null),
       atapName: relNameFrom((c as { atap?: { name: string | null } | null }).atap),
       rangkaName: relNameFrom((c as { rangka?: { name: string | null } | null }).rangka),
       base_price_per_m2: Number((c as { base_price_per_m2?: number | null }).base_price_per_m2 || 0),
@@ -259,37 +260,37 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 my-6">
-          <div className="bg-white border border-gray-200 rounded-lg p-5 flex items-start">
-            <div className="bg-[#E30613]/10 text-[#E30613] rounded-lg p-3">
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
               <FolderOpen className="w-6 h-6" />
             </div>
-            <div className="ml-4">
-              <p className="text-3xl font-bold text-gray-900">{catalogs?.length ?? 0}</p>
-              <p className="text-sm text-gray-500">Total Paket</p>
+            <div>
+              <p className="text-sm font-bold text-gray-500">Total Paket</p>
+              <h3 className="text-2xl font-extrabold text-gray-900">{catalogs?.length ?? 0}</h3>
             </div>
           </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-5 flex items-start">
-            <div className="bg-gray-100 text-gray-600 rounded-lg p-3">
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4 border-l-4 border-l-[#E30613]">
+            <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-[#E30613]">
               <BadgeDollarSign className="w-6 h-6" />
             </div>
-            <div className="ml-4">
+            <div>
+              <p className="text-sm font-bold text-gray-500">Ringkasan Nilai per Satuan</p>
               <div className="text-lg font-semibold text-gray-900">
                 <div>m²: {formatCurrency(sumByUnit.m2)}</div>
                 <div>m¹: {formatCurrency(sumByUnit.m1)}</div>
                 <div>unit: {formatCurrency(sumByUnit.unit)}</div>
               </div>
-              <p className="text-sm text-gray-500">Ringkasan Nilai per Satuan</p>
             </div>
           </div>
-          <div className="bg-white border border-gray-200 rounded-lg p-5 flex items-start">
-            <div className="bg-gray-100 text-gray-600 rounded-lg p-3">
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center text-green-600">
               <BarChart3 className="w-6 h-6" />
             </div>
-            <div className="ml-4">
-              <p className="text-3xl font-bold text-gray-900">
+            <div>
+              <p className="text-sm font-bold text-gray-500">Paket Aktif</p>
+              <h3 className="text-2xl font-extrabold text-gray-900">
                 {catalogs?.filter(c => c.is_active).length ?? 0}
-              </p>
-              <p className="text-sm text-gray-500">Paket Aktif</p>
+              </h3>
             </div>
           </div>
         </div>

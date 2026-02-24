@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { Trash2, Edit, CheckSquare, Square } from 'lucide-react'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 
 type Service = {
   id: string
@@ -18,6 +19,8 @@ export default function ServicesList({ services: initial }: { services: Service[
   const [selectAll, setSelectAll] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [openConfirm, setOpenConfirm] = useState(false)
+  const btnRef = useRef<HTMLButtonElement | null>(null)
 
   const toggleAll = () => {
     const next = !selectAll
@@ -31,10 +34,9 @@ export default function ServicesList({ services: initial }: { services: Service[
     setSelected(prev => ({ ...prev, [id]: !prev[id] }))
   }
 
-  const deleteSelected = async () => {
+  const performDelete = async () => {
     const ids = Object.keys(selected).filter(id => selected[id])
     if (ids.length === 0) return
-    if (!confirm(`Hapus ${ids.length} layanan terpilih?`)) return
     setLoading(true)
     setMessage(null)
     try {
@@ -56,6 +58,7 @@ export default function ServicesList({ services: initial }: { services: Service[
     } catch {
       setMessage({ type: 'error', text: 'Terjadi kesalahan jaringan' })
     } finally {
+      setOpenConfirm(false)
       setLoading(false)
     }
   }
@@ -68,7 +71,8 @@ export default function ServicesList({ services: initial }: { services: Service[
           Pilih Semua
         </button>
         <button
-          onClick={deleteSelected}
+          ref={btnRef}
+          onClick={() => setOpenConfirm(true)}
           disabled={loading}
           className="btn btn-outline-danger flex items-center gap-2"
         >
@@ -111,6 +115,16 @@ export default function ServicesList({ services: initial }: { services: Service[
           <div className="p-6 bg-white rounded-lg border text-gray-500">Belum ada layanan.</div>
         )}
       </div>
+      <ConfirmModal
+        open={openConfirm}
+        title="Konfirmasi Hapus"
+        description="Hapus layanan terpilih?"
+        confirmLabel={loading ? 'Menghapus...' : 'Hapus'}
+        onConfirm={performDelete}
+        onCancel={() => setOpenConfirm(false)}
+        pending={loading}
+        danger
+      />
     </div>
   )
 }

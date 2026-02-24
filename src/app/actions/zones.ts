@@ -147,3 +147,139 @@ export async function deleteZone(id: string) {
 
   revalidatePath('/admin/zones')
 }
+
+type ZoneCsvRow = {
+  id?: string
+  name: string
+  cities: string[] | null
+  markup_percentage: number
+  flat_fee: number
+  description: string | null
+  order_index: number | null
+  is_active: boolean
+}
+
+const parseCsv = (text: string) => {
+  const rows: string[][] = []
+  let current: string[] = []
+  let field = ''
+  let inQuotes = false
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i]
+    const next = text[i + 1]
+    if (char === '"' && inQuotes && next === '"') {
+      field += '"'
+      i += 1
+      continue
+    }
+    if (char === '"') {
+      inQuotes = !inQuotes
+      continue
+    }
+    if (char === ',' && !inQuotes) {
+      current.push(field.trim())
+      field = ''
+      continue
+    }
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (field.length > 0 || current.length > 0) {
+        current.push(field.trim())
+        rows.push(current)
+        current = []
+        field = ''
+      }
+      continue
+    }
+    field += char
+  }
+  if (field.length > 0 || current.length > 0) {
+    current.push(field.trim())
+    rows.push(current)
+  }
+  return rows
+}
+
+export async function importZones(formData: FormData) {
+  'use server'
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return redirect('/admin/login')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
+    return redirect('/admin/leads')
+  }
+
+  const file = formData.get('file')
+  if (!(file instanceof File)) {
+    throw new Error('Berkas CSV tidak ditemukan')
+  }
+  const text = await file.text()
+  const rows = parseCsv(text)
+  if (rows.length < 2) {
+    throw new Error('CSV kosong atau hanya berisi header')
+  }
+  const [header, ...dataRows] = rows
+  const index = (key: string) => header.findIndex((h) => h.toLowerCase() === key)
+
+  const withId: ZoneCsvRow[] = []
+  const byName: ZoneCsvRow[] = []
+
+  for (const row of dataRows) {
+    const id = row[index('id')]?.trim()
+    const name = row[index('name')]
+    if (!name || name.trim() === '') continue
+    const citiesRaw = row[index('cities')] || ''
+    const markupRaw = row[index('markup_percentage')] || '0'
+    const flatRaw = row[index('flat_fee')] || '0'
+    const desc = row[index('description')] || ''
+    const orderRaw = row[index('order_index')] || ''
+    const activeRaw = row[index('is_active')] || 'true'
+
+    const rec: ZoneCsvRow = {
+      name: name.trim(),
+      cities: citiesRaw ? citiesRaw.split(',').map(c => c.trim()).filter(Boolean) : null,
+      markup_percentage: Number(markupRaw) || 0,
+      flat_fee: Number(flatRaw) || 0,
+      description: desc ? desc : null,
+      order_index: orderRaw ? (Number(orderRaw) || null) : null,
+      is_active: ['true', '1', 'yes', 'y', 'on'].includes(String(activeRaw).toLowerCase())
+    }
+    if (id) {
+      withId.push({ ...rec, id })
+    } else {
+      byName.push(rec)
+    }
+  }
+
+  if (withId.length > 0) {
+    const { error } = await supabase.from('zones').upsert(
+      withId.map((z) => ({ ...z, updated_at: new Date().toISOString() })),
+      { onConflict: 'id' }
+    )
+    if (error) {
+      console.error('Zones import (by id) error:', error)
+      throw new Error(`Gagal import (ID): ${error.message}`)
+    }
+  }
+
+  if (byName.length > 0) {
+    const { error } = await supabase.from('zones').upsert(
+      byName.map((z) => ({ ...z, updated_at: new Date().toISOString() })),
+      { onConflict: 'name' }
+    )
+    if (error) {
+      console.error('Zones import (by name) error:', error)
+      throw new Error(`Gagal import (name): ${error.message}`)
+    }
+  }
+
+  revalidatePath('/admin/zones')
+  return 'ok'
+}

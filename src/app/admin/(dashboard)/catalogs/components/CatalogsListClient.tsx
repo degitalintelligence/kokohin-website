@@ -9,6 +9,7 @@ type Unit = 'm2' | 'm1' | 'unit'
 type CatalogItem = {
   id: string
   title: string
+  category?: 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya' | null
   atapName: string
   rangkaName: string
   base_price_per_m2: number
@@ -34,24 +35,20 @@ const formatCurrency = (amount: number) => {
   }).format(amount)
 }
 
-const getCatalogType = (catalog: CatalogItem) => {
-  if (catalog.atap_id && catalog.rangka_id) return 'Paket Lengkap'
-  if (catalog.atap_id) return 'Hanya Atap'
-  if (catalog.rangka_id) return 'Hanya Rangka'
-  return 'Custom'
-}
-
 export default function CatalogsListClient({ catalogs }: Props) {
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<'recent' | 'price_asc' | 'price_desc' | 'hpp_asc' | 'hpp_desc' | 'title_asc'>('recent')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya'>('all')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [onlyPopular, setOnlyPopular] = useState(false)
   const [rowsState, setRowsState] = useState<CatalogItem[]>(catalogs)
   const [confirm, setConfirm] = useState<{ id: string; nextVal: boolean; title: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  const [confirmActive, setConfirmActive] = useState<{ id: string; nextVal: boolean; title: string } | null>(null)
+  const [savingActive, setSavingActive] = useState(false)
 
   useEffect(() => {
     setRowsState(catalogs)
@@ -129,6 +126,9 @@ export default function CatalogsListClient({ catalogs }: Props) {
     if (onlyPopular) {
       rows = rows.filter((c) => !!c.is_popular)
     }
+    if (categoryFilter !== 'all') {
+      rows = rows.filter((c) => (c.category ?? null) === categoryFilter)
+    }
     rows.sort((a, b) => {
       if (sortKey === 'recent') {
         const da = a.created_at ? Date.parse(a.created_at) : 0
@@ -160,7 +160,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
         priorityClassName: p.className,
       }
     })
-  }, [rowsState, query, sortKey, onlyPopular])
+  }, [rowsState, query, sortKey, onlyPopular, categoryFilter])
 
   const isFiltering = query.trim().length > 0
 
@@ -179,9 +179,12 @@ export default function CatalogsListClient({ catalogs }: Props) {
     setMenuOpenId((prev) => (prev === id ? null : id))
   }
 
-  const getTypeBadgeClass = (t: string) => {
-    if (t === 'Custom') return 'bg-[#E30613]/10 text-[#E30613]'
-    if (t === 'Paket Lengkap') return 'bg-green-100 text-green-800'
+  const getCategoryBadgeClass = (cat?: string | null) => {
+    if (cat === 'kanopi') return 'bg-[#E30613]/10 text-[#E30613]'
+    if (cat === 'pagar') return 'bg-blue-100 text-blue-800'
+    if (cat === 'railing') return 'bg-violet-100 text-violet-800'
+    if (cat === 'aksesoris') return 'bg-emerald-100 text-emerald-800'
+    if (cat === 'lainnya') return 'bg-gray-100 text-gray-800'
     return 'bg-gray-100 text-gray-800'
   }
 
@@ -206,6 +209,27 @@ export default function CatalogsListClient({ catalogs }: Props) {
     }
   }
 
+  const openConfirmActive = (id: string, nextVal: boolean, title: string) => {
+    setConfirmActive({ id, nextVal, title })
+  }
+
+  const doConfirmActive = async () => {
+    if (!confirmActive) return
+    setSavingActive(true)
+    try {
+      const res = await fetch('/api/admin/catalogs/active', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: confirmActive.id, is_active: confirmActive.nextVal })
+      })
+      if (!res.ok) return
+      setRowsState((prev) => prev.map((c) => (c.id === confirmActive.id ? { ...c, is_active: confirmActive.nextVal } : c)))
+    } finally {
+      setSavingActive(false)
+      setConfirmActive(null)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -221,6 +245,19 @@ export default function CatalogsListClient({ catalogs }: Props) {
           />
         </div>
         <div className="flex flex-wrap gap-3 justify-between md:justify-end">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
+            aria-label="Filter kategori"
+            className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613] focus-visible:ring-2 focus-visible:ring-[#E30613]"
+          >
+            <option value="all">Semua Kategori</option>
+            <option value="kanopi">kanopi</option>
+            <option value="pagar">pagar</option>
+            <option value="railing">railing</option>
+            <option value="aksesoris">aksesoris</option>
+            <option value="lainnya">lainnya</option>
+          </select>
           <label className="inline-flex items-center gap-2 text-sm text-gray-700">
             <input
               type="checkbox"
@@ -301,17 +338,54 @@ export default function CatalogsListClient({ catalogs }: Props) {
         </div>
       )}
 
+      {confirmActive && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50" onClick={() => !savingActive && setConfirmActive(null)} />
+          <div className="relative w-full max-w-md bg-white rounded-xl border border-gray-200 shadow-xl p-6">
+            <h3 className="text-lg font-bold text-gray-900">Ubah Status Aktif</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              {`Ubah paket "`}<span className="font-semibold text-gray-900">{confirmActive.title}</span>{`" menjadi `}
+              <span className="font-semibold">{confirmActive.nextVal ? 'Aktif' : 'Nonaktif'}</span>
+              {`?`}
+            </p>
+            {savingActive && (
+              <div className="mt-4 text-sm text-gray-600 flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Menyimpan perubahan...</span>
+              </div>
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => !savingActive && setConfirmActive(null)}
+                disabled={savingActive}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-bold"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={doConfirmActive}
+                disabled={savingActive}
+                className="px-4 py-2 rounded-lg bg-[#E30613] text-white hover:bg-[#c10510] font-bold"
+              >
+                {confirmActive.nextVal ? 'Aktifkan' : 'Nonaktifkan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="hidden lg:block overflow-x-hidden">
         <table id="catalogs-table" className="w-full table-fixed text-left border-collapse">
           <caption className="sr-only">Daftar paket katalog</caption>
           <thead className="sticky top-0 z-10">
               <tr className="bg-white border-b border-gray-200 text-xs md:text-sm">
               <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[30%]" aria-sort={sortKey === 'title_asc' ? 'ascending' : undefined}>Nama Paket</th>
-              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[12%] hidden xl:table-cell">Jenis</th>
+              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[12%] hidden xl:table-cell">Kategori</th>
               <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[18%]" aria-sort={sortKey === 'price_asc' ? 'ascending' : sortKey === 'price_desc' ? 'descending' : undefined}>Harga/Unit</th>
               <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[14%]" aria-sort={sortKey === 'hpp_asc' ? 'ascending' : sortKey === 'hpp_desc' ? 'descending' : undefined}>HPP/Unit</th>
               <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[12%] hidden xl:table-cell">Estimasi</th>
-              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[8%]">Popular</th>
               <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[8%]">Status</th>
               <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap text-right w-[8%]">Aksi</th>
             </tr>
@@ -323,13 +397,26 @@ export default function CatalogsListClient({ catalogs }: Props) {
               const estimatedPrice = (catalog.base_price_per_m2 || 0) * sampleQty
               const isExpanded = expandedId === catalog.id
               const isMenuOpen = menuOpenId === catalog.id
-              const typeLabel = getCatalogType(catalog)
-              const typeClass = getTypeBadgeClass(typeLabel)
+              const categoryClass = getCategoryBadgeClass(catalog.category ?? null)
               return (
                 <Fragment key={catalog.id}>
                 <tr className="group hover:bg-gray-50 border-b border-gray-100">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          openConfirm(catalog.id, !catalog.is_popular, catalog.title)
+                        }}
+                        aria-pressed={catalog.is_popular}
+                        aria-label={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
+                        title={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
+                        className={`inline-flex items-center justify-center w-5 h-5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${catalog.is_popular ? 'bg-[#E30613] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                      >
+                        <Star className="w-3 h-3" aria-hidden="true" />
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleToggleExpand(catalog.id)}
@@ -353,16 +440,10 @@ export default function CatalogsListClient({ catalogs }: Props) {
                             : '-'}
                         </div>
                       </div>
-                      {catalog.is_popular ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#E30613] text-white" title="Produk populer">
-                          <Star className="w-3 h-3" />
-                          POPULER
-                        </span>
-                      ) : null}
                     </div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap hidden xl:table-cell">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${typeClass}`}>{typeLabel}</span>
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${categoryClass}`}>{catalog.category ?? '-'}</span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                     {formatCurrency(catalog.base_price_per_m2)} <span>/ {unitLabel}</span>
@@ -384,25 +465,20 @@ export default function CatalogsListClient({ catalogs }: Props) {
                     <div>Estimasi {sampleQty} {unitLabel}</div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!!catalog.is_popular}
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          openConfirm(catalog.id, !catalog.is_popular, catalog.title)
-                        }}
-                        readOnly
-                        aria-label={catalog.is_popular ? 'Batal populer' : 'Tandai populer'}
-                        className="h-4 w-4 rounded border-gray-300 text-[#E30613] focus:ring-[#E30613] cursor-pointer"
-                      />
-                    </label>
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        openConfirmActive(catalog.id, !catalog.is_active, catalog.title)
+                      }}
+                      aria-pressed={catalog.is_active}
+                      aria-label={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
+                      title={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
+                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${catalog.is_active ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-red-100 text-red-800 hover:bg-red-200'}`}
+                    >
                       {catalog.is_active ? 'Aktif' : 'Nonaktif'}
-                    </span>
+                    </button>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
                     <div className="relative flex items-center justify-end gap-1" data-menu-id={catalog.id}>
@@ -453,11 +529,11 @@ export default function CatalogsListClient({ catalogs }: Props) {
                 </tr>
                 {isExpanded && (
                   <tr className="bg-gray-50 border-t border-gray-200">
-                    <td colSpan={8} className="p-4">
+                    <td colSpan={7} className="p-4">
                       <div id={`row-details-${catalog.id}`} role="region" aria-label={`Detail katalog ${catalog.title}`} className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                         <div>
                           <div className="text-xs text-gray-500">Ringkasan</div>
-                          <div className="mt-1"><span className="text-gray-500">Jenis: </span><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${typeClass}`}>{typeLabel}</span></div>
+                          <div className="mt-1"><span className="text-gray-500">Kategori: </span><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${categoryClass}`}>{catalog.category ?? '-'}</span></div>
                           <div className="mt-1"><span className="text-gray-500">Atap: </span><span className="font-medium text-gray-900">{catalog.atapName || '-'}</span></div>
                           <div className="mt-1"><span className="text-gray-500">Rangka: </span><span className="font-medium text-gray-900">{catalog.rangkaName || '-'}</span></div>
                         </div>
@@ -525,8 +601,8 @@ export default function CatalogsListClient({ catalogs }: Props) {
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="text-sm font-semibold text-gray-900">{catalog.title}</div>
-                  <div className="mt-1 text-xs text-gray-500">
-                    {getCatalogType(catalog)} •{' '}
+                  <div className="mt-1 text-xs text-gray-500 capitalize">
+                    {(catalog.category ?? '-')} •{' '}
                     {catalog.created_at
                       ? new Date(catalog.created_at).toLocaleDateString('id-ID', {
                           day: '2-digit',
@@ -537,14 +613,34 @@ export default function CatalogsListClient({ catalogs }: Props) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {catalog.is_popular ? (
-                    <span className="px-2 inline-flex items-center gap-1 text-[10px] leading-5 font-bold rounded-full bg-[#E30613] text-white">
-                      <Star className="w-3 h-3" /> POPULER
-                    </span>
-                  ) : null}
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      openConfirm(catalog.id, !catalog.is_popular, catalog.title)
+                    }}
+                    aria-pressed={catalog.is_popular}
+                    aria-label={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
+                    title={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
+                    className={`inline-flex items-center justify-center w-5 h-5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${catalog.is_popular ? 'bg-[#E30613] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                  >
+                    <Star className="w-3 h-3" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      openConfirmActive(catalog.id, !catalog.is_active, catalog.title)
+                    }}
+                    aria-pressed={catalog.is_active}
+                    aria-label={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
+                    title={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
+                    className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${catalog.is_active ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-red-100 text-red-800 hover:bg-red-200'}`}
+                  >
                     {catalog.is_active ? 'Aktif' : 'Nonaktif'}
-                  </span>
+                  </button>
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-700">

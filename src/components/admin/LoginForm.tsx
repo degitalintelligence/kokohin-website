@@ -168,7 +168,6 @@ export default function LoginForm({ backgroundUrl, logoUrl }: LoginFormProps) {
                         <div className="text-5xl text-[#E30613] font-bold font-['Montserrat']">K</div>
                     )}
                 </div>
-                <h1 className="text-2xl font-bold text-center mb-2 text-[#1D1D1B] font-['Montserrat']">Login</h1>
                 <p className="text-gray-500 text-center mb-8 text-sm">Masuk ke dashboard admin</p>
 
                 {!supabaseAvailable && connectionTested && (

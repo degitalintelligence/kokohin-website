@@ -410,34 +410,39 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
             )}
           </div>
         )}
-      {/* Stats */}
-      <div className={styles.statsGrid}>
-          <div className={`${styles.statCard} ${styles.accentCard}`}>
-            <div className={styles.statIcon}>
-              <Boxes className="w-5 h-5" />
-            </div>
-            <div className={styles.statValue}>{materials?.length ?? 0}</div>
-            <div className={styles.statLabel}>Total Material</div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+            <Boxes className="w-6 h-6" />
           </div>
-          <div className={styles.statCard}>
-            <div className={styles.statIcon}>
-              <BadgeDollarSign className="w-5 h-5" />
-            </div>
-            <div className={styles.statValue}>
-              {formatCurrency(materials?.reduce((sum, m) => sum + (m.base_price_per_unit || 0), 0) || 0)}
-            </div>
-            <div className={styles.statLabel}>Total Nilai Material</div>
-          </div>
-          <div className={styles.statCard}>
-            <div className={styles.statIcon}>
-              <Ruler className="w-5 h-5" />
-            </div>
-            <div className={styles.statValue}>
-              {materials?.filter(m => m.length_per_unit && m.length_per_unit > 1).length ?? 0}
-            </div>
-            <div className={styles.statLabel}>Material Batangan/Lembaran</div>
+          <div>
+            <p className="text-sm font-bold text-gray-500">Total Material</p>
+            <h3 className="text-2xl font-extrabold text-gray-900">{materials?.length ?? 0}</h3>
           </div>
         </div>
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4 border-l-4 border-l-[#E30613]">
+          <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-[#E30613]">
+            <BadgeDollarSign className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-gray-500">Total Nilai Material</p>
+            <h3 className="text-2xl font-extrabold text-gray-900">
+              {formatCurrency(materials?.reduce((sum, m) => sum + (m.base_price_per_unit || 0), 0) || 0)}
+            </h3>
+          </div>
+        </div>
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center text-green-600">
+            <Ruler className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-gray-500">Material Batangan/Lembaran</p>
+            <h3 className="text-2xl font-extrabold text-gray-900">
+              {materials?.filter(m => m.length_per_unit && m.length_per_unit > 1).length ?? 0}
+            </h3>
+          </div>
+        </div>
+      </div>
 
         {/* Materials Table */}
         <div className={styles.section}>

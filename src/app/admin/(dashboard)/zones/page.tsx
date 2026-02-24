@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { MapPin, TrendingUp, BadgeDollarSign, CheckCircle, AlertTriangle } from 'lucide-react'
 import styles from '../page.module.css'
 import ZoneRow from './components/ZoneRow'
+import ImportCsvForm from './components/ImportCsvForm'
+import { importZones } from '@/app/actions/zones'
 
 const escapeCsvValue = (value: string | number | boolean | null | undefined) => {
   const text = value === null || value === undefined ? '' : String(value)
@@ -109,32 +111,37 @@ export default async function AdminZonesPage({ searchParams }: { searchParams?: 
             )}
           </div>
         )}
-        {/* Stats */}
-        <div className={styles.statsGrid}>
-          <div className={`${styles.statCard} ${styles.accentCard}`}>
-            <div className={styles.statIcon}>
-              <MapPin className="w-5 h-5" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+              <MapPin className="w-6 h-6" />
             </div>
-            <div className={styles.statValue}>{zones?.length ?? 0}</div>
-            <div className={styles.statLabel}>Total Zona</div>
+            <div>
+              <p className="text-sm font-bold text-gray-500">Total Zona</p>
+              <h3 className="text-2xl font-extrabold text-gray-900">{zones?.length ?? 0}</h3>
+            </div>
           </div>
-          <div className={styles.statCard}>
-            <div className={styles.statIcon}>
-              <TrendingUp className="w-5 h-5" />
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4 border-l-4 border-l-[#E30613]">
+            <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-[#E30613]">
+              <TrendingUp className="w-6 h-6" />
             </div>
-            <div className={styles.statValue}>
-              {formatPercentage(zones?.reduce((sum, z) => sum + (z.markup_percentage || 0), 0) || 0)}
+            <div>
+              <p className="text-sm font-bold text-gray-500">Total Markup %</p>
+              <h3 className="text-2xl font-extrabold text-gray-900">
+                {formatPercentage(zones?.reduce((sum, z) => sum + (z.markup_percentage || 0), 0) || 0)}
+              </h3>
             </div>
-            <div className={styles.statLabel}>Total Markup %</div>
           </div>
-          <div className={styles.statCard}>
-            <div className={styles.statIcon}>
-              <BadgeDollarSign className="w-5 h-5" />
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center text-green-600">
+              <BadgeDollarSign className="w-6 h-6" />
             </div>
-            <div className={styles.statValue}>
-              {formatCurrency(zones?.reduce((sum, z) => sum + (z.flat_fee || 0), 0) || 0)}
+            <div>
+              <p className="text-sm font-bold text-gray-500">Total Flat Fee</p>
+              <h3 className="text-2xl font-extrabold text-gray-900">
+                {formatCurrency(zones?.reduce((sum, z) => sum + (z.flat_fee || 0), 0) || 0)}
+              </h3>
             </div>
-            <div className={styles.statLabel}>Total Flat Fee</div>
           </div>
         </div>
 
@@ -146,6 +153,7 @@ export default async function AdminZonesPage({ searchParams }: { searchParams?: 
             </h2>
             <div className="flex gap-2">
               <a href={csvHref} download="zones.csv" className="btn btn-outline-dark btn-sm">Export CSV</a>
+              <ImportCsvForm importZones={importZones} />
               <button className="btn btn-outline-dark btn-sm">Reset Urutan</button>
             </div>
           </div>

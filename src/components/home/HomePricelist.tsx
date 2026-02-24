@@ -33,7 +33,7 @@ export default function HomePricelist({ onSelectType }: Props) {
   useEffect(() => {
     const fetchCatalogs = async () => {
       try {
-        const res = await fetch('/api/public/catalogs?popular=1&limit=6', { cache: 'no-store' })
+        const res = await fetch('/api/public/catalogs?popular=1', { cache: 'no-store' })
         if (!res.ok) {
           setCatalogError('Gagal memuat katalog')
           setCatalogs([])

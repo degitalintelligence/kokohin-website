@@ -97,35 +97,42 @@ export default async function AdminProjectsPage() {
           </Link>
         </div>
 
-        {/* Stats */}
-        <div className={styles.statsGrid}>
-          <div className={`${styles.statCard} ${styles.accentCard}`}>
-            <div className={styles.statIcon}>
-              <HardHat className="w-5 h-5" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+              <HardHat className="w-6 h-6" />
             </div>
-            <div className={styles.statValue}>{projects.length}</div>
-            <div className={styles.statLabel}>Total Proyek</div>
+            <div>
+              <p className="text-sm font-bold text-gray-500">Total Proyek</p>
+              <h3 className="text-2xl font-extrabold text-gray-900">{projects.length}</h3>
+            </div>
           </div>
-          <div className={styles.statCard}>
-            <div className={styles.statIcon}>
-              <BadgeDollarSign className="w-5 h-5" />
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4 border-l-4 border-l-[#E30613]">
+            <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center text-[#E30613]">
+              <BadgeDollarSign className="w-6 h-6" />
             </div>
-            <div className={styles.statValue}>{formatCurrency(totalValue)}</div>
-            <div className={styles.statLabel}>Total Nilai Proyek</div>
+            <div>
+              <p className="text-sm font-bold text-gray-500">Total Nilai Proyek</p>
+              <h3 className="text-2xl font-extrabold text-gray-900">{formatCurrency(totalValue)}</h3>
+            </div>
           </div>
-          <div className={styles.statCard}>
-            <div className={styles.statIcon}>
-              <CheckCircle2 className="w-5 h-5" />
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center text-green-600">
+              <CheckCircle2 className="w-6 h-6" />
             </div>
-            <div className={styles.statValue}>{dealCount}</div>
-            <div className={styles.statLabel}>Proyek Deal</div>
+            <div>
+              <p className="text-sm font-bold text-gray-500">Proyek Deal</p>
+              <h3 className="text-2xl font-extrabold text-gray-900">{dealCount}</h3>
+            </div>
           </div>
-          <div className={styles.statCard}>
-            <div className={styles.statIcon}>
-              <Target className="w-5 h-5" />
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-orange-50 flex items-center justify-center text-orange-600">
+              <Target className="w-6 h-6" />
             </div>
-            <div className={styles.statValue}>{manualQuoteCount}</div>
-            <div className={styles.statLabel}>Need Manual Quote</div>
+            <div>
+              <p className="text-sm font-bold text-gray-500">Need Manual Quote</p>
+              <h3 className="text-2xl font-extrabold text-gray-900">{manualQuoteCount}</h3>
+            </div>
           </div>
         </div>
 
