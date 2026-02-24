@@ -2,8 +2,10 @@ import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import styles from '../../page.module.css'
+import { createMaterial } from '@/app/actions/materials'
 
-export default async function AdminMaterialNewPage() {
+export default async function AdminMaterialNewPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error: errorMessage } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
@@ -32,7 +34,12 @@ export default async function AdminMaterialNewPage() {
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>Informasi Material</h2>
           </div>
-          <form id="newMaterialForm" className="p-6 space-y-6">
+          <form id="newMaterialForm" action={createMaterial} className="p-6 space-y-6">
+            {errorMessage && (
+              <div className="p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">
+                Gagal menyimpan material: {decodeURIComponent(errorMessage)}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium mb-2">Kode Material *</label>

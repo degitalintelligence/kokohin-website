@@ -98,28 +98,45 @@ export default async function AdminMaterialDetailPage({ params }: { params: Prom
               >
                 <option value="atap">Atap</option>
                 <option value="frame">Rangka</option>
-                <option value="other">Lainnya</option>
+                <option value="aksesoris">Aksesoris</option>
+                <option value="lainnya">Lainnya</option>
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">Satuan</label>
-              <input
-                type="text"
+              <select
                 name="unit"
                 defaultValue={material.unit}
                 className="w-full px-4 py-2 border rounded-md"
-                placeholder="m, m2, pcs, btg"
                 required
-              />
+              >
+                <option value="batang">Batang</option>
+                <option value="lembar">Lembar</option>
+                <option value="m1">Meter Lari (m1)</option>
+                <option value="m2">Meter Persegi (m2)</option>
+                <option value="hari">Hari</option>
+                <option value="unit">Unit</option>
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">Harga Dasar (Rp)</label>
               <input
                 type="number"
-                name="base_price"
-                defaultValue={material.base_price}
+                name="base_price_per_unit"
+                defaultValue={material.base_price_per_unit}
                 className="w-full px-4 py-2 border rounded-md"
                 required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Panjang per Unit (meter)</label>
+              <input
+                type="number"
+                name="length_per_unit"
+                defaultValue={material.length_per_unit ?? 1}
+                min={0.01}
+                step={0.01}
+                className="w-full px-4 py-2 border rounded-md"
               />
             </div>
             <div className="col-span-2">
@@ -131,6 +148,26 @@ export default async function AdminMaterialDetailPage({ params }: { params: Prom
                   className="w-4 h-4"
                 />
                 <span className="text-sm">Aktifkan Material ini</span>
+              </label>
+            </div>
+            <div className="col-span-2 grid grid-cols-2 gap-6">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="is_laser_cut"
+                  defaultChecked={Boolean(material.is_laser_cut)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">Material Plat Laser Cut</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="requires_sealant"
+                  defaultChecked={Boolean(material.requires_sealant)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">Butuh Sealant (mis. kaca tempered)</span>
               </label>
             </div>
           </div>

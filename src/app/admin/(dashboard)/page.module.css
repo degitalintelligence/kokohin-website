@@ -15,7 +15,7 @@
 }
 
 .section {
-  @apply bg-white border border-gray-200 rounded-lg mt-6 shadow-sm overflow-hidden;
+  @apply bg-white border border-gray-200 rounded-lg mt-6 shadow-sm overflow-visible;
 }
 
 .sectionHeader {

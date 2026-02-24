@@ -70,7 +70,7 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
 
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium mb-2">Harga Dasar (Rp) *</label>
+                  <label className="block text-sm font-medium mb-2">Harga Dasar per Satuan (Rp) *</label>
                   <input
                     type="number"
                     name="base_price_per_m2"

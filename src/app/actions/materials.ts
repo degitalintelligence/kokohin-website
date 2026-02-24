@@ -28,7 +28,10 @@ export async function createMaterial(formData: FormData) {
   const unit = formData.get('unit') as string
   const basePrice = Number(formData.get('base_price_per_unit'))
   const lengthPerUnitRaw = formData.get('length_per_unit')
-  const lengthPerUnit = lengthPerUnitRaw ? Number(lengthPerUnitRaw) : null
+  let lengthPerUnit = Number(lengthPerUnitRaw)
+  if (!lengthPerUnitRaw || Number.isNaN(lengthPerUnit) || lengthPerUnit <= 0) {
+    lengthPerUnit = 1
+  }
   const isActive = formData.get('is_active') === 'on'
   const isLaserCut = formData.get('is_laser_cut') === 'on'
   const requiresSealant = formData.get('requires_sealant') === 'on'
@@ -85,7 +88,10 @@ export async function updateMaterial(formData: FormData) {
   const unit = formData.get('unit') as string
   const basePrice = Number(formData.get('base_price_per_unit'))
   const lengthPerUnitRaw = formData.get('length_per_unit')
-  const lengthPerUnit = lengthPerUnitRaw ? Number(lengthPerUnitRaw) : null
+  let lengthPerUnit = Number(lengthPerUnitRaw)
+  if (!lengthPerUnitRaw || Number.isNaN(lengthPerUnit) || lengthPerUnit <= 0) {
+    lengthPerUnit = 1
+  }
   const isActive = formData.get('is_active') === 'on'
   const isLaserCut = formData.get('is_laser_cut') === 'on'
   const requiresSealant = formData.get('requires_sealant') === 'on'
