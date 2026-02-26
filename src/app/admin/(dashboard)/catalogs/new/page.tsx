@@ -17,9 +17,17 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
   if (!user && !bypass) redirect('/admin/login')
 
   // Fetch materials for dropdowns
-  const [{ data: atapList }, { data: rangkaList }, { data: allMaterials }] = await Promise.all([
+  const [
+    { data: atapList }, 
+    { data: rangkaList }, 
+    { data: finishingList },
+    { data: isianList },
+    { data: allMaterials }
+  ] = await Promise.all([
     supabase.from('materials').select('id, name').eq('category', 'atap').eq('is_active', true).order('name'),
     supabase.from('materials').select('id, name').eq('category', 'frame').eq('is_active', true).order('name'),
+    supabase.from('materials').select('id, name').eq('category', 'finishing').eq('is_active', true).order('name'),
+    supabase.from('materials').select('id, name').eq('category', 'isian').eq('is_active', true).order('name'),
     supabase.from('materials').select('id, name, category, base_price_per_unit, unit').eq('is_active', true).order('name')
   ])
 
@@ -29,7 +37,7 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
       <div className={styles.header}>
           <div>
             <h1 className={styles.title}>Tambah Katalog Baru</h1>
-            <p className={styles.sub}>Buat paket kanopi standar baru</p>
+            <p className={styles.sub}>Buat paket kanopi/pagar standar baru</p>
           </div>
           <div className="flex gap-2">
             <Link href="/admin/catalogs" className="btn btn-outline-dark">
@@ -65,7 +73,12 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                 />
               </div>
 
-              <CatalogBaseFields atapList={atapList ?? []} rangkaList={rangkaList ?? []} />
+              <CatalogBaseFields 
+                atapList={atapList ?? []} 
+                rangkaList={rangkaList ?? []} 
+                finishingList={finishingList ?? []}
+                isianList={isianList ?? []}
+              />
 
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">

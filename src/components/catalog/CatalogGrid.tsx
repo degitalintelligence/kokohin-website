@@ -256,6 +256,18 @@ export default function CatalogGrid() {
                             <span>Rangka: {catalog.rangka.name}</span>
                           </li>
                         )}
+                        {(catalog as any).isian?.name && (
+                          <li className="flex items-start gap-2 text-sm">
+                            <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
+                            <span>Isian: {(catalog as any).isian.name}</span>
+                          </li>
+                        )}
+                        {(catalog as any).finishing?.name && (
+                          <li className="flex items-start gap-2 text-sm">
+                            <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
+                            <span>Finishing: {(catalog as any).finishing.name}</span>
+                          </li>
+                        )}
                       </ul>
                     </div>
                   )}

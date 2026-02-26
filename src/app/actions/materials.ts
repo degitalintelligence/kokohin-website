@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { ALLOWED_MATERIALS_ROLES, isRoleAllowed } from '@/lib/rbac'
+import { updateHppPerUnit } from './catalogs'
 
 export async function createMaterial(formData: FormData) {
   const supabase = await createClient()
@@ -114,6 +115,23 @@ export async function updateMaterial(formData: FormData) {
   if (error) {
     console.error('Error updating material:', error)
     return redirect(`/admin/materials/${id}?error=${encodeURIComponent(error.message)}`)
+  }
+
+  // Trigger HPP update for all catalogs using this material
+  const { data: affectedCatalogs } = await supabase
+    .from('catalog_hpp_components')
+    .select('catalog_id')
+    .eq('material_id', id)
+
+  if (affectedCatalogs && affectedCatalogs.length > 0) {
+    const catalogIds = [...new Set(affectedCatalogs.map(c => c.catalog_id))]
+    for (const catalogId of catalogIds) {
+      try {
+        await updateHppPerUnit(catalogId, user.id)
+      } catch (err) {
+        console.error(`[Material Update] Failed to update HPP for catalog ${catalogId}:`, err)
+      }
+    }
   }
 
   revalidatePath('/admin/materials')

@@ -153,7 +153,13 @@ Consumables,Mata Gerinda Amplas,Flap Disc,Pcs,Pcs,12000,18000,Menghaluskan sisa 
 Finishing,Dempul Besi,Isamu / Sanpolac,1 Kg,Kaleng,45000,65000,Menutup lubang pori-pori sisa las agar mulus.
 Finishing,Cat Dasar Anti Karat,Zincromate / Epoxy,1 Kg,Kaleng,65000,95000,Vital untuk besi hitam.
 Finishing,Cat Warna (Sintetik),FTALIT / Seiv,1 Kg,Kaleng,75000,95000,Warna akhir. (Hitam doff paling laku).
-Finishing,Thinner,ND / A Super,1 Liter,Botol/Kaleng,30000,45000,Pelarut cat dasar dan cat warna.
+Finishing,Powder Coating,Standar Warna,m2,Meter Persegi,150000,180000,Finishing premium tahan gores & cuaca.
+Finishing,Cat Duco / PU,Automotive Grade,m2,Meter Persegi,120000,150000,Finishing halus dan mengkilap.
+Finishing,Hot Dip Galvanize,Anti Karat Total,m2,Meter Persegi,200000,250000,Proteksi maksimal terhadap karat.
+Isian,Besi Hollow,20x20 / 20x40 mm,1.2 mm,Meter Lari,45000,65000,Isian jari-jari pagar minimalis.
+Isian,Besi Tempa,Ornamen Klasik,Variasi,Meter Persegi,350000,550000,Isian pagar gaya klasik/mewah.
+Isian,Aluminium,Spandrel / Woodgrain,Variasi,Meter Persegi,250000,450000,Isian pagar modern tahan karat.
+Thinner,ND / A Super,1 Liter,Botol/Kaleng,30000,45000,Pelarut cat dasar dan cat warna.
 Finishing,Kuas & Roll Cat,Berbagai Ukuran,Standar,Set,30000,50000,Alat aplikasi.
 Jasa & Ops,Ongkos Tukang Las (Borongan),Per Meter Persegi,Standar,Meter Persegi,80000,150000,Lebih aman untuk cashflow daripada harian.
 Jasa & Ops,Transport & Kuli,Pick up / Engkel,Standar,Trip,150000,350000,Hidden cost logistik yang sering lupa dihitung.`
@@ -165,6 +171,8 @@ Jasa & Ops,Transport & Kuli,Pick up / Engkel,Standar,Trip,150000,350000,Hidden c
     if (t.includes('atap')) return 'atap'
     if (t.includes('rangka')) return 'frame'
     if (t.includes('aksesoris')) return 'aksesoris'
+    if (t.includes('finishing')) return 'finishing'
+    if (t.includes('isian')) return 'isian'
     return 'lainnya'
   }
   const unitMap = (v: string) => {
@@ -338,7 +346,7 @@ const parseCsv = (text: string) => {
 
 export default async function AdminMaterialsPage({ searchParams }: { searchParams: Promise<{ category?: string; import?: string; error?: string; notice?: string }> }) {
   const { category: rawCategory, import: importStatus, error: errorParam, notice } = await searchParams
-  const allowedCategories = new Set(['atap', 'frame', 'aksesoris', 'lainnya'])
+  const allowedCategories = new Set(['atap', 'frame', 'aksesoris', 'finishing', 'isian', 'lainnya'])
   const activeCategory = rawCategory && allowedCategories.has(rawCategory) ? rawCategory as 'atap'|'frame'|'aksesoris'|'lainnya' : null
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

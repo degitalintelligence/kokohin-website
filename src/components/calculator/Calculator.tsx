@@ -62,6 +62,9 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
   const [modalStep, setModalStep] = useState<'form' | 'result'>('form')
   const [portalReady, setPortalReady] = useState(false)
   const [savingLead, setSavingLead] = useState(false)
+  const [attachments, setAttachments] = useState<{ url: string; type: 'mockup' | 'reference' }[]>([])
+  const [uploading, setUploading] = useState(false)
+
   useEffect(() => { setPortalReady(true) }, [])
   useEffect(() => {
     if (modalStep === 'result' && !result && pendingResult) {
@@ -100,9 +103,10 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     const calc = await handleCalculate()
     if (!calc) return
     setResult(calc)
+    setPendingResult(calc) // Pastikan pendingResult di-update sebelum handleLeadSubmit
     setModalStep('result')
     if (input.jenis !== 'custom') {
-      void handleLeadSubmit()
+      void handleLeadSubmit(calc) // Kirim hasil kalkulasi langsung
     }
   }
   
@@ -175,7 +179,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     }
   }
 
-  const handleLeadSubmit = async () => {
+  const handleLeadSubmit = async (forcedResult?: CalculatorResult & { isCustom?: boolean }) => {
     if (!leadInfo.name.trim() || !leadInfo.whatsapp.trim()) {
       setCalcError('Harap isi nama dan nomor WhatsApp')
       return
@@ -193,6 +197,9 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
       const calculatedQty = input.jenis === 'standard' && input.catalogId
         ? (unit === 'm2' ? (input.panjang * input.lebar) : unit === 'm1' ? input.panjang : Math.max(1, input.unitQty || 1))
         : 0
+      
+      const currentResult = forcedResult || pendingResult
+
       const dto = {
         customer_name: leadInfo.name,
         phone: leadInfo.whatsapp,
@@ -205,16 +212,20 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
         catalog_unit: input.jenis === 'standard' ? unit : null,
         base_price: input.jenis === 'standard' ? (catalogData?.base_price_per_m2 ?? null) : null,
         calculated_qty: input.jenis === 'standard' ? calculatedQty : null,
-        estimation: (input.jenis === 'standard' && pendingResult && !pendingResult.isCustom) ? {
-          total_hpp: pendingResult.totalHpp,
-          margin_percentage: pendingResult.marginPercentage,
-          total_selling_price: pendingResult.totalSellingPrice,
+        panjang: input.jenis === 'standard' ? input.panjang : null,
+        lebar: input.jenis === 'standard' ? input.lebar : null,
+        unit_qty: input.jenis === 'standard' ? (input.unitQty ?? null) : null,
+        attachments: attachments,
+        estimation: (input.jenis === 'standard' && currentResult && !currentResult.isCustom) ? {
+          total_hpp: currentResult.totalHpp,
+          margin_percentage: currentResult.marginPercentage,
+          total_selling_price: currentResult.totalSellingPrice,
           status: 'draft' as const
         } : null
       }
       const res = await createProjectWithEstimation(dto)
       setProjectId(res.project_id)
-      setResult(pendingResult)
+      setResult(currentResult)
       setCalcError(null)
     } catch (error) {
       const fallback = 'Gagal menyimpan data ke sistem. Silakan coba beberapa saat lagi atau hubungi kami via WhatsApp.'
@@ -273,6 +284,42 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     dispatchLead({ type: 'reset' })
     setProjectId(null)
     setCalcError(null)
+    setAttachments([])
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'mockup' | 'reference') => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Ukuran file maksimal 5MB')
+      return
+    }
+
+    try {
+      setUploading(true)
+      const supabase = createClient()
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`
+      const filePath = `leads/attachments/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('projects')
+        .upload(filePath, file)
+
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('projects')
+        .getPublicUrl(filePath)
+
+      setAttachments(prev => [...prev, { url: publicUrl, type }])
+    } catch (err) {
+      console.error('Upload error:', err)
+      alert('Gagal mengunggah file. Silakan coba lagi.')
+    } finally {
+      setUploading(false)
+    }
   }
 
   useEffect(() => {
@@ -604,6 +651,52 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                         rows={3}
                         placeholder="Deskripsi Ide"
                       />
+                      
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Upload Mockup (Opsional)</label>
+                          <div className="relative">
+                            <input 
+                              type="file" 
+                              accept="image/*"
+                              onChange={(e) => handleFileUpload(e, 'mockup')}
+                              className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                              disabled={uploading}
+                            />
+                            <div className="btn btn-outline text-xs py-2">
+                              {uploading ? 'Uploading...' : 'Pilih Gambar Mockup'}
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Upload Referensi (Opsional)</label>
+                          <div className="relative">
+                            <input 
+                              type="file" 
+                              accept="image/*"
+                              onChange={(e) => handleFileUpload(e, 'reference')}
+                              className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                              disabled={uploading}
+                            />
+                            <div className="btn btn-outline text-xs py-2">
+                              {uploading ? 'Uploading...' : 'Pilih Gambar Referensi'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {attachments.length > 0 && (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {attachments.map((att, i) => (
+                            <div key={i} className="relative group">
+                              <img src={att.url} alt="Attachment" className="w-12 h-12 rounded object-cover border" />
+                              <div className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] px-1 rounded uppercase font-bold">
+                                {att.type}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

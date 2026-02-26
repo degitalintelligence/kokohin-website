@@ -146,6 +146,14 @@ export default function ResultPanel({
               projectArea={result.unitUsed === 'm2' ? result.luas : (result.computedQty ?? result.luas)}
               projectType={'Pekerjaan Pembuatan Kanopi'}
               areaUnit={result.unitUsed === 'm2' ? 'm²' : result.unitUsed === 'm1' ? 'm¹' : 'pcs'}
+              items={result.breakdown?.map(item => ({
+                name: item.name,
+                unit: item.unit,
+                quantity: item.qtyCharged,
+                unit_price: item.pricePerUnit,
+                subtotal: item.subtotal,
+                type: 'catalog'
+              }))}
             />
           }
           fileName={`Penawaran_Kokohin_${leadName.replace(/\s+/g, '_')}.pdf`}

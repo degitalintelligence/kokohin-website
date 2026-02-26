@@ -33,10 +33,21 @@ async function uploadImage(file: File, supabase: SupabaseClient) {
   return publicUrl
 }
 
-async function updateHppPerUnit(catalogId: string) {
+export async function updateHppPerUnit(catalogId: string, userId?: string) {
   const supabase = await createClient()
 
-  // 1. Fetch components
+  // 1. Fetch components and catalog settings
+  const { data: catalog, error: catalogError } = await supabase
+    .from('catalogs')
+    .select('use_std_calculation, std_calculation, labor_cost, transport_cost, atap_id, rangka_id, finishing_id, isian_id')
+    .eq('id', catalogId)
+    .single()
+
+  if (catalogError || !catalog) {
+    console.error(`[HPP Update] Error fetching catalog ${catalogId}:`, catalogError)
+    return
+  }
+
   const { data: hppComponents, error: fetchError } = await supabase
     .from('catalog_hpp_components')
     .select('quantity, material_id')
@@ -47,13 +58,17 @@ async function updateHppPerUnit(catalogId: string) {
     return
   }
 
-  if (!hppComponents || hppComponents.length === 0) {
-    await supabase.from('catalogs').update({ hpp_per_unit: 0 }).eq('id', catalogId)
-    return
-  }
+  // 2. Get unique material IDs from both HPP components AND main fields
+  const hppMaterialIds = (hppComponents ?? []).map(c => c.material_id).filter(Boolean)
+  const mainMaterialIds = [
+    catalog.atap_id, 
+    catalog.rangka_id, 
+    catalog.finishing_id, 
+    catalog.isian_id
+  ].filter(Boolean) as string[]
 
-  // 2. Get unique material IDs
-  const materialIds = [...new Set(hppComponents.map(c => c.material_id).filter(Boolean))]
+  const materialIds = [...new Set([...hppMaterialIds, ...mainMaterialIds])]
+  
   if (materialIds.length === 0) {
     await supabase.from('catalogs').update({ hpp_per_unit: 0 }).eq('id', catalogId)
     return
@@ -73,22 +88,56 @@ async function updateHppPerUnit(catalogId: string) {
   // 4. Create price map
   const priceMap = new Map((materials ?? []).map(m => [m.id, m.base_price_per_unit]))
 
-  // 5. Calculate total HPP
-  const totalHpp = hppComponents.reduce((sum, component) => {
+  // 5. Calculate total HPP (Total Cost)
+  // Calculate from HPP components table
+  const hppComponentsCost = (hppComponents ?? []).reduce((sum, component) => {
     const quantity = Number(component.quantity || 0)
     const price = Number(priceMap.get(component.material_id) || 0)
     return sum + (quantity * price)
   }, 0)
 
-  // 6. Update catalog
+  // Calculate from main fields (1 unit each if not already in HPP table)
+  // To avoid double counting, only add if NOT in hppComponents
+  const hppMaterialSet = new Set(hppMaterialIds)
+  const mainFieldsCost = mainMaterialIds.reduce((sum, mId) => {
+    if (hppMaterialSet.has(mId)) return sum
+    const price = Number(priceMap.get(mId) || 0)
+    return sum + (1 * price) // Default 1 unit for main material
+  }, 0)
+
+  const totalMaterialCost = hppComponentsCost + mainFieldsCost
+
+  const laborCost = Number((catalog as any).labor_cost || 0)
+  const transportCost = Number((catalog as any).transport_cost || 0)
+  const totalCost = totalMaterialCost + laborCost + transportCost
+
+  // 6. Calculate HPP per unit/m2 based on use_std_calculation flag
+  let finalHppPerUnit = totalCost
+  if (catalog.use_std_calculation && catalog.std_calculation && catalog.std_calculation > 0) {
+    finalHppPerUnit = totalCost / catalog.std_calculation
+  }
+
+  // 7. Update catalog
   const { error: updateError } = await supabase
     .from('catalogs')
-    .update({ hpp_per_unit: Math.round(totalHpp) })
+    .update({ hpp_per_unit: Math.round(finalHppPerUnit) })
     .eq('id', catalogId)
 
   if (updateError) {
     console.error(`[HPP Update] Error updating HPP for catalog ${catalogId}:`, updateError)
   }
+
+  // 8. Log the HPP update if audit is needed (log even if not using std_calculation for full history)
+  await supabase.from('catalog_hpp_log').insert({
+    catalog_id: catalogId,
+    atap_id: catalog.atap_id || null,
+    rangka_id: catalog.rangka_id || null,
+    finishing_id: catalog.finishing_id || null,
+    isian_id: catalog.isian_id || null,
+    hpp_per_m2: Math.round(finalHppPerUnit),
+    total_cost: Math.round(totalCost),
+    calc_by: userId || null
+  })
 }
 
 export async function createCatalog(formData: FormData) {
@@ -114,6 +163,8 @@ export async function createCatalog(formData: FormData) {
   const basePriceUnit = ((formData.get('base_price_unit') as string) || 'm2') as 'm2' | 'm1' | 'unit'
   const atapId = (formData.get('atap_id') as string) || ''
   const rangkaId = (formData.get('rangka_id') as string) || ''
+  const finishingId = (formData.get('finishing_id') as string) || ''
+  const isianId = (formData.get('isian_id') as string) || ''
   const addonsJson = (formData.get('addons_json') as string) || '[]'
   const imageFile = formData.get('image_file') as File
   const isActive = formData.get('is_active') === 'on'
@@ -132,9 +183,19 @@ export async function createCatalog(formData: FormData) {
   const laborCost = parseFloat(laborCostStr) || 0
   const transportCost = parseFloat(transportCostStr) || 0
   const marginPercentage = Math.max(0, Math.min(100, parseFloat(marginPercentageStr) || 0))
-  if (category === 'kanopi' && !atapId) {
-    return redirect('/admin/catalogs/new?error=Kategori%20Kanopi%20wajib%20memilih%20Material%20Atap')
+  
+  // Mandatory Components Validation
+  if (category === 'kanopi') {
+    if (!atapId) return redirect('/admin/catalogs/new?error=Kategori%20Kanopi%20wajib%20memilih%20Material%20Atap')
+    if (!rangkaId) return redirect('/admin/catalogs/new?error=Kategori%20Kanopi%20wajib%20memilih%20Material%20Rangka')
+    if (!finishingId) return redirect('/admin/catalogs/new?error=Kategori%20Kanopi%20wajib%20memilih%20Jenis%20Finishing')
   }
+  if (category === 'pagar' || category === 'railing') {
+    if (!rangkaId) return redirect('/admin/catalogs/new?error=Kategori%20Pagar/Railing%20wajib%20memilih%20Material%20Rangka')
+    if (!isianId) return redirect('/admin/catalogs/new?error=Kategori%20Pagar/Railing%20wajib%20memilih%20Material%20Isian')
+    if (!finishingId) return redirect('/admin/catalogs/new?error=Kategori%20Pagar/Railing%20wajib%20memilih%20Jenis%20Finishing')
+  }
+
   const allowedUnits = new Set(['m2', 'm1', 'unit'])
   const safeUnit = allowedUnits.has(basePriceUnit) ? basePriceUnit : 'm2'
 
@@ -157,6 +218,8 @@ export async function createCatalog(formData: FormData) {
     margin_percentage: marginPercentage,
     atap_id: atapId || null,
     rangka_id: rangkaId || null,
+    finishing_id: finishingId || null,
+    isian_id: isianId || null,
     image_url: imageUrl || null,
     is_active: isActive,
   }
@@ -190,7 +253,7 @@ export async function createCatalog(formData: FormData) {
     }
   }
 
-  try { await updateHppPerUnit(catalogId) } catch {}
+  try { await updateHppPerUnit(catalogId, user.id) } catch {}
 
   revalidatePath('/admin/catalogs')
   revalidatePath('/admin/catalogs/new')
@@ -228,12 +291,16 @@ export async function updateCatalog(formData: FormData) {
     const basePriceUnit = ((formData.get('base_price_unit') as string) || 'm2') as 'm2' | 'm1' | 'unit'
     const atapId = (formData.get('atap_id') as string) || ''
     const rangkaId = (formData.get('rangka_id') as string) || ''
+    const finishingId = (formData.get('finishing_id') as string) || ''
+    const isianId = (formData.get('isian_id') as string) || ''
     const addonsJson = (formData.get('addons_json') as string) || '[]'
     const hppComponentsJson = (formData.get('hpp_components_json') as string) || '[]'
     const imageFile = formData.get('image_file') as File
     const currentImageUrl = (formData.get('current_image_url') as string) || ''
     const isActive = formData.get('is_active') === 'on'
     const marginPercentageStr = (formData.get('margin_percentage') as string) || '0'
+    const useStdCalculation = formData.get('use_std_calculation') === 'on'
+    const stdCalculationStr = (formData.get('std_calculation') as string) || '1'
 
     if (!title || !basePriceStr) {
       throw new Error('Nama paket dan harga dasar wajib diisi')
@@ -244,14 +311,28 @@ export async function updateCatalog(formData: FormData) {
       throw new Error('Harga harus berupa angka')
     }
     const marginPercentage = Math.max(0, Math.min(100, parseFloat(marginPercentageStr) || 0))
-    if (category === 'kanopi' && !atapId) {
-      throw new Error('Kategori Kanopi wajib memilih Material Atap')
+    const stdCalculation = Math.max(0.01, parseFloat(stdCalculationStr) || 1)
+    const laborCostStr = formData.get('labor_cost') as string
+    const transportCostStr = formData.get('transport_cost') as string
+    const laborCost = laborCostStr ? parseFloat(laborCostStr) : 0
+    const transportCost = transportCostStr ? parseFloat(transportCostStr) : 0
+
+    if (category === 'kanopi') {
+      if (!atapId) throw new Error('Kategori Kanopi wajib memilih Material Atap')
+      if (!rangkaId) throw new Error('Kategori Kanopi wajib memilih Material Rangka')
+      if (!finishingId) throw new Error('Kategori Kanopi wajib memilih Jenis Finishing')
     }
+    if (category === 'pagar' || category === 'railing') {
+      if (!rangkaId) throw new Error('Kategori Pagar/Railing wajib memilih Material Rangka')
+      if (!isianId) throw new Error('Kategori Pagar/Railing wajib memilih Material Isian')
+      if (!finishingId) throw new Error('Kategori Pagar/Railing wajib memilih Jenis Finishing')
+    }
+
     const allowedUnits = new Set(['m2', 'm1', 'unit'])
     const safeUnit = allowedUnits.has(basePriceUnit) ? basePriceUnit : 'm2'
 
     const addons: Array<{ id?: string; material_id: string; basis?: 'm2'|'m1'|'unit'; qty_per_basis?: number; is_optional: boolean }> = JSON.parse(addonsJson) ?? []
-    const hppComponents: Array<{ id?: string; material_id: string; quantity: number }> = JSON.parse(hppComponentsJson) ?? []
+    const hppComponents: Array<{ id?: string; material_id: string; quantity: number; section?: string }> = JSON.parse(hppComponentsJson) ?? []
 
     let imageUrl = currentImageUrl
     const newImageUrl = await uploadImage(imageFile, supabase)
@@ -265,8 +346,14 @@ export async function updateCatalog(formData: FormData) {
       base_price_per_m2: basePrice,
       base_price_unit: safeUnit,
       margin_percentage: marginPercentage,
+      std_calculation: stdCalculation,
+      use_std_calculation: useStdCalculation,
+      labor_cost: laborCost,
+      transport_cost: transportCost,
       atap_id: atapId || null,
       rangka_id: rangkaId || null,
+      finishing_id: finishingId || null,
+      isian_id: isianId || null,
       image_url: imageUrl || null,
       is_active: isActive,
     }
@@ -288,13 +375,13 @@ export async function updateCatalog(formData: FormData) {
     }
 
     for (const c of hppComponents.filter((c) => c.id)) {
-      const { error: uErr } = await supabase.from('catalog_hpp_components').update({ material_id: c.material_id, quantity: typeof c.quantity === 'number' ? c.quantity : 0 }).eq('id', c.id as string)
+      const { error: uErr } = await supabase.from('catalog_hpp_components').update({ material_id: c.material_id, quantity: typeof c.quantity === 'number' ? c.quantity : 0, section: c.section || 'lainnya' }).eq('id', c.id as string)
       if (uErr) throw new Error(`Gagal mengupdate komponen HPP: ${uErr.message}`)
     }
 
     const hppToInsert = hppComponents.filter((c) => !c.id && c.material_id)
     if (hppToInsert.length > 0) {
-      const rows = hppToInsert.map((c) => ({ catalog_id: id, material_id: c.material_id, quantity: Number(c.quantity) > 0 ? Number(c.quantity) : 1 }))
+      const rows = hppToInsert.map((c) => ({ catalog_id: id, material_id: c.material_id, quantity: Number(c.quantity) > 0 ? Number(c.quantity) : 1, section: c.section || 'lainnya' }))
       const { error: insErr } = await supabase.from('catalog_hpp_components').insert(rows)
       if (insErr) throw new Error(`Gagal menambah komponen HPP: ${insErr.message}`)
     }
@@ -322,7 +409,7 @@ export async function updateCatalog(formData: FormData) {
       if (insErr) throw new Error(`Gagal menambah addon: ${insErr.message}`)
     }
 
-    await updateHppPerUnit(id)
+    await updateHppPerUnit(id, user.id)
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred'
@@ -640,7 +727,7 @@ export async function importCatalogAddons(formData: FormData) {
     }
   }
 
-  try { await updateHppPerUnit(catalogId) } catch {}
+  try { await updateHppPerUnit(catalogId, user.id) } catch {}
 
   revalidatePath('/admin/catalogs')
   revalidatePath(`/admin/catalogs/${catalogId}`)
@@ -662,4 +749,21 @@ export async function importCatalogAddons(formData: FormData) {
     } catch {}
   }
   redirect(`/admin/catalogs/${catalogId}?import=${encodeURIComponent(msg)}&import_detail=${encodeURIComponent(detailStr)}${detailUrl ? `&import_detail_url=${encodeURIComponent(detailUrl)}` : ''}`)
+}
+
+export async function searchCatalogs(query: string) {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('catalogs')
+    .select('id, title, base_price_per_m2, base_price_unit, image_url')
+    .ilike('title', `%${query}%`)
+    .eq('is_active', true)
+    .limit(10)
+
+  if (error) {
+    console.error('Error searching catalogs:', error)
+    return []
+  }
+
+  return data || []
 }

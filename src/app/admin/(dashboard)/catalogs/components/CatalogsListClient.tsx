@@ -12,6 +12,8 @@ type CatalogItem = {
   category?: 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya' | null
   atapName: string
   rangkaName: string
+  finishingName?: string
+  isianName?: string
   base_price_per_m2: number
   base_price_unit: Unit
   hpp_per_unit: number | null
@@ -20,6 +22,8 @@ type CatalogItem = {
   created_at: string | null
   atap_id: string | null
   rangka_id: string | null
+  finishing_id?: string | null
+  isian_id?: string | null
 }
 
 type Props = {
@@ -119,7 +123,9 @@ export default function CatalogsListClient({ catalogs }: Props) {
         return (
           c.title.toLowerCase().includes(q) ||
           c.atapName.toLowerCase().includes(q) ||
-          c.rangkaName.toLowerCase().includes(q)
+          c.rangkaName.toLowerCase().includes(q) ||
+          (c.finishingName || '').toLowerCase().includes(q) ||
+          (c.isianName || '').toLowerCase().includes(q)
         )
       })
     }
@@ -534,8 +540,10 @@ export default function CatalogsListClient({ catalogs }: Props) {
                         <div>
                           <div className="text-xs text-gray-500">Ringkasan</div>
                           <div className="mt-1"><span className="text-gray-500">Kategori: </span><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${categoryClass}`}>{catalog.category ?? '-'}</span></div>
-                          <div className="mt-1"><span className="text-gray-500">Atap: </span><span className="font-medium text-gray-900">{catalog.atapName || '-'}</span></div>
-                          <div className="mt-1"><span className="text-gray-500">Rangka: </span><span className="font-medium text-gray-900">{catalog.rangkaName || '-'}</span></div>
+                          {catalog.atapName && <div className="mt-1"><span className="text-gray-500">Atap: </span><span className="font-medium text-gray-900">{catalog.atapName}</span></div>}
+                          {catalog.rangkaName && <div className="mt-1"><span className="text-gray-500">Rangka: </span><span className="font-medium text-gray-900">{catalog.rangkaName}</span></div>}
+                          {catalog.isianName && <div className="mt-1"><span className="text-gray-500">Isian: </span><span className="font-medium text-gray-900">{catalog.isianName}</span></div>}
+                          {catalog.finishingName && <div className="mt-1"><span className="text-gray-500">Finishing: </span><span className="font-medium text-gray-900">{catalog.finishingName}</span></div>}
                         </div>
                         <div>
                           <div className="text-xs text-gray-500">Harga & HPP</div>

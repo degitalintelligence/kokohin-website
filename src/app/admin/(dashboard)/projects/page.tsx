@@ -54,6 +54,7 @@ export default async function AdminProjectsPage() {
       zone:zone_id(name, markup_percentage, flat_fee),
       estimations:estimations(total_selling_price, margin_percentage, created_at, version_number, status)
     `)
+    .eq('status', 'Deal')
     .order('created_at', { ascending: false })
     .order('version_number', { ascending: false, foreignTable: 'estimations' })
     .limit(100)
@@ -81,7 +82,11 @@ export default async function AdminProjectsPage() {
   // Calculate stats
   const totalValue = projects.reduce((sum, p) => sum + (p.estimation?.total_selling_price || 0), 0)
   const dealCount = projects.filter(p => p.status === 'Deal').length
-  const manualQuoteCount = projects.filter(p => p.status === 'Need Manual Quote').length
+  const { count: manualQuoteCountRaw } = await supabase
+    .from('leads')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'Need Manual Quote')
+  const manualQuoteCount = manualQuoteCountRaw ?? 0
   const csvContent = buildProjectsCsv(projects)
   const csvHref = `data:text/csv;charset=utf-8,${encodeURIComponent(csvContent)}`
 
@@ -90,7 +95,7 @@ export default async function AdminProjectsPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
             <h1 className="text-2xl font-extrabold text-[#1D1D1B] tracking-tight leading-tight m-0">Manajemen Proyek Mini‑ERP</h1>
-            <p className="text-sm text-gray-400 mt-1">Proyek kanopi dari kalkulator customer dengan status lengkap</p>
+            <p className="text-sm text-gray-400 mt-1">Daftar proyek yang sudah status Deal</p>
           </div>
           <Link href="/admin/projects/new" className="btn btn-primary">
             + Tambah Proyek Manual
@@ -144,14 +149,8 @@ export default async function AdminProjectsPage() {
             </h2>
             <div className="flex gap-2">
               <a href={csvHref} download="projects.csv" className="btn btn-outline-dark btn-sm">Export CSV</a>
-              <select className="btn btn-outline-dark btn-sm">
-                <option>Filter Status</option>
-                <option value="New">Baru</option>
-                <option value="Surveyed">Surveyed</option>
-                <option value="Quoted">Ditawarkan</option>
-                <option value="Deal">Deal</option>
-                <option value="Lost">Lost</option>
-                <option value="Need Manual Quote">Manual Quote</option>
+              <select className="btn btn-outline-dark btn-sm" disabled>
+                <option>Hanya Deal</option>
               </select>
             </div>
           </div>
@@ -193,7 +192,7 @@ export default async function AdminProjectsPage() {
               <div>
                 <h3 className="font-bold text-primary-dark mb-2">1. Kalkulator Customer</h3>
                 <p className="text-gray-600 text-sm">
-                  Customer memasukkan data di kalkulator → sistem membuat proyek dengan status <strong>&quot;New&quot;</strong>.
+                  Customer memasukkan data di kalkulator → sistem membuat <strong>lead</strong> dengan status <strong>&quot;New&quot;</strong>.
                   Jika custom request, status langsung <strong>&quot;Need Manual Quote&quot;</strong>.
                 </p>
               </div>
@@ -223,7 +222,7 @@ export default async function AdminProjectsPage() {
                   <h4 className="font-bold text-primary-dark">Escape Hatch (Custom Request)</h4>
                   <p className="text-gray-600 text-sm mt-1">
                     Jika customer memilih <strong>&quot;Custom&quot;</strong> di kalkulator, sistem otomatis bypass auto‑calculation 
-                    dan menandai proyek dengan status <strong>&quot;Need Manual Quote&quot;</strong>. Tim sales harus menghitung manual.
+                    dan menandai lead dengan status <strong>&quot;Need Manual Quote&quot;</strong>. Tim sales harus menghitung manual.
                   </p>
                 </div>
               </div>

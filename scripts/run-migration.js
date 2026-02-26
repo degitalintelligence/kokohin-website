@@ -40,6 +40,7 @@ if (!supabaseUrl || !serviceRoleKey) {
 
 
 async function executeSql(sql) {
+    console.log(`Executing statement: ${sql.substring(0, 50)}...`);
     // Use Supabase REST API /pg/query endpoint
     const url = `${supabaseUrl}/pg/query`;
     const response = await fetch(url, {
@@ -66,7 +67,7 @@ async function executeSql(sql) {
 async function runMigration() {
     try {
         // Read SQL file
-        const sqlPath = path.join(__dirname, '..', 'supabase', 'migrations', '004_fix_rls_recursion.sql');
+        const sqlPath = path.join(__dirname, '..', 'supabase', 'migrations', '20260227_add_is_default_to_payment_terms.sql');
         const sql = fs.readFileSync(sqlPath, 'utf8');
         
         // Split SQL into individual statements (simple split by semicolon)

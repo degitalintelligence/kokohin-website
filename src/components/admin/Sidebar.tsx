@@ -69,6 +69,10 @@ export default function Sidebar() {
                 <div className="px-6 pt-5 pb-1.5 text-[0.68rem] font-bold text-white/25 uppercase tracking-widest">
                     Mini‑ERP
                 </div>
+                <Link href="/admin/erp" className={navItemClass('/admin/erp')}>
+                    <LayoutDashboard size={18} />
+                    Pipeline Proyek
+                </Link>
                 {role === 'super_admin' && (
                     <>
                         <Link href="/admin/materials" className={navItemClass('/admin/materials')}>

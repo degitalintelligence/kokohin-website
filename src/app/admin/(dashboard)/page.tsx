@@ -16,7 +16,7 @@ export default async function AdminDashboardPage() {
         { count: manualQuoteLeads },
     ] = await Promise.all([
         supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'new'),
-        supabase.from('projects').select('*', { count: 'exact', head: true }),
+        supabase.from('erp_projects').select('*', { count: 'exact', head: true }).eq('status', 'Deal'),
         supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'Need Manual Quote'),
     ])
 

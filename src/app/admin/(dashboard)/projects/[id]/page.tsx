@@ -33,6 +33,7 @@ export default async function AdminProjectDetailPage({
       estimations:estimations(*)
     `)
     .eq('id', id)
+    .eq('status', 'Deal')
     .single()
 
   if (error || !project) {

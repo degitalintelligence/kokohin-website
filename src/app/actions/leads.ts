@@ -133,3 +133,121 @@ export async function submitLead(
         return { success: false, error: 'Terjadi kesalahan. Silakan coba lagi atau hubungi via WhatsApp.' }
     }
 }
+
+export async function saveLeadEstimation(
+    leadId: string,
+    data: {
+        catalog_id: string | null
+        total_hpp: number
+        margin_percentage: number
+        total_selling_price: number
+        zone_id: string | null
+        panjang?: number
+        lebar?: number
+        unit_qty?: number
+        status?: string
+        items?: any[]
+    }
+) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Unauthorized')
+
+    // Get current lead to check if we should increment version
+    const { data: lead } = await supabase
+        .from('leads')
+        .select('estimation_version, status, original_selling_price')
+        .eq('id', leadId)
+        .single()
+
+    const currentVersion = lead?.estimation_version || 1
+    const newVersion = (lead?.status === 'Quoted' || lead?.status === 'quoted') 
+        ? currentVersion + 1 
+        : currentVersion
+
+    // Create a snapshot in estimations table for history
+    const { data: newEstimation, error: estError } = await supabase
+        .from('estimations')
+        .insert({
+            lead_id: leadId,
+            version_number: newVersion,
+            total_hpp: data.total_hpp,
+            margin_percentage: data.margin_percentage,
+            total_selling_price: data.total_selling_price,
+            status: 'draft'
+        })
+        .select('id')
+        .single()
+
+    if (estError) {
+        console.error('Failed to create estimation snapshot:', estError)
+    }
+
+    // 0. Save estimation items if present
+    if (newEstimation && data.items && data.items.length > 0) {
+        const itemsToInsert = data.items.map(item => ({
+            estimation_id: newEstimation.id,
+            name: item.name,
+            unit: item.unit,
+            quantity: item.qtyCharged || item.quantity || 0,
+            unit_price: item.hpp || item.unit_price || 0,
+            subtotal: item.subtotal || 0,
+            type: item.type
+        }))
+        const { error: itemError } = await supabase.from('erp_estimation_items').insert(itemsToInsert)
+        if (itemError) console.error('Failed to save estimation items:', itemError)
+    }
+
+    // Check if original_selling_price is already set. If not, this is the first save or it was empty.
+    // If it's already set (and > 0), we DO NOT overwrite it, preserving the historical value.
+    const originalSellingPrice = lead?.original_selling_price && lead.original_selling_price > 0 
+        ? lead.original_selling_price 
+        : data.total_selling_price
+
+    const { error } = await supabase
+        .from('leads')
+        .update({
+            catalog_id: data.catalog_id,
+            total_hpp: data.total_hpp,
+            margin_percentage: data.margin_percentage,
+            total_selling_price: data.total_selling_price,
+            original_selling_price: originalSellingPrice, // Ensure this is set/preserved
+            zone_id: data.zone_id,
+            panjang: data.panjang,
+            lebar: data.lebar,
+            unit_qty: data.unit_qty,
+            status: data.status || 'Quoted',
+            estimation_version: newVersion,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', leadId)
+
+    if (error) throw error
+
+    // 1. Create entry in Audit Trail
+    try {
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', user.id)
+            .single()
+            
+        await supabase.from('erp_audit_trail').insert({
+            user_id: user.id,
+            entity_type: 'estimation',
+            entity_id: leadId,
+            action_type: lead?.status === 'Quoted' ? 'revision' : 'create',
+            new_value: {
+                version: newVersion,
+                total_selling_price: data.total_selling_price,
+                status: 'Quoted'
+            }
+        })
+    } catch (auditError) {
+        console.warn('Failed to log audit trail:', auditError)
+    }
+
+    revalidatePath('/admin/leads')
+    return { success: true }
+}
+

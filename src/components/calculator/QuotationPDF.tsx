@@ -3,6 +3,7 @@ import { Document, Page, Text, View, StyleSheet, Image as PdfImage, Font } from 
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import type { CalculatorResult } from '@/lib/types';
+import { resolveItemSpecs } from '@/lib/pdf-spec-utils';
 
 let fontsRegistered = false
 function ensureFontsRegistered() {
@@ -110,17 +111,65 @@ const styles = StyleSheet.create({
     fontSize: 10,
     alignItems: 'center',
   },
+  // table: {
+  //   width: '100%',
+  //   marginBottom: 30,
+  // },
+  // tableHeader: {
+  //   flexDirection: 'row',
+  //   backgroundColor: '#1D1D1B',
+  //   color: '#FFFFFF',
+  //   padding: 8,
+  //   fontSize: 9,
+  //   fontWeight: 700,
+  //   borderRadius: 4,
+  // },
+  // tableRow: {
+  //   flexDirection: 'row',
+  //   borderBottomWidth: 1,
+  //   borderBottomColor: '#EEEEEE',
+  //   paddingVertical: 10,
+  //   paddingHorizontal: 8,
+  //   fontSize: 8,
+  //   alignItems: 'flex-start',
+  // },
   col1: { width: '5%', textAlign: 'center' },
   col2: { width: '45%' },
-  col3: { width: '15%', textAlign: 'center' },
-  col4: { width: '35%', textAlign: 'right' },
+  col3: { width: '12%', textAlign: 'center' },
+  col4: { width: '18%', textAlign: 'right' },
+  col5: { width: '20%', textAlign: 'right' },
+  itemSpecLabel: {
+    fontSize: 7,
+    color: '#666666',
+    marginTop: 2,
+  },
+  itemSpecValue: {
+    fontWeight: 700,
+    color: '#333333',
+  },
+  itemImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 4,
+    marginRight: 10,
+    objectFit: 'cover',
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+  },
+  itemMainInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  itemDetails: {
+    flex: 1,
+  },
   totalsContainer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     marginBottom: 40,
   },
   totalsBox: {
-    width: '50%',
+    width: '45%',
   },
   totalRow: {
     flexDirection: 'row',
@@ -139,6 +188,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 700,
     color: '#E30613',
+  },
+  paymentTermsSection: {
+    width: '50%',
+    paddingRight: 20,
+  },
+  paymentTermItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+    fontSize: 9,
+    color: '#666666',
+  },
+  attachmentsSection: {
+    marginTop: 30,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#EEEEEE',
+  },
+  attachmentGrid: {
+    flexDirection: 'row', 
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 10,
+  },
+  attachmentBox: {
+    width: 150, 
+    height: 150,
+    borderRadius: 8, 
+    overflow: 'hidden', 
+    borderWidth: 1, 
+    borderColor: '#EEEEEE',
+    backgroundColor: '#F9F9F9',
+  },
+  attachmentImage: {
+    width: '100%', 
+    height: '100%', 
+    objectFit: 'cover',
   },
   footer: {
     position: 'absolute',
@@ -163,6 +249,7 @@ interface QuotationPDFProps {
   leadInfo: {
     name: string;
     whatsapp: string;
+    address?: string;
   };
   projectId: string | null;
   zoneName?: string | null;
@@ -171,6 +258,20 @@ interface QuotationPDFProps {
   projectArea: number;
   projectType?: string;
   areaUnit?: string;
+  attachments?: any[];
+  notes?: string;
+  items?: any[]; // The full ERP items with specifications
+  paymentTerms?: {
+    name: string;
+    terms_json: {
+      t1_percent: number;
+      t2_percent: number;
+      t3_percent: number;
+      t1_desc?: string;
+      t2_desc?: string;
+      t3_desc?: string;
+    };
+  } | null;
 }
 
 // 3. MAIN COMPONENT
@@ -184,20 +285,23 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
   projectArea,
   projectType = 'Pekerjaan Pembuatan Kanopi',
   areaUnit = 'm²',
+  attachments = [],
+  notes,
+  items = [],
+  paymentTerms,
 }) => {
   ensureFontsRegistered()
-  const estimationNumber = projectId ? `WEB-${projectId.slice(0, 8).toUpperCase()}` : 'WEB-PREVIEW';
+  const estimationNumber = projectId ? (projectId.startsWith('WEB-') ? projectId : `QTN-${projectId.slice(0, 8).toUpperCase()}`) : 'WEB-PREVIEW';
   const customerName = leadInfo.name || 'Customer';
   const customerPhone = leadInfo.whatsapp || '-';
+  const customerAddress = leadInfo.address || '-';
   const zoneLabel = zoneName || 'Belum dipilih';
-  const areaLabel = `${projectArea} ${areaUnit}`;
 
   const totalPrice = result.estimatedPrice;
   const companyName = 'KOKOHIN';
   const companyAddress = 'Tangerang, Indonesia';
-  const companyPhone = '-';
-  const companyEmail = '-';
-  const companyHours = '';
+  const companyPhone = '0812-1234-5678';
+  const companyEmail = 'hello@kokohin.com';
   const companyLogo =
     logoUrl ||
     process.env.NEXT_PUBLIC_COMPANY_LOGO_URL ||
@@ -209,80 +313,170 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
     <Document>
       <Page size="A4" style={styles.page}>
         
-        {/* HEADER: LOGO & INFO KANTOR vs INFO DOKUMEN */}
+        {/* HEADER: KOP SURAT */}
         <View style={styles.header}>
           <View style={styles.logoInfo}>
             <PdfImage src={companyLogo} style={styles.logo} />
             <Text style={styles.companyName}>{companyName}</Text>
             <Text style={styles.companyDetails}>{companyAddress}</Text>
-            <Text style={styles.companyDetails}>Telp: {companyPhone}</Text>
-            <Text style={styles.companyDetails}>Email: {companyEmail}</Text>
-            {companyHours && (
-              <Text style={styles.companyDetails}>Jam Operasional: {companyHours}</Text>
-            )}
+            <Text style={styles.companyDetails}>WhatsApp: {companyPhone} | Email: {companyEmail}</Text>
           </View>
           <View style={styles.docInfo}>
-            <Text style={styles.docTitle}>QUOTATION</Text>
-            <Text style={styles.docMeta}>No. Estimasi: {estimationNumber}</Text>
+            <Text style={styles.docTitle}>PENAWARAN</Text>
+            <Text style={styles.docMeta}>Nomor: {estimationNumber}</Text>
             <Text style={styles.docMeta}>Tanggal: {currentDate}</Text>
           </View>
         </View>
 
-        {/* CUSTOMER INFO BLOCK */}
-        <View style={styles.customerSection}>
-          <View style={styles.customerBox}>
-            <Text style={styles.sectionTitle}>Estimasi Untuk:</Text>
-            <Text style={[styles.customerText, { fontWeight: 700 }]}>{customerName}</Text>
-            <Text style={styles.customerText}>Telp / WA: {customerPhone}</Text>
+        {/* PERIHAL & SALUTATION */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontSize: 10, fontWeight: 700, marginBottom: 15 }}>
+            Perihal: Penawaran Investasi Pekerjaan Eksterior & Konstruksi
+          </Text>
+          <View style={{ marginBottom: 15 }}>
+            <Text style={{ fontSize: 10 }}>Kepada Yth,</Text>
+            <Text style={{ fontSize: 10, fontWeight: 700 }}>{customerName}</Text>
+            <Text style={{ fontSize: 10 }}>di {customerAddress}</Text>
           </View>
-          <View style={styles.customerBox}>
-            <Text style={styles.sectionTitle}>Detail Proyek:</Text>
-            <Text style={[styles.customerText, { fontWeight: 700 }]}>{projectType}</Text>
-            <Text style={styles.customerText}>Luas Area: {areaLabel}</Text>
-            <Text style={styles.customerText}>Zona Lokasi: {zoneLabel}</Text>
+          <Text style={{ fontSize: 10, marginBottom: 10 }}>Dengan hormat,</Text>
+          <Text style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'justify' }}>
+            Menindaklanjuti rencana pengerjaan fasilitas eksterior dan konstruksi di kediaman/lokasi Bapak/Ibu, kami dari {companyName} telah menyusun rincian penawaran secara komprehensif.
+          </Text>
+          <Text style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'justify', marginTop: 8 }}>
+            Kami merancang penawaran ini dengan mengedepankan keamanan struktur, durabilitas material, dan estetika jangka panjang. Berikut adalah rincian spesifikasi dan nilai investasi untuk setiap item pekerjaan yang Bapak/Ibu butuhkan:
+          </Text>
+        </View>
+
+        {/* A. RINCIAN SPESIFIKASI & INVESTASI (TABLE FORMAT) */}
+        <View style={{ marginTop: 10 }}>
+          <Text style={[styles.sectionTitle, { fontSize: 11, borderBottomWidth: 1, borderBottomColor: '#EEEEEE', paddingBottom: 4, marginBottom: 15 }]}>
+            A. RINCIAN SPESIFIKASI & INVESTASI
+          </Text>
+
+          <View style={styles.table}>
+            {/* Table Header */}
+            <View style={styles.tableHeader}>
+              <Text style={styles.col1}>No</Text>
+              <Text style={styles.col2}>Deskripsi Item & Spesifikasi</Text>
+              <Text style={styles.col3}>Volume</Text>
+              <Text style={styles.col4}>Harga Satuan</Text>
+              <Text style={styles.col5}>Subtotal</Text>
+            </View>
+
+            {/* Table Rows */}
+            {items.map((item, idx) => {
+              // Improved Extraction Logic with Data Validation
+            const { rangkaUtama, rangkaDalam, atap, finishing } = resolveItemSpecs(item);
+
+            const unitLabel = item.unit || 'm²';
+
+              const itemImage = item.catalog_id && result.breakdown.find(b => b.name === item.name)?.image_url;
+
+              return (
+                <View key={idx} style={styles.tableRow} wrap={false}>
+                  <Text style={styles.col1}>{idx + 1}</Text>
+                  
+                  <View style={styles.col2}>
+                    <View style={styles.itemMainInfo}>
+                      {itemImage && (
+                        <PdfImage src={itemImage} style={styles.itemImage} />
+                      )}
+                      <View style={styles.itemDetails}>
+                        <Text style={{ fontWeight: 700, fontSize: 9, marginBottom: 4 }}>{item.name}</Text>
+                        {rangkaUtama && rangkaUtama !== '-' && (
+                          <Text style={styles.itemSpecLabel}>Rangka Utama: <Text style={styles.itemSpecValue}>{rangkaUtama}</Text></Text>
+                        )}
+                        {rangkaDalam && rangkaDalam !== '-' && (
+                          <Text style={styles.itemSpecLabel}>Isian / Jari-jari: <Text style={styles.itemSpecValue}>{rangkaDalam}</Text></Text>
+                        )}
+                        {atap && atap !== '-' && (
+                          <Text style={styles.itemSpecLabel}>Atap / Cover: <Text style={styles.itemSpecValue}>{atap}</Text></Text>
+                        )}
+                        {finishing && finishing !== '-' && (
+                          <Text style={styles.itemSpecLabel}>Finishing: <Text style={styles.itemSpecValue}>{finishing}</Text></Text>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+
+                  <Text style={styles.col3}>{item.quantity} {unitLabel}</Text>
+                  <Text style={styles.col4}>Rp {item.unit_price.toLocaleString('id-ID')}</Text>
+                  <Text style={styles.col5}>Rp {item.subtotal.toLocaleString('id-ID')}</Text>
+                </View>
+              );
+            })}
           </View>
         </View>
 
-        {/* ITEMS TABLE */}
-        <View style={styles.table}>
-          {/* Table Header */}
-          <View style={styles.tableHeader}>
-            <Text style={styles.col1}>No</Text>
-            <Text style={styles.col2}>Deskripsi Material / Pekerjaan</Text>
-            <Text style={styles.col3}>Qty</Text>
-            <Text style={styles.col4}>Subtotal</Text>
-          </View>
+        {/* B. PEKERJAAN TAMBAHAN (If any) */}
+        {/* Assuming addons are handled as items for now, or we can add a specific filter if they are marked */}
+
+        {/* C. REKAPITULASI BIAYA & KETENTUAN */}
+        <View style={{ marginTop: 20 }} wrap={false}>
+          <Text style={[styles.sectionTitle, { fontSize: 11, borderBottomWidth: 1, borderBottomColor: '#EEEEEE', paddingBottom: 4, marginBottom: 15 }]}>
+            C. REKAPITULASI BIAYA & KETENTUAN (T&C)
+          </Text>
           
-          {/* Table Rows */}
-          <View style={styles.tableRow} key={1}>
-            <Text style={styles.col1}>1</Text>
-            <Text style={styles.col2}>{projectType} - {specifications}</Text>
-            <Text style={styles.col3}>{areaLabel}</Text>
-            <Text style={styles.col4}>
-              Rp {totalPrice.toLocaleString('id-ID')}
+          <View style={{ backgroundColor: '#1D1D1B', padding: 15, borderRadius: 8, marginBottom: 20 }}>
+            <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: 700, marginBottom: 4 }}>ESTIMASI GRAND TOTAL:</Text>
+            <Text style={{ color: '#E30613', fontSize: 20, fontWeight: 700 }}>Rp {totalPrice.toLocaleString('id-ID')}</Text>
+            <Text style={{ color: '#AAAAAA', fontSize: 8, marginTop: 6 }}>
+              (Catatan: Grand Total di atas merupakan akumulasi dari seluruh item pekerjaan utama beserta Add-on yang tercantum).
             </Text>
           </View>
-        </View>
 
-        {/* TOTALS SECTION */}
-        <View style={styles.totalsContainer}>
-          <View style={styles.totalsBox}>
-            <View style={styles.totalRowFinal}>
-              <Text>TOTAL ESTIMASI</Text>
-              <Text>Rp {totalPrice.toLocaleString('id-ID')}</Text>
+          <View style={{ gap: 8 }}>
+            <Text style={{ fontSize: 10, fontWeight: 700 }}>Syarat & Ketentuan Pekerjaan:</Text>
+            
+            <View style={{ marginLeft: 10, gap: 5 }}>
+              <Text style={{ fontSize: 9 }}><Text style={{ fontWeight: 700 }}>Validitas:</Text> Penawaran ini berlaku selama 14 hari sejak tanggal diterbitkan.</Text>
+              <Text style={{ fontSize: 9 }}><Text style={{ fontWeight: 700 }}>Item Eksklusi:</Text> Harga di atas belum termasuk pekerjaan sipil/bobok tembok atau talang air kecuali disebutkan spesifik di atas.</Text>
+              
+              <View style={{ marginTop: 5 }}>
+                <Text style={{ fontSize: 9, fontWeight: 700, marginBottom: 4 }}>Sistem Pembayaran:</Text>
+                {paymentTerms ? (
+                  <View style={{ marginLeft: 10, gap: 3 }}>
+                    <Text style={{ fontSize: 9 }}>• {paymentTerms.terms_json.t1_percent}% Down Payment (DP) - Untuk booking jadwal produksi dan order material.</Text>
+                    <Text style={{ fontSize: 9 }}>• {paymentTerms.terms_json.t2_percent}% Termin 2 - Saat material selesai fabrikasi dan siap kirim ke lokasi.</Text>
+                    <Text style={{ fontSize: 9 }}>• {paymentTerms.terms_json.t3_percent}% Pelunasan - Maksimal 1x24 jam setelah pekerjaan selesai (BAST).</Text>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: 9, marginLeft: 10, color: '#666' }}>Sesuai dengan kesepakatan tertulis nantinya.</Text>
+                )}
+              </View>
+              
+              <Text style={{ fontSize: 9 }}><Text style={{ fontWeight: 700 }}>Waktu Pelaksanaan:</Text> Estimasi 14 - 21 Hari Kerja (terhitung setelah DP diterima dan material tersedia).</Text>
             </View>
           </View>
         </View>
 
-        {/* FOOTER & DISCLAIMER */}
-        <View style={styles.footer}>
-          <View style={styles.disclaimer}>
-            <Text style={{ fontWeight: 700, marginBottom: 4 }}>SYARAT & KETENTUAN (WAJIB DIBACA):</Text>
-            <Text>1. Harga di atas adalah ESTIMASI AWAL berdasarkan ukuran yang diberikan melalui sistem.</Text>
-            <Text>2. Harga final / harga kontrak dapat berubah setelah tim Kokohin melakukan SURVEI LOKASI aktual.</Text>
-            <Text>3. Penawaran ini berlaku selama 14 hari sejak tanggal diterbitkan.</Text>
+        <View style={{ marginTop: 30 }} wrap={false}>
+          <Text style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'justify' }}>
+            Demikian penawaran ini kami sampaikan. Kami sangat terbuka untuk berdiskusi lebih lanjut guna menyesuaikan spesifikasi di atas dengan kebutuhan dan anggaran Bapak/Ibu.
+          </Text>
+          
+          <View style={{ marginTop: 40, width: '100%', flexDirection: 'row', justifyContent: 'flex-end' }}>
+            <View style={{ width: 200, textAlign: 'center' }}>
+              <Text style={{ fontSize: 10, marginBottom: 60 }}>Hormat Kami,</Text>
+              <Text style={{ fontSize: 10, fontWeight: 700 }}>{companyName} Management</Text>
+              <Text style={{ fontSize: 9, color: '#666' }}>(Tanda Tangan & Stempel)</Text>
+            </View>
           </View>
         </View>
+
+        {/* ATTACHMENTS (New Page if many) */}
+        {attachments.length > 0 && (
+          <View style={{ marginTop: 40 }} break>
+            <Text style={styles.sectionTitle}>LAMPIRAN: GAMBAR REFERENSI & DOKUMENTASI</Text>
+            <View style={styles.attachmentGrid}>
+              {attachments.map((att, idx) => (
+                <View key={idx} style={styles.attachmentBox}>
+                  <PdfImage src={att.url} style={styles.attachmentImage} />
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
       </Page>
     </Document>

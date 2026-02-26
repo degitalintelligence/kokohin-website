@@ -349,36 +349,31 @@ const QuotationDocument = (data: PdfQuotationData) => {
             </View>
             
             {/* Table Rows */}
-            {data.items.map((item, index) => {
-              const name = item.description || item.material?.name || `Item ${index + 1}`
-              const unit = (item.unit as string | null) || item.material?.unit || 'unit'
-              return (
-                <View key={item.id} style={styles.tableRow}>
-                  <Text style={[styles.tableCell, { width: '40%' }]}>{name}</Text>
-                  <Text style={[styles.tableCell, { width: '15%', textAlign: 'right' }]}>{item.qty_charged}</Text>
-                  <Text style={[styles.tableCell, { width: '15%', textAlign: 'right' }]}>{unit}</Text>
-                  <Text style={[styles.tableCell, { width: '30%', textAlign: 'right' }]}>{formatCurrency(item.subtotal)}</Text>
-                </View>
-              )
-            })}
+            {data.items
+              .filter(item => {
+                const name = (item.description || '').toLowerCase()
+                return !name.includes('markup') && !name.includes('mark-up')
+              })
+              .map((item, index) => {
+                const name = item.description || item.material?.name || `Item ${index + 1}`
+                const unit = (item.unit as string | null) || item.material?.unit || 'unit'
+                return (
+                  <View key={item.id} style={styles.tableRow}>
+                    <Text style={[styles.tableCell, { width: '40%' }]}>{name}</Text>
+                    <Text style={[styles.tableCell, { width: '15%', textAlign: 'right' }]}>{item.qty_charged}</Text>
+                    <Text style={[styles.tableCell, { width: '15%', textAlign: 'right' }]}>{unit}</Text>
+                    <Text style={[styles.tableCell, { width: '30%', textAlign: 'right' }]}>{formatCurrency(item.subtotal)}</Text>
+                  </View>
+                )
+              })}
           </View>
         </View>
 
         {/* Totals */}
         <View style={styles.totalSection}>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total HPP Material & Jasa</Text>
-            <Text style={styles.totalValue}>{formatCurrency(data.estimation.total_hpp)}</Text>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Margin ({data.estimation.margin_percentage}%)</Text>
-            <Text style={styles.totalValue}>
-              {formatCurrency(data.estimation.total_selling_price - data.estimation.total_hpp)}
-            </Text>
-          </View>
-          <View style={[styles.totalRow, { marginTop: 12 }]}>
-            <Text style={styles.totalLabel}>Total Harga Jual</Text>
-            <Text style={styles.finalTotal}>{formatCurrency(data.estimation.total_selling_price)}</Text>
+          <View style={[styles.totalRow, { marginTop: 12, borderTopWidth: 2, borderTopColor: COLORS.dark }]}>
+            <Text style={[styles.totalLabel, { fontSize: 14, fontWeight: 'bold', color: COLORS.dark }]}>Total Harga Jual</Text>
+            <Text style={[styles.finalTotal, { fontSize: 18, color: COLORS.primary }]}>{formatCurrency(data.estimation.total_selling_price)}</Text>
           </View>
         </View>
 

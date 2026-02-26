@@ -1,4 +1,4 @@
-import { CalculatorInput, CalculatorResult, Material } from './types'
+import { CalculatorInput, CalculatorResult } from './types'
 import { createClient } from '@/lib/supabase/client'
 
 /**
@@ -11,7 +11,7 @@ export function calculateWasteQuantity(qtyNeeded: number, lengthPerUnit: number)
 
   // Math.ceil() untuk pembulatan ke atas
   const unitsNeeded = Math.ceil(qtyNeeded / safeLength)
-  return unitsNeeded * safeLength
+  return unitsNeeded
 }
 
 /**
@@ -32,38 +32,7 @@ export function calculateLaserCutSheets(areaNeededM2: number): {
   return { sheetsNeeded, wasteAreaM2, sheetAreaM2 }
 }
 
-/**
- * Kalkulasi harga material dengan waste calculation
- */
-export function calculateMaterialCost(material: Material, qtyNeeded: number): {
-  qtyCharged: number
-  subtotal: number
-  wasteQty: number
-} {
-  // ESCAPE HATCH untuk material laser cut
-  if (material.is_laser_cut) {
-    // qtyNeeded adalah luas dalam m² untuk material laser cut
-    const { sheetsNeeded, wasteAreaM2 } = calculateLaserCutSheets(qtyNeeded)
-    // qtyCharged adalah jumlah lembar standar
-    const qtyCharged = sheetsNeeded
-    // wasteQty adalah luas waste dalam m² (konversi ke unit lembar jika perlu)
-    const wasteQty = wasteAreaM2
-    // subtotal berdasarkan jumlah lembar
-    const subtotal = qtyCharged * material.base_price_per_unit
-    return { qtyCharged, subtotal, wasteQty }
-  }
 
-  // Hitung qty yang dibebankan ke customer (termasuk waste)
-  const qtyCharged = calculateWasteQuantity(qtyNeeded, material.length_per_unit ?? 1)
-
-  // Hitung waste (kelebihan dari kebutuhan sebenarnya)
-  const wasteQty = qtyCharged - qtyNeeded
-
-  // Hitung subtotal
-  const subtotal = qtyCharged * material.base_price_per_unit
-
-  return { qtyCharged, subtotal, wasteQty }
-}
 
 /**
  * Kalkulasi harga berdasarkan katalog paket
@@ -101,22 +70,6 @@ export function calculateCatalogPrice(
 export function applyZoneMarkup(basePrice: number, markupPercentage: number, flatFee: number): number {
   const markupAmount = basePrice * (markupPercentage / 100)
   return basePrice + markupAmount + flatFee
-}
-
-/**
- * Cari harga material berdasarkan nama (case-insensitive partial match)
- * Return base_price_per_unit jika ditemukan, otherwise return default price
- */
-async function getMaterialPriceByName(materialName: string, defaultPrice = 0): Promise<number> {
-  try {
-    const res = await fetch(`/api/public/materials?search=${encodeURIComponent(materialName)}`, { cache: 'no-store' })
-    if (!res.ok) return defaultPrice
-    const json = await res.json() as { material?: { base_price_per_unit?: number } | null }
-    const price = json?.material?.base_price_per_unit
-    return typeof price === 'number' ? price : defaultPrice
-  } catch {
-    return defaultPrice
-  }
 }
 
 /**
@@ -202,12 +155,13 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
       labor_cost: number | null
       transport_cost: number | null
       margin_percentage: number | null
+      hpp_per_unit: number | null
       atap_id: string | null
       rangka_id: string | null
     }
     const { data: catalog, error: catalogError } = await supabase
       .from('catalogs')
-      .select('id, base_price_per_m2, base_price_unit, labor_cost, transport_cost, margin_percentage, atap_id, rangka_id')
+      .select('id, base_price_per_m2, base_price_unit, labor_cost, transport_cost, margin_percentage, hpp_per_unit, atap_id, rangka_id')
       .eq('id', input.catalogId)
       .eq('is_active', true)
       .maybeSingle()
@@ -288,6 +242,17 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
       return sum + price * qty * multiplier
     }, 0)
 
+    const sellingSubtotal = basePrice
+    const catalogHppSubtotal = calculateCatalogPrice(
+      row.hpp_per_unit ?? 0,
+      unit,
+      input.panjang,
+      input.lebar,
+      computedQty
+    )
+    const totalHpp = catalogHppSubtotal + addonCost
+    const marginPercentage = row.margin_percentage ?? 0
+
     let markupPercentage = 0
     let flatFee = 0
     if (input.zoneId) {
@@ -300,7 +265,7 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
         }
       } catch {}
     }
-    const priceBeforeMarkup = basePrice + addonCost
+    const priceBeforeMarkup = sellingSubtotal + addonCost
     const estimatedPrice = applyZoneMarkup(priceBeforeMarkup, markupPercentage, flatFee)
 
     // Validasi auto-upsell constraints
@@ -312,16 +277,11 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
     if (antiSagging.needsAntiSagging) {
       warnings.push(antiSagging.warning)
       const matNames = antiSagging.suggestedMaterials
-      const prices = await Promise.all(matNames.map((m) => getMaterialPriceByName(m)))
-      matNames.forEach((matName, idx) => {
-        let quantity = 1
-        if (matName.includes('Hollow')) quantity = 2
-        const pricePerUnit = prices[idx] ?? 0
-        const estimatedCost = pricePerUnit * quantity
+      matNames.forEach((matName) => {
         suggestedItems.push({
           name: matName,
           reason: `Bentangan lebar ${input.lebar}m > 4.5m memerlukan ${matName} untuk mencegah sagging`,
-          estimatedCost
+          estimatedCost: 0
         })
       })
     }
@@ -360,10 +320,10 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
       luas,
       unitUsed: unit,
       computedQty,
-      materialCost: 0,
+      materialCost: sellingSubtotal,
       wasteCost: 0,
-      totalHpp: 0,
-      marginPercentage: 0,
+      totalHpp: totalHpp,
+      marginPercentage: marginPercentage,
       markupPercentage,
       flatFee,
       totalSellingPrice: estimatedPrice,
@@ -393,117 +353,9 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
       warnings: warnings.length > 0 ? warnings : undefined,
       suggestedItems: suggestedItems.length > 0 ? suggestedItems : undefined
     }
-  }
-  let material: Partial<Material> | null = null
-  if (input.materialId) {
-    try {
-      const res = await fetch(`/api/public/materials?id=${encodeURIComponent(input.materialId)}`, { cache: 'no-store' })
-      if (res.ok) {
-        const json = await res.json() as { material?: Partial<Material> }
-        material = json.material ?? null
-      }
-    } catch {}
-  } else {
-    try {
-      const resList = await fetch('/api/public/materials?category=frame', { cache: 'no-store' })
-      const listJson = await resList.json() as { materials?: Array<{ id: string }> }
-      const firstId = listJson.materials && listJson.materials[0]?.id
-      if (firstId) {
-        const resOne = await fetch(`/api/public/materials?id=${encodeURIComponent(firstId)}`, { cache: 'no-store' })
-        if (resOne.ok) {
-          const oneJson = await resOne.json() as { material?: Partial<Material> }
-          material = oneJson.material ?? null
-        }
-      }
-    } catch {}
-  }
-  if (!material) throw new Error('Material belum tersedia')
+  } else { throw new Error('Katalog diperlukan untuk kalkulasi') }
 
-  // Hitung kebutuhan material (dummy calculation)
-  // Asumsi: untuk kanopi 1m² butuh 0.5 batang rangka
-  const qtyNeededPerM2 = 0.5
-  const totalQtyNeeded = luas * qtyNeededPerM2
 
-  // Hitung material cost dengan waste calculation
-  const materialCalc = calculateMaterialCost(material as Material, totalQtyNeeded)
-
-  // Hitung waste cost
-  const wasteCost = materialCalc.wasteQty * (material as Material).base_price_per_unit
-
-  // Total HPP (material cost saja untuk sekarang)
-  const totalHpp = materialCalc.subtotal
-
-  // Default margin 30%
-  const marginPercentage = 30
-
-  // Apply margin
-  const priceBeforeMarkup = totalHpp * (1 + marginPercentage / 100)
-
-  // TODO: Fetch zone data dan apply markup
-  let markupPercentage = 0
-  let flatFee = 0
-  if (input.zoneId) {
-    try {
-      const zr = await fetch(`/api/public/zones?id=${encodeURIComponent(input.zoneId)}`, { cache: 'no-store' })
-      if (zr.ok) {
-        const zj = await zr.json() as { zone?: { markup_percentage?: number; flat_fee?: number } }
-        markupPercentage = Number(zj.zone?.markup_percentage || 0)
-        flatFee = Number(zj.zone?.flat_fee || 0)
-      }
-    } catch {}
-  }
-
-  const priceAfterMarkup = applyZoneMarkup(priceBeforeMarkup, markupPercentage, flatFee)
-
-  // Estimated price (final)
-  const estimatedPrice = priceAfterMarkup
-
-  // Validasi auto-upsell constraints (hanya anti-sagging untuk non-catalog)
-  const warnings: string[] = []
-  const suggestedItems: { name: string; reason: string; estimatedCost: number }[] = []
-
-  // Anti-sagging validation (lebar > 4.5m)
-  const antiSagging = await validateAntiSagging(input.lebar)
-  if (antiSagging.needsAntiSagging) {
-    warnings.push(antiSagging.warning)
-    const matNames = antiSagging.suggestedMaterials
-    const prices = await Promise.all(matNames.map((m) => getMaterialPriceByName(m)))
-    matNames.forEach((matName, idx) => {
-      let quantity = 1
-      if (matName.includes('Hollow')) quantity = 2
-      const pricePerUnit = prices[idx] ?? 0
-      const estimatedCost = pricePerUnit * quantity
-      suggestedItems.push({
-        name: matName,
-        reason: `Bentangan lebar ${input.lebar}m > 4.5m memerlukan ${matName} untuk mencegah sagging`,
-        estimatedCost
-      })
-    })
-  }
-
-  return {
-    luas,
-    materialCost: materialCalc.subtotal,
-    wasteCost,
-    totalHpp,
-    marginPercentage,
-    markupPercentage,
-    flatFee,
-    totalSellingPrice: estimatedPrice,
-    estimatedPrice,
-    breakdown: [
-      {
-        name: (material as Material).name,
-        qtyNeeded: totalQtyNeeded,
-        qtyCharged: materialCalc.qtyCharged,
-        unit: (material as Material).unit,
-        pricePerUnit: (material as Material).base_price_per_unit,
-        subtotal: materialCalc.subtotal
-      }
-    ],
-    warnings: warnings.length > 0 ? warnings : undefined,
-    suggestedItems: suggestedItems.length > 0 ? suggestedItems : undefined
-  }
 }
 
 /**

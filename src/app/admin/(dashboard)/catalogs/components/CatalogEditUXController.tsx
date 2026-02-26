@@ -18,13 +18,9 @@ export default function CatalogEditUXController({ formId, errorMessage, importRe
         toast.error('Gagal menyimpan katalog', errorMessage)
       }
     }
-    if (importResult) {
-      try {
-        toast.success('Import addons selesai', decodeURIComponent(importResult))
-      } catch {
-        toast.success('Import addons selesai', importResult)
-      }
-    }
+    // Jika ada error atau hasil import, reset loading state di CatalogSaveButton
+    // (Note: ini workaround karena kita tidak punya akses langsung ke state tombol)
+    // Sebaiknya CatalogSaveButton menggunakan useFormStatus jika di dalam form
   }, [errorMessage, importResult])
 
   useEffect(() => {

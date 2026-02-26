@@ -59,7 +59,7 @@ export async function createProject(formData: FormData) {
     address: address,
     zone_id: zoneId,
     custom_notes: formattedNotes,
-    status: 'New'
+    status: 'Deal'
   }
 
   const { error } = await supabase
@@ -102,7 +102,6 @@ export async function updateProject(formData: FormData) {
   const customerPhone = formData.get('customer_phone') as string
   const address = formData.get('address') as string
   const zoneId = formData.get('zone_id') as string
-  const status = formData.get('status') as string
   const customNotes = formData.get('custom_notes') as string
 
   if (!id || !customerName || !address || !zoneId) {
@@ -114,7 +113,7 @@ export async function updateProject(formData: FormData) {
     phone: customerPhone,
     address: address,
     zone_id: zoneId,
-    status: status,
+    status: 'Deal',
     custom_notes: customNotes
   }
 

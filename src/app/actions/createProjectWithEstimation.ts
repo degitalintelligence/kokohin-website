@@ -15,6 +15,10 @@ export type CreateProjectDTO = {
   catalog_unit?: 'm2' | 'm1' | 'unit' | null
   base_price?: number | null
   calculated_qty?: number | null
+  panjang?: number | null
+  lebar?: number | null
+  unit_qty?: number | null
+  attachments?: { url: string; type: 'mockup' | 'reference' }[] | null
   estimation?: {
     total_hpp: number
     margin_percentage: number
@@ -79,7 +83,7 @@ export async function createProjectWithEstimation(dto: CreateProjectDTO): Promis
   if (maxPerWindow > 0) {
     const sinceIso = new Date(Date.now() - windowMin * 60_000).toISOString()
     const { count } = await supabase
-      .from('erp_projects')
+      .from('leads')
       .select('id', { head: true, count: 'exact' })
       .eq('phone', normalizedPhone)
       .gt('created_at', sinceIso)
@@ -88,171 +92,59 @@ export async function createProjectWithEstimation(dto: CreateProjectDTO): Promis
     }
   }
   dto.phone = normalizedPhone
-  try {
-    const result = await createProjectWithEstimationWithRpc(
-      async (fn, args) => await supabase.rpc(fn, args),
-      dto
-    )
-    if (result.estimation_id && dto.estimation && dto.catalog_id) {
-      const desc = dto.catalog_title ? `Pembuatan ${dto.catalog_title}` : 'Pekerjaan Paket Katalog'
-      const itemPayload = {
-        estimation_id: result.estimation_id,
-        catalog_id: dto.catalog_id,
-        material_id: null,
-        description: desc,
-        qty_needed: dto.calculated_qty ?? 0,
-        qty_charged: dto.calculated_qty ?? 0,
-        unit: dto.catalog_unit ?? null,
-        subtotal: (dto.calculated_qty ?? 0) * (dto.base_price ?? 0)
-      }
-      const { error: itemsErr } = await supabase.from('estimation_items').insert([itemPayload])
-      if (itemsErr) {
-        console.warn('Failed to insert estimation item:', itemsErr.message)
-      }
-      if (!itemsErr) {
-        let totalHpp = 0
-        try {
-          const { data: cat } = await supabase.from('catalogs').select('*').eq('id', dto.catalog_id).maybeSingle()
-          const unitHpp = Number((cat as Record<string, unknown> | null)?.hpp_per_unit || 0)
-          const qty = Number(dto.calculated_qty || 0)
-          if (unitHpp > 0 && qty > 0) {
-            totalHpp = unitHpp * qty
-          }
-        } catch {
-          totalHpp = 0
-        }
-        if (!(totalHpp > 0)) {
-          const selling = Number(dto.estimation.total_selling_price || 0)
-          totalHpp = Math.max(1, Math.round(selling * 0.7))
-        }
-        const selling = Number(dto.estimation.total_selling_price || 0)
-        const marginPct = selling > 0 ? Math.max(0, Math.min(100, ((selling - totalHpp) / selling) * 100)) : 0
-        const { error: estUpdErr } = await supabase
-          .from('estimations')
-          .update({
-            total_hpp: totalHpp,
-            margin_percentage: marginPct,
-            total_selling_price: dto.estimation.total_selling_price
-          })
-          .eq('id', result.estimation_id)
-        if (estUpdErr) {
-          console.warn('Failed to sync estimation totals:', estUpdErr.message)
-        }
-      }
-    }
-    return result
-  } catch (e) {
-    const msg = (e as Error)?.message ?? ''
-    const notFound =
-      msg.includes('Could not find the function') ||
-      msg.includes('does not exist') ||
-      msg.includes('schema cache') ||
-      msg.includes('rpc') && msg.includes('not found')
+  const estimation = dto.estimation
+  const payload = {
+    name: dto.customer_name,
+    phone: dto.phone,
+    email: null,
+    location: dto.address,
+    service_id: null,
+    message: dto.custom_notes,
+    status: dto.status ?? 'New',
+    total_hpp: estimation ? estimation.total_hpp : 0,
+    margin_percentage: estimation ? estimation.margin_percentage : 0,
+    total_selling_price: estimation ? estimation.total_selling_price : 0,
+    catalog_id: dto.catalog_id ?? null,
+    zone_id: dto.zone_id,
+    panjang: dto.panjang ?? null,
+    lebar: dto.lebar ?? null,
+    unit_qty: dto.unit_qty ?? null,
+    attachments: dto.attachments ?? [],
+  }
 
-    if (!notFound) {
-      throw e
+  const { data: lead, error: insertError } = await supabase
+    .from('leads')
+    .insert(payload)
+    .select('id')
+    .single()
+
+  if (insertError || !lead?.id) {
+    const msg = insertError?.message ?? 'Unknown error'
+    const maybeSchemaMismatch = msg.includes('column') && msg.includes('does not exist')
+    if (!maybeSchemaMismatch) {
+      throw new Error(`Gagal menyimpan lead: ${msg}`)
     }
 
-    // Fallback path: create rows manually without RPC
-    const { data: project, error: insertProjectError } = await supabase
-      .from('erp_projects')
-      .insert({
-        customer_name: dto.customer_name,
-        phone: dto.phone,
-        address: dto.address,
-        zone_id: dto.zone_id,
-        custom_notes: dto.custom_notes,
-        status: dto.status ?? 'New',
-      })
+    const fallbackPayload = {
+      name: dto.customer_name,
+      phone: dto.phone,
+      email: null,
+      location: dto.address,
+      service_id: null,
+      message: dto.custom_notes,
+      status: dto.status ?? 'New',
+    }
+    const { data: leadFallback, error: fallbackErr } = await supabase
+      .from('leads')
+      .insert(fallbackPayload)
       .select('id')
       .single()
-
-    if (insertProjectError || !project?.id) {
-      const reason = insertProjectError?.message ?? 'Unknown error'
-      throw new Error(`Gagal membuat proyek: ${reason}`)
+    if (fallbackErr || !leadFallback?.id) {
+      const msg2 = fallbackErr?.message ?? 'Unknown error'
+      throw new Error(`Gagal menyimpan lead: ${msg2}`)
     }
-
-    let estimationId: string | null = null
-    if (dto.estimation) {
-      // Determine next version number
-      const { data: latest, error: fetchErr } = await supabase
-        .from('estimations')
-        .select('version_number')
-        .eq('project_id', project.id)
-        .order('version_number', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (fetchErr) {
-        throw new Error(`Gagal membaca versi estimasi: ${fetchErr.message}`)
-      }
-      const nextVersion = (latest?.version_number ?? 0) + 1
-
-      const { data: est, error: insertEstErr } = await supabase
-        .from('estimations')
-        .insert({
-          project_id: project.id,
-          version_number: nextVersion,
-          total_hpp: dto.estimation.total_hpp,
-          margin_percentage: dto.estimation.margin_percentage,
-          total_selling_price: dto.estimation.total_selling_price,
-          status: dto.estimation.status,
-        })
-        .select('id')
-        .single()
-
-      if (insertEstErr) {
-        throw new Error(`Gagal membuat estimasi: ${insertEstErr.message}`)
-      }
-      estimationId = est?.id ?? null
-    }
-
-    if (estimationId && dto.estimation && dto.catalog_id) {
-      const desc = dto.catalog_title ? `Pembuatan ${dto.catalog_title}` : 'Pekerjaan Paket Katalog'
-      const itemPayload = {
-        estimation_id: estimationId,
-        catalog_id: dto.catalog_id,
-        material_id: null,
-        description: desc,
-        qty_needed: dto.calculated_qty ?? 0,
-        qty_charged: dto.calculated_qty ?? 0,
-        unit: dto.catalog_unit ?? null,
-        subtotal: (dto.calculated_qty ?? 0) * (dto.base_price ?? 0)
-      }
-      const { error: itemsErr } = await supabase.from('estimation_items').insert([itemPayload])
-      if (itemsErr) {
-        throw new Error('Gagal menyimpan detail paket katalog')
-      }
-      let totalHpp = 0
-      try {
-        const { data: cat } = await supabase.from('catalogs').select('*').eq('id', dto.catalog_id).maybeSingle()
-        const unitHpp = Number((cat as Record<string, unknown> | null)?.hpp_per_unit || 0)
-        const qty = Number(dto.calculated_qty || 0)
-        if (unitHpp > 0 && qty > 0) {
-          totalHpp = unitHpp * qty
-        }
-      } catch {
-        totalHpp = 0
-      }
-      if (!(totalHpp > 0)) {
-        const selling = Number(dto.estimation.total_selling_price || 0)
-        totalHpp = Math.max(1, Math.round(selling * 0.7))
-      }
-      const selling = Number(dto.estimation.total_selling_price || 0)
-      const marginPct = selling > 0 ? Math.max(0, Math.min(100, ((selling - totalHpp) / selling) * 100)) : 0
-      const { error: estUpdErr } = await supabase
-        .from('estimations')
-        .update({
-          total_hpp: totalHpp,
-          margin_percentage: marginPct,
-          total_selling_price: dto.estimation.total_selling_price
-        })
-        .eq('id', estimationId)
-      if (estUpdErr) {
-        throw new Error('Gagal sinkronisasi total estimasi')
-      }
-    }
-
-    return { project_id: project.id, estimation_id: estimationId }
+    return { project_id: leadFallback.id, estimation_id: null }
   }
+
+  return { project_id: lead.id, estimation_id: null }
 }

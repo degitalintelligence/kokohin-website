@@ -24,6 +24,7 @@ export default async function AdminProjectEditPage({
     .from('erp_projects')
     .select('*')
     .eq('id', id)
+    .eq('status', 'Deal')
     .single()
 
   if (projectError || !project) {
@@ -36,15 +37,6 @@ export default async function AdminProjectEditPage({
     .from('zones')
     .select('*')
     .order('name', { ascending: true })
-
-  const STATUS_OPTIONS = [
-    'New',
-    'Need Manual Quote',
-    'Surveyed',
-    'Quoted',
-    'Deal',
-    'Lost'
-  ]
 
   return (
     <div className={`${styles.main} flex-1 h-full`}>
@@ -118,18 +110,6 @@ export default async function AdminProjectEditPage({
                 <option value="">Pilih Zona</option>
                 {(zones ?? []).map((zone) => (
                   <option key={zone.id} value={zone.id}>{zone.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Status Proyek</label>
-              <select
-                name="status"
-                defaultValue={project.status}
-                className="w-full px-4 py-2 border rounded-md font-bold"
-              >
-                {STATUS_OPTIONS.map((status) => (
-                  <option key={status} value={status}>{status}</option>
                 ))}
               </select>
             </div>

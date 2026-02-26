@@ -118,6 +118,10 @@ export interface Catalog {
     atap?: Material
     rangka_id: string | null
     rangka?: Material
+    finishing_id: string | null
+    finishing?: Material
+    isian_id: string | null
+    isian?: Material
     margin_percentage?: number
     total_hpp_per_m2?: number
     base_price_per_m2: number
@@ -223,6 +227,7 @@ export interface CalculatorResult {
         unit: string
         pricePerUnit: number
         subtotal: number
+        image_url?: string | null
     }[]
     warnings?: string[]
     suggestedItems?: {

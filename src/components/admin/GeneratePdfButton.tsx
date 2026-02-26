@@ -1,164 +1,156 @@
 'use client'
 
-import { useState } from 'react'
-import { Download, Loader2 } from 'lucide-react'
-import { generateAndDownloadQuotation, type PdfQuotationData } from '@/lib/pdf-generator'
+import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
+import { FileDown, Loader2 } from 'lucide-react'
+import { QuotationPDF } from '@/components/calculator/QuotationPDF'
+import type { CalculatorResult } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
-import { formatRupiah } from '@/lib/calculator'
+
+const PDFDownloadLink = dynamic(
+  () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
+  { 
+    ssr: false,
+    loading: () => (
+      <button disabled className="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-lg text-[10px] font-bold flex items-center gap-1.5 cursor-not-allowed">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        PDF...
+      </button>
+    )
+  }
+)
 
 interface GeneratePdfButtonProps {
-  projectId: string
+  quotation?: any
+  projectId?: string
+  logoUrl?: string | null
   disabled?: boolean
   className?: string
 }
 
-export default function GeneratePdfButton({ projectId, disabled = false, className = '' }: GeneratePdfButtonProps) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+export default function GeneratePdfButton({ quotation: initialQuotation, projectId, logoUrl: initialLogoUrl, disabled, className }: GeneratePdfButtonProps) {
+  const [quotation, setQuotation] = useState<any>(initialQuotation)
+  const [logoUrl, setLogoUrl] = useState<string | null>(initialLogoUrl || null)
+  const [loading, setLoading] = useState(!initialQuotation && !!projectId)
 
-  const handleGeneratePdf = async () => {
-    if (!projectId) return
-    
-    setLoading(true)
-    setError(null)
-
-    try {
-      const supabase = createClient()
-      
-      // 1. Fetch project data
-      const { data: project, error: projectError } = await supabase
-        .from('erp_projects')
-        .select('*')
-        .eq('id', projectId)
-        .single()
-
-      if (projectError || !project) {
-        throw new Error(`Proyek tidak ditemukan: ${projectError?.message}`)
-      }
-
-      // 2. Fetch latest estimation for this project
-      const { data: estimation, error: estimationError } = await supabase
-        .from('estimations')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('version_number', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (estimationError) {
-        throw new Error(`Gagal mengambil data estimasi: ${estimationError.message}`)
-      }
-
-      if (!estimation) {
-        throw new Error('Belum ada estimasi untuk proyek ini')
-      }
-
-      // 3. Fetch estimation items with material details
-      const { data: items, error: itemsError } = await supabase
-        .from('estimation_items')
-        .select('*, material:material_id(*)')
-        .eq('estimation_id', estimation.id)
-        .order('created_at', { ascending: true })
-
-      if (itemsError) {
-        throw new Error(`Gagal mengambil item estimasi: ${itemsError.message}`)
-      }
-
-      const [
-        { data: paymentTermsData, error: paymentTermsError },
-        { data: logoSetting },
-        { data: companySettings },
-      ] = await Promise.all([
-        supabase
-          .from('payment_terms')
-          .select('*')
-          .eq('estimation_id', estimation.id)
-          .order('created_at', { ascending: true }),
-        supabase
-          .from('site_settings')
-          .select('value')
-          .eq('key', 'logo_url')
-          .maybeSingle(),
-          supabase
+  useEffect(() => {
+    if (!initialQuotation && projectId) {
+      async function fetchData() {
+        setLoading(true)
+        const supabase = createClient()
+        
+        // Fetch logo if not provided
+        if (!initialLogoUrl) {
+          const { data: siteSettings } = await supabase
             .from('site_settings')
-            .select('key,value')
-            .in('key', ['site_name','support_email','support_phone','contact_address','contact_hours','company_website'])
-      ])
-
-      if (paymentTermsError) {
-        console.warn('Gagal mengambil payment terms, menggunakan default:', paymentTermsError.message)
-      }
-
-      const paymentTerms = paymentTermsData && paymentTermsData.length > 0
-        ? paymentTermsData.map(term => `${term.term_name} ${term.percentage}%: ${formatRupiah(term.amount_due)}`)
-        : [
-            'DP 50% saat kontrak ditandatangani',
-            'Pelunasan 50% saat material tiba di lokasi',
-            'Pembayaran via transfer bank (BCA/Mandiri/BNI)',
-            'Quotation berlaku 14 hari dari tanggal diterbitkan',
-            'Harga sudah termasuk PPN 11%',
-            'Garansi konstruksi 1 tahun, material 1 tahun'
-          ]
-
-      const typedLogo = logoSetting as { value?: string } | null
-      const companyMap: Record<string, string> = {}
-      ;((companySettings as Array<{ key?: string; value?: string }> | null) ?? []).forEach((row) => { if (row && row.key) companyMap[row.key] = row.value ?? '' })
-
-      const pdfData: PdfQuotationData = {
-        project,
-        estimation,
-        items: items ?? [],
-        paymentTerms,
-        logoUrl: typedLogo?.value ?? null,
-        company: {
-          name: companyMap['site_name'] || null,
-          email: companyMap['support_email'] || null,
-          phone: companyMap['support_phone'] || null,
-          address: companyMap['contact_address'] || null,
-          hours: companyMap['contact_hours'] || null,
-          website: companyMap['company_website'] || null
+            .select('value')
+            .eq('key', 'logo_url')
+            .maybeSingle()
+          setLogoUrl(siteSettings?.value || null)
         }
-      }
 
-      // 5. Generate and download PDF
-      await generateAndDownloadQuotation(pdfData)
-      
-    } catch (err) {
-      console.error('PDF generation error:', err)
-      setError(err instanceof Error ? err.message : 'Gagal menghasilkan PDF quotation')
-    } finally {
-      setLoading(false)
+        // Fetch quotation for this project
+        const { data: qtnData } = await supabase
+          .from('erp_quotations')
+          .select('*, leads(*), zones(*), catalogs(*), erp_quotation_items(*, atap:atap_id(name), rangka:rangka_id(name), finishing:finishing_id(name), isian:isian_id(name)), erp_payment_terms(*)')
+          .eq('project_id', projectId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        
+        setQuotation(qtnData)
+        setLoading(false)
+      }
+      fetchData()
     }
+  }, [initialQuotation, projectId, initialLogoUrl])
+
+  if (loading) {
+    return (
+      <button disabled className={`px-3 py-1.5 bg-gray-100 text-gray-400 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-not-allowed ${className}`}>
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Loading...
+      </button>
+    )
   }
 
-  return (
-    <div className="w-full">
-      <button
-        onClick={handleGeneratePdf}
-        disabled={disabled || loading || !projectId}
-        className={`w-full py-4 bg-white text-[#1D1D1B] font-bold rounded-lg flex justify-center items-center gap-2 hover:bg-gray-100 transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+  if (!quotation || !quotation.erp_quotation_items || quotation.erp_quotation_items.length === 0) {
+    return (
+      <button 
+        disabled 
+        className={`px-3 py-1.5 bg-gray-50 text-gray-300 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-not-allowed border border-gray-100 ${className}`}
       >
-        {loading ? (
-          <>
-            <Loader2 className="w-5 h-5 animate-spin" />
-            <span>Membuat PDF...</span>
-          </>
-        ) : (
-          <>
-            <Download size={18} />
-            <span>Generate PDF Quotation V1</span>
-          </>
-        )}
+        <FileDown size={12} />
+        PDF N/A
       </button>
-      
-      {error && (
-        <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-sm text-red-700 font-medium">{error}</p>
-          <p className="text-xs text-red-600 mt-1">
-            Pastikan proyek memiliki estimasi dan item yang valid.
-          </p>
-        </div>
+    )
+  }
+
+  const items = quotation.erp_quotation_items || []
+  const lead = quotation.leads || {}
+  const attachments = quotation.attachments || []
+  
+  // Map ERP items to CalculatorResult for the PDF component
+  const filteredItems = items.filter((item: any) => {
+    const name = (item.name || '').toLowerCase()
+    return !name.includes('markup') && !name.includes('mark-up')
+  })
+
+  const result: CalculatorResult = {
+    luas: (Number(quotation.panjang) * Number(quotation.lebar)) || Number(quotation.unit_qty) || 0,
+    unitUsed: (quotation.catalogs?.base_price_unit) || 'm2',
+    totalHpp: Number(quotation.total_hpp || 0),
+    materialCost: 0,
+    wasteCost: 0,
+    marginPercentage: Number(quotation.margin_percentage || 30),
+    markupPercentage: 0,
+    flatFee: 0,
+    totalSellingPrice: Number(quotation.total_amount),
+    estimatedPrice: Number(quotation.total_amount),
+    breakdown: filteredItems.map((item: any) => ({
+      name: item.name,
+      qtyNeeded: Number(item.quantity),
+      qtyCharged: Number(item.quantity),
+      unit: item.unit || 'unit',
+      pricePerUnit: Number(item.unit_price),
+      subtotal: Number(item.subtotal),
+      image_url: item.catalog_id ? quotation.catalogs?.image_url : null
+    }))
+  }
+
+  const fileName = `Quotation_${quotation.quotation_number}_${(lead.name || 'Customer').replace(/\s+/g, '_')}.pdf`
+
+  return (
+    <PDFDownloadLink
+      document={
+        <QuotationPDF
+          result={result}
+          leadInfo={{ 
+            name: lead.name || 'Customer', 
+            whatsapp: lead.phone || '',
+            address: lead.location || quotation.client_address || ''
+          }}
+          projectId={quotation.quotation_number || quotation.id}
+          zoneName={quotation.zones?.name || null}
+          logoUrl={logoUrl}
+          specifications={filteredItems.map((item: any) => item.name).join(', ')}
+          projectArea={result.luas}
+          areaUnit={result.unitUsed === 'm2' ? 'm²' : result.unitUsed === 'm1' ? 'm¹' : 'unit'}
+          attachments={attachments}
+          paymentTerms={quotation.erp_payment_terms}
+          items={items}
+          notes={quotation.notes}
+        />
+      }
+      fileName={fileName}
+      className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 bg-blue-600 text-white hover:bg-blue-700 shadow-sm ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''} ${className}`}
+    >
+      {({ loading: linkLoading }) => (
+        <>
+          {linkLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileDown size={12} />}
+          {linkLoading ? 'Wait...' : 'Download PDF'}
+        </>
       )}
-    </div>
+    </PDFDownloadLink>
   )
 }

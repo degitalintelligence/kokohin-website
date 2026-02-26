@@ -26,8 +26,11 @@ async function importCatalogs(formData: FormData) {
     return {
       title: row[index('title')],
       image_url: row[index('image_url')] || null,
+      category: row[index('category')] || null,
       atap_id: row[index('atap_id')] || null,
       rangka_id: row[index('rangka_id')] || null,
+      finishing_id: row[index('finishing_id')] || null,
+      isian_id: row[index('isian_id')] || null,
       base_price_per_m2: basePrice ? Number(basePrice) : 0,
       base_price_unit: (row[index('base_price_unit')] as ('m2'|'m1'|'unit')) || 'm2',
       hpp_per_unit: basePrice ? Number(basePrice) : 0,
@@ -62,19 +65,25 @@ const escapeCsvValue = (value: string | number | boolean | null | undefined) => 
 const buildCatalogsCsv = (catalogs: Array<{
   title: string
   image_url: string | null
+  category?: string | null
   atap_id: string | null
   rangka_id: string | null
+  finishing_id?: string | null
+  isian_id?: string | null
   base_price_per_m2: number
   base_price_unit?: 'm2'|'m1'|'unit'
   hpp_per_unit?: number | null
   is_active: boolean
 }>) => {
-  const header = ['title', 'image_url', 'atap_id', 'rangka_id', 'base_price_per_m2', 'base_price_unit', 'hpp_per_unit', 'is_active']
+  const header = ['title', 'image_url', 'category', 'atap_id', 'rangka_id', 'finishing_id', 'isian_id', 'base_price_per_m2', 'base_price_unit', 'hpp_per_unit', 'is_active']
   const rows = catalogs.map((c) => [
     escapeCsvValue(c.title),
     escapeCsvValue(c.image_url),
+    escapeCsvValue(c.category),
     escapeCsvValue(c.atap_id),
     escapeCsvValue(c.rangka_id),
+    escapeCsvValue(c.finishing_id),
+    escapeCsvValue(c.isian_id),
     escapeCsvValue(c.base_price_per_m2),
     escapeCsvValue(c.base_price_unit ?? 'm2'),
     escapeCsvValue(c.hpp_per_unit ?? ''),
@@ -130,14 +139,9 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
   const bypass = await isDevBypass()
   if (!user && !bypass) redirect('/admin/login')
 
-  // Fetch catalogs with related materials
   let query = supabase
     .from('catalogs')
-    .select(`
-      *,
-      atap:atap_id(name, category),
-      rangka:rangka_id(name, category)
-    `)
+    .select('*')
   const minVal = hmin ? Number(hmin) : NaN
   const maxVal = hmax ? Number(hmax) : NaN
   if (!isNaN(minVal)) {
@@ -157,7 +161,15 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
   const { data: catalogs, error } = await query
 
   if (error) {
-    console.error('Error fetching catalogs:', error)
+    return (
+      <div className="p-8">
+        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl">
+          <h3 className="font-bold">Error Memuat Katalog</h3>
+          <p className="text-sm mt-1">{error.message}</p>
+          {error.hint && <p className="text-xs mt-2 text-red-500 italic">Hint: {error.hint}</p>}
+        </div>
+      </div>
+    )
   }
 
   const formatCurrency = (amount: number) => {
@@ -182,8 +194,10 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
       id: String((c as { id: string }).id),
       title: String((c as { title: string }).title),
       category: ((c as { category?: 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya' | null }).category ?? null),
-      atapName: relNameFrom((c as { atap?: { name: string | null } | null }).atap),
-      rangkaName: relNameFrom((c as { rangka?: { name: string | null } | null }).rangka),
+      atapName: '-',
+      rangkaName: '-',
+      finishingName: '-',
+      isianName: '-',
       base_price_per_m2: Number((c as { base_price_per_m2?: number | null }).base_price_per_m2 || 0),
       base_price_unit: unit,
       hpp_per_unit: (c as { hpp_per_unit?: number | null }).hpp_per_unit ?? null,
@@ -192,6 +206,8 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
       created_at: ((c as { created_at?: string | null }).created_at ?? null),
       atap_id: ((c as { atap_id?: string | null }).atap_id ?? null),
       rangka_id: ((c as { rangka_id?: string | null }).rangka_id ?? null),
+      finishing_id: null,
+      isian_id: null,
     }
   })
   const csvContent = buildCatalogsCsv(catalogs ?? [])
