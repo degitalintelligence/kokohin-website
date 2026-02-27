@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useMemo, useEffect, useRef } from 'react'
+import { useState, useTransition, useMemo, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   X, 
@@ -17,15 +17,19 @@ import {
   Upload,
   ExternalLink
 } from 'lucide-react'
-import { formatCurrency, buildCostingItems } from '@/lib/utils/costing'
+import { formatCurrency, buildCostingItems, type CostingItem, type CatalogCosting as CostingCatalogCosting } from '@/lib/utils/costing'
 import { updateQuotationItems } from '@/app/actions/quotations'
 import { updateContractItems, updateInvoiceItems, updateCustomerProfile } from '@/app/actions/erp'
 import { searchCatalogs } from '@/app/actions/catalogs'
 import { toast } from '@/components/ui/toaster'
 
-import Link from 'next/link'
+import Image from 'next/image'
 
 import QuoteBuilderClient from '@/components/admin/QuoteBuilderClient'
+
+type CatalogCosting = CostingCatalogCosting & {
+  image_url?: string | null
+}
 
 interface ErpItem {
   id?: string
@@ -36,7 +40,7 @@ interface ErpItem {
   subtotal: number
   type: string
   // Hierarchical Builder Fields
-  builder_costs?: any[]
+  builder_costs?: CostingItem[]
   catalog_id?: string
   zone_id?: string
   panjang?: number
@@ -50,12 +54,73 @@ interface ErpItem {
   isian_id?: string | null
 }
 
+interface CustomerProfile {
+  name?: string
+  phone?: string
+  email?: string
+  address?: string
+  ktp_number?: string
+  min_price_per_m2?: number
+  tier?: string
+}
+
+interface Zone {
+  id: string
+  name: string
+  markup_percentage: number
+  flat_fee: number
+}
+
+interface PaymentTerm {
+  id: string
+  name: string
+  is_default?: boolean
+}
+
+interface Attachment {
+  name: string
+  url: string
+  type: string
+  created_at: string
+}
+
+interface Catalog {
+  id: string
+  title: string
+  image_url?: string | null
+  base_price_unit?: string
+  base_price_per_m2?: number
+  atap_id?: string | null
+  rangka_id?: string | null
+  finishing_id?: string | null
+  isian_id?: string | null
+}
+
+interface CatalogHppComponent {
+  id: string
+  catalog_id: string
+  material_id: string
+  quantity: number
+  material: {
+    name: string
+    unit: string
+    base_price_per_unit: number
+  }
+}
+
+interface LeadData {
+  id: string
+  name: string | null
+  phone: string | null
+  location: string | null
+}
+
 interface ErpItemEditorProps {
   entityId: string
   entityType: 'quotation' | 'contract' | 'invoice'
   initialItems: ErpItem[]
   customerPhone?: string 
-  signatories?: any[] // Added for contracts
+  signatories?: { id: string; name: string; job_title: string }[] // Added for contracts
   onClose: () => void
 }
 
@@ -66,12 +131,12 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
   const [isPending, startTransition] = useTransition()
   
   // Customer Profile State for Editing
-  const [customerProfile, setCustomerProfile] = useState<any>(null)
+  const [customerProfile, setCustomerProfile] = useState<CustomerProfile | null>(null)
   const [customerName, setCustomerName] = useState('')
   const [customerPhoneState, setCustomerPhoneState] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
-  const [attachments, setAttachments] = useState<any[]>([])
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   
   const [isMetadataLoading, setIsMetadataLoading] = useState(true)
   const isInitialLoadRef = useRef(true)
@@ -117,11 +182,11 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
   }, [customerName, customerPhoneState, customerEmail, customerAddress, customerProfile?.phone, customerPhone])
 
   // Catalog Cache for Min Price Calculation
-  const [catalogCache, setCatalogCache] = useState<Record<string, any>>({})
-  const [catalogComponentsCache, setCatalogComponentsCache] = useState<Record<string, any[]>>({})
+  const [catalogCache, setCatalogCache] = useState<Record<string, CatalogCosting>>({})
+  const [catalogComponentsCache, setCatalogComponentsCache] = useState<Record<string, CatalogHppComponent[]>>({})
   
   // Catalog lookup states
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<Catalog[]>([])
   const [activeSearchIdx, setActiveSearchIdx] = useState<number | null>(null)
   const [isSearching, setIsSearching] = useState(false)
 
@@ -133,13 +198,13 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
   const [leadIdForContract, setLeadIdForContract] = useState<string | null>(null)
   
   // Zoning states
-  const [zones, setZones] = useState<any[]>([])
+  const [zones, setZones] = useState<Zone[]>([])
   const [selectedZoneId, setSelectedZoneId] = useState<string>('')
   const [isZoneSearchOpen, setIsZoneSearchOpen] = useState(false)
   const [zoneSearchQuery, setZoneSearchQuery] = useState('')
 
   // Payment Terms states
-  const [paymentTerms, setPaymentTerms] = useState<any[]>([])
+  const [paymentTerms, setPaymentTerms] = useState<PaymentTerm[]>([])
   const [selectedPaymentTermId, setSelectedPaymentTermId] = useState<string>('')
   const [isTermSearchOpen, setIsTermSearchOpen] = useState(false)
   const [termSearchQuery, setTermSearchQuery] = useState('')
@@ -187,10 +252,10 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
             setCustomerProfile(contractData.erp_customer_profiles)
           } else if (contractData.erp_quotations?.leads) {
             // Fix TypeScript 'any' type casting for leads
-            const lead = contractData.erp_quotations.leads as any
+            const lead = contractData.erp_quotations.leads as unknown as LeadData
             setCustomerName(lead.name || '')
             setCustomerPhoneState(lead.phone || '')
-            setCustomerEmail(lead.email || '')
+            setCustomerEmail('') // Leads don't have email in this schema
             setCustomerAddress(lead.location || '')
           }
         }
@@ -207,10 +272,10 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
           setCustomerProfile(invData.erp_contracts.erp_customer_profiles)
         } else if (invData?.erp_contracts?.erp_quotations?.leads) {
           // Fix TypeScript 'any' type casting for leads
-          const lead = invData.erp_contracts.erp_quotations.leads as any
+          const lead = invData.erp_contracts.erp_quotations.leads as unknown as LeadData
           setCustomerName(lead.name || '')
           setCustomerPhoneState(lead.phone || '')
-          setCustomerEmail(lead.email || '')
+          setCustomerEmail('') // Leads don't have email in this schema
           setCustomerAddress(lead.location || '')
         }
 
@@ -243,10 +308,10 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
           
           if (qtnRes.data.leads) {
             // Fix TypeScript 'any' type casting for leads
-            const lead = qtnRes.data.leads as any
+            const lead = qtnRes.data.leads as unknown as LeadData
             setCustomerName(lead.name || '')
             setCustomerPhoneState(lead.phone || '')
-            setCustomerEmail(lead.email || '')
+            setCustomerEmail('') // Leads don't have email in this schema
             setCustomerAddress(lead.location || '')
           }
         }
@@ -342,7 +407,9 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
         if (catalogs) {
           setCatalogCache(prev => {
             const newCache = { ...prev }
-            catalogs.forEach(c => { newCache[c.id] = c })
+            catalogs.forEach(c => { 
+              newCache[c.id] = c as CatalogCosting
+            })
             return newCache
           })
         }
@@ -360,7 +427,7 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
             const newCompCache = { ...prev }
             components.forEach(comp => {
               if (!newCompCache[comp.catalog_id]) newCompCache[comp.catalog_id] = []
-              newCompCache[comp.catalog_id].push(comp)
+              newCompCache[comp.catalog_id].push(comp as unknown as CatalogHppComponent)
             })
             // Ensure even empty components are cached to avoid re-fetch
             missingComponentIds.forEach(id => {
@@ -378,7 +445,7 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
     return items.reduce((acc, item) => acc + item.subtotal, 0)
   }, [items])
 
-  const getItemMinPrice = (item: ErpItem, index: number) => {
+  const getItemMinPrice = useCallback((item: ErpItem, index: number) => {
     let currentBuilderCosts = item.builder_costs
     
     // Fallback: Calculate builder_costs on the fly if missing but we have catalog info
@@ -421,18 +488,18 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
     
     const markupNominalPerUnit = (priceAfterMargin * (markupPercentage / 100)) + (flatFee / (computedQty || 1))
     return Math.ceil(priceAfterMargin + markupNominalPerUnit)
-  }
+  }, [catalogCache, catalogComponentsCache, selectedZoneId, zones])
 
   const totalMinAmount = useMemo(() => {
     return items.reduce((acc, item, idx) => acc + (getItemMinPrice(item, idx) * item.quantity), 0)
-  }, [items, catalogCache, catalogComponentsCache, selectedZoneId, zones])
+  }, [items, getItemMinPrice])
 
   const isBelowMinAnyItem = useMemo(() => {
     return items.some((item, idx) => {
       const minPrice = getItemMinPrice(item, idx)
       return minPrice > 0 && item.unit_price < minPrice
     })
-  }, [items, catalogCache, catalogComponentsCache, selectedZoneId, zones])
+  }, [items, getItemMinPrice])
 
   const handleAddItem = () => {
     setItems([...items, { name: '', unit: '', quantity: 0, unit_price: 0, subtotal: 0, type: 'manual' }])
@@ -442,19 +509,19 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
     setItems(items.filter((_, i) => i !== index))
   }
 
-  const handleChangeItem = (index: number, field: keyof ErpItem, value: any) => {
+  const handleChangeItem = (index: number, field: keyof ErpItem, value: string | number | null) => {
     const newItems = [...items]
-    const item = { ...newItems[index], [field]: value }
+    const item = { ...newItems[index], [field]: value } as ErpItem
     
     if (field === 'quantity' || field === 'unit_price') {
-      item.subtotal = Math.ceil((item.quantity || 0) * (item.unit_price || 0))
+      item.subtotal = Math.ceil((Number(item.quantity) || 0) * (Number(item.unit_price) || 0))
     }
     
     newItems[index] = item
     setItems(newItems)
 
     // Trigger search if name changes
-    if (field === 'name') {
+    if (field === 'name' && typeof value === 'string') {
       if (value.length >= 2) {
         handleSearch(value, index)
       } else {
@@ -477,7 +544,7 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
     }
   }
 
-  const handleSelectCatalog = (catalog: any, index: number) => {
+  const handleSelectCatalog = (catalog: CatalogCosting, index: number) => {
     // Update catalog cache immediately
     setCatalogCache(prev => ({ ...prev, [catalog.id]: catalog }))
 
@@ -496,10 +563,11 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
       rangka_id: catalog.rangka_id || null,
       finishing_id: catalog.finishing_id || null,
       isian_id: catalog.isian_id || null,
+      builder_costs: [], // Reset builder costs when changing catalog
       panjang: 1, // Default dimension for Min Price calculation
       lebar: 1,
       unit_qty: 1
-    }
+    } as ErpItem
     
     setItems(newItems)
     setSearchResults([])
@@ -556,9 +624,10 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
       }])
       
       toast.success('Berhasil', 'Gambar referensi berhasil diunggah.')
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Terjadi kesalahan tidak dikenal'
       console.error('Upload failed:', err)
-      toast.error('Gagal', 'Gagal mengunggah gambar. Pastikan ukuran file < 5MB.')
+      toast.error('Gagal', `Gagal mengunggah gambar. ${errorMessage}`)
     } finally {
       setIsUploading(false)
     }
@@ -587,8 +656,9 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
         }
         toast.success('Berhasil', `Item ${entityType} berhasil diperbarui secara independen.`)
         onClose()
-      } catch (error: any) {
-        toast.error('Gagal', error.message || 'Terjadi kesalahan saat menyimpan.')
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan saat menyimpan.'
+        toast.error('Gagal', errorMessage)
       }
     })
   }
@@ -875,13 +945,12 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
                                 title="Buka Builder Cost"
                               >
                                 {item.catalog_id && catalogCache[item.catalog_id]?.image_url ? (
-                                  <img 
-                                    src={catalogCache[item.catalog_id].image_url} 
+                                  <Image 
+                                    src={catalogCache[item.catalog_id].image_url!} 
                                     alt="thumb" 
+                                    width={20}
+                                    height={20}
                                     className="w-5 h-5 object-cover rounded-md"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).src = 'https://placehold.co/100x100?text=No+Image'
-                                    }}
                                   />
                                 ) : (
                                   <Calculator size={16} />
@@ -889,9 +958,11 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
                               </button>
                               {item.catalog_id && catalogCache[item.catalog_id]?.image_url && (
                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-32 aspect-square rounded-xl overflow-hidden shadow-2xl border-4 border-white opacity-0 group-hover/thumb:opacity-100 transition-opacity pointer-events-none z-[130] bg-white">
-                                  <img 
-                                    src={catalogCache[item.catalog_id].image_url} 
+                                  <Image 
+                                    src={catalogCache[item.catalog_id].image_url!} 
                                     alt="preview" 
+                                    width={128}
+                                    height={128}
                                     className="w-full h-full object-cover"
                                   />
                                 </div>
@@ -902,7 +973,7 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
                             <input 
                               type="text" 
                               value={item.name} 
-                              onChange={(e) => handleChangeItem(idx, 'name', e.target.value)}
+                              onChange={(e) => handleChangeItem(idx, 'name', e.target.value as string)}
                               onFocus={() => {
                                 if (item.name.length >= 2) handleSearch(item.name, idx)
                               }}
@@ -932,12 +1003,12 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
                                     {searchResults.map((res) => (
                                       <button
                                         key={res.id}
-                                        onClick={() => handleSelectCatalog(res, idx)}
+                                        onClick={() => handleSelectCatalog(res as unknown as CatalogCosting, idx)}
                                         className="w-full p-3 text-left hover:bg-blue-50 transition-colors border-b border-gray-50 last:border-0 group/item flex items-start gap-3"
                                       >
                                         {res.image_url ? (
-                                          <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0 border border-gray-100 bg-gray-50">
-                                            <img src={res.image_url} alt={res.title} className="w-full h-full object-cover" />
+                                          <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 border border-gray-100 bg-gray-50">
+                                            <Image src={res.image_url} alt={res.title} fill className="object-cover" />
                                           </div>
                                         ) : (
                                           <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
@@ -1007,7 +1078,10 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
                       </td>
                       <td className="py-4 px-4 rounded-r-2xl border-y border-r border-gray-100 text-center">
                         <button 
-                          onClick={() => handleRemoveItem(idx)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleRemoveItem(idx)
+                          }}
                           className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all active:scale-95"
                         >
                           <Trash2 size={16} />
@@ -1064,7 +1138,7 @@ export default function ErpItemEditor({ entityId, entityType, initialItems, cust
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                 {attachments.map((file, idx) => (
                   <div key={idx} className="relative group aspect-square rounded-xl border border-gray-100 overflow-hidden bg-gray-50">
-                    <img src={file.url} alt={file.name} className="w-full h-full object-cover" />
+                    <Image src={file.url} alt={file.name} fill className="object-cover" />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                       <a href={file.url} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-white rounded-lg text-gray-700 hover:text-blue-600 transition-all">
                         <ExternalLink size={14} />

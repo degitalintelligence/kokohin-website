@@ -1,7 +1,6 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
 import { formatCurrency, getStatusLabel, getStatusStyle } from '@/lib/utils/costing'
 import {
   Users,
@@ -16,11 +15,8 @@ import {
   Mail,
   MapPin,
   Maximize2,
-  Minimize2,
-  Package,
   MessageSquare,
-  Tag,
-  FileDown
+  Tag
 } from 'lucide-react'
 import { createQuotationForLead } from '@/app/actions/quotations'
 import DownloadLeadPdfButton from '@/components/admin/DownloadLeadPdfButton'
@@ -279,14 +275,14 @@ export default async function AdminLeadsPage({
                     <div className="p-2 bg-gray-50 rounded-lg text-gray-400"><Tag size={18} /></div>
                     <div>
                       <p className="text-[9px] font-bold text-gray-400 uppercase">Tipe Layanan</p>
-                      <p className="font-bold text-gray-900">{(activeLead.service as any)?.name ?? <span className="text-gray-300 font-normal italic text-[10px]">Layanan Umum</span>}</p>
+                      <p className="font-bold text-gray-900">{(activeLead.service as { name: string } | null)?.name ?? <span className="text-gray-300 font-normal italic text-[10px]">Layanan Umum</span>}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-gray-50 rounded-lg text-gray-400"><Tag size={18} /></div>
                     <div>
                       <p className="text-[9px] font-bold text-gray-400 uppercase">Katalog Pilihan</p>
-                      <p className="font-bold text-gray-900">{(activeLead.catalog as any)?.title ?? <span className="text-gray-300 font-normal italic text-[10px]">Custom / Manual (Tanpa Katalog)</span>}</p>
+                      <p className="font-bold text-gray-900">{(activeLead.catalog as { title: string } | null)?.title ?? <span className="text-gray-300 font-normal italic text-[10px]">Custom / Manual (Tanpa Katalog)</span>}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -317,7 +313,7 @@ export default async function AdminLeadsPage({
                 {activeLead.message && (
                   <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-gray-100">
                     <p className="text-[9px] font-bold text-gray-400 uppercase mb-2 flex items-center gap-1.5"><MessageSquare size={12} /> Pesan / Catatan Customer:</p>
-                    <p className="text-sm text-gray-700 leading-relaxed italic">"{activeLead.message}"</p>
+                    <p className="text-sm text-gray-700 leading-relaxed italic">&quot;{activeLead.message}&quot;</p>
                   </div>
                 )}
               </section>

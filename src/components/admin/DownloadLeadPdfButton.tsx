@@ -18,10 +18,49 @@ const PDFDownloadLink = dynamic(
   }
 )
 
+interface LeadData {
+  id: string
+  name?: string
+  phone?: string
+  total_selling_price?: number
+  original_selling_price?: number
+  panjang?: number
+  lebar?: number
+  unit_qty?: number
+  total_hpp?: number
+  margin_percentage?: number
+  catalog?: {
+    title?: string
+    base_price_unit?: string
+  }
+  zone?: {
+    name?: string
+  }
+}
+
+interface EstimationData {
+  total_hpp?: number
+  margin_percentage?: number
+  total_selling_price?: number
+}
+
+interface EstimationItem {
+  material?: {
+    name?: string
+    unit?: string
+    base_price_per_unit?: number
+  }
+  description?: string
+  qty_needed?: number
+  qty_charged?: number
+  unit?: string
+  subtotal?: number
+}
+
 interface DownloadLeadPdfButtonProps {
-  lead: any
-  estimation: any
-  items: any[]
+  lead: LeadData
+  estimation: EstimationData | null
+  items: EstimationItem[] | null
   logoUrl: string | null
 }
 
@@ -45,7 +84,7 @@ export default function DownloadLeadPdfButton({ lead, estimation, items, logoUrl
   // Map estimation + items to CalculatorResult
   const result: CalculatorResult = {
     luas: (Number(lead.panjang) * Number(lead.lebar)) || Number(lead.unit_qty) || 0,
-    unitUsed: lead.catalog?.base_price_unit || 'm2',
+    unitUsed: (lead.catalog?.base_price_unit as 'm2' | 'm1' | 'unit' | undefined) || 'm2',
     totalHpp: hasEstimation ? Number(estimation.total_hpp) : Number(lead.total_hpp || 0),
     materialCost: 0, // Not explicitly used in simplified PDF
     wasteCost: 0, // Not explicitly used in simplified PDF
@@ -81,13 +120,27 @@ export default function DownloadLeadPdfButton({ lead, estimation, items, logoUrl
       document={
         <QuotationPDF
           result={result}
-          leadInfo={{ name: leadName, whatsapp: lead.phone || '' }}
+          leadInfo={{ 
+            name: leadName, 
+            whatsapp: lead.phone || '' 
+          }}
           projectId={lead.id}
-          zoneName={lead.zone?.name || null}
           logoUrl={logoUrl}
-          specifications={result.breakdown?.map(item => item.name).join(', ') || 'Paket Pekerjaan Kanopi'}
-          projectArea={result.luas}
-          areaUnit={result.unitUsed === 'm2' ? 'm²' : result.unitUsed === 'm1' ? 'm¹' : 'unit'}
+          items={hasEstimation && items ? items.map(item => ({
+            name: item.material?.name || item.description || 'Material',
+            unit: item.material?.unit || item.unit || 'unit',
+            quantity: item.qty_charged || 0,
+            unit_price: item.material?.base_price_per_unit || 0,
+            subtotal: item.subtotal || 0
+          })) : [
+            {
+              name: lead.catalog?.title || 'Paket Pekerjaan',
+              unit: lead.catalog?.base_price_unit || 'unit',
+              quantity: (Number(lead.panjang) * Number(lead.lebar)) || Number(lead.unit_qty) || 1,
+              unit_price: 0,
+              subtotal: Number(lead.total_selling_price || lead.original_selling_price || 0)
+            }
+          ]}
         />
       }
       fileName={fileName}

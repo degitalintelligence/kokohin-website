@@ -18,7 +18,12 @@ interface SaveLeadEstimationButtonProps {
     lebar?: number
     unit_qty?: number
     status?: string
-    items?: any[]
+    items?: {
+      name: string
+      unit: string
+      subtotal: number
+      type: string
+    }[]
   }
   disabled?: boolean
 }
@@ -42,9 +47,10 @@ export default function SaveLeadEstimationButton({
         toast.success('Estimasi berhasil disimpan ke lead')
         setTimeout(() => setIsSuccess(false), 3000)
         router.refresh()
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan saat menyimpan data.'
         console.error('Failed to save estimation:', error)
-        toast.error('Gagal menyimpan estimasi', error.message || 'Terjadi kesalahan saat menyimpan data.')
+        toast.error('Gagal menyimpan estimasi', errorMessage)
       }
     })
   }

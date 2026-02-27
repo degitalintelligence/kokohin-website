@@ -2,10 +2,11 @@
 
 import { useEffect, useReducer, useState } from 'react'
 import { createPortal } from 'react-dom'
+import Image from 'next/image'
 import { Calculator, Ruler, MapPin, Package, AlertCircle } from 'lucide-react'
 import { calculateCanopyPrice, formatRupiah, formatNumber } from '@/lib/calculator'
 import type { CalculatorInput, CalculatorResult, Material, Zone, Catalog, CatalogAddon } from '@/lib/types'
-import { createProjectWithEstimation } from '@/app/actions/createProjectWithEstimation'
+import { createProjectWithEstimation, type CreateProjectDTO } from '@/app/actions/createProjectWithEstimation'
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
 import { generateWhatsAppLink } from '@/utils/generateWhatsAppLink'
@@ -191,8 +192,6 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     }
     try {
       setSavingLead(true)
-      const zoneName = zones.find((z) => z.id === input.zoneId)?.name ?? null
-      const inferredAddress = zoneName ? `Zona ${zoneName}` : 'Alamat belum diisi'
       const unit = catalogData?.base_price_unit || 'm2'
       const calculatedQty = input.jenis === 'standard' && input.catalogId
         ? (unit === 'm2' ? (input.panjang * input.lebar) : unit === 'm1' ? input.panjang : Math.max(1, input.unitQty || 1))
@@ -200,10 +199,10 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
       
       const currentResult = forcedResult || pendingResult
 
-      const dto = {
+      const dto: CreateProjectDTO = {
         customer_name: leadInfo.name,
         phone: leadInfo.whatsapp,
-        address: inferredAddress,
+        address: 'Alamat belum diisi',
         zone_id: input.zoneId || null,
         custom_notes: input.jenis === 'custom' ? (input.customNotes || 'Permintaan custom via kalkulator') : null,
         status: input.jenis === 'custom' ? 'Need Manual Quote' as const : 'New' as const,
@@ -229,7 +228,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
       setCalcError(null)
     } catch (error) {
       const fallback = 'Gagal menyimpan data ke sistem. Silakan coba beberapa saat lagi atau hubungi kami via WhatsApp.'
-      const code = (error as { code?: unknown } | null)?.code
+      const code = (error as { code?: string } | null)?.code
       const isDuplicateV1 = String(code) === '23505'
       if (isDuplicateV1) {
         setCalcError('Data penawaran Anda sudah tersimpan sebelumnya. Silakan buka rincian estimasi atau cek riwayat penawaran.')
@@ -251,12 +250,11 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     const unit = result?.unitUsed || 'm2'
     const qtyVal = unit === 'm2' ? (result?.luas ?? 0) : ((result?.computedQty ?? result?.luas) ?? 0)
     const area = result ? formatNumber(qtyVal) : null
-    const price = result ? formatRupiah(result.estimatedPrice) : null
     const url = generateWhatsAppLink('survey', {
       adminPhone,
       customerName: leadInfo.name || 'Customer',
       area,
-      price,
+      price: result ? formatRupiah(result.estimatedPrice) : null,
       projectId
     })
     window.open(url, '_blank')
@@ -267,7 +265,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     const url = generateWhatsAppLink('consultation', {
       adminPhone,
       customerName: leadInfo.name || 'Customer',
-      customNotes: input.customNotes || 'Tidak ada catatan spesifik',
+      customNotes: input.customNotes,
       projectId
     })
     window.open(url, '_blank')
@@ -445,9 +443,6 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
     fetchCatalogData()
   }, [input.catalogId])
   
-  const activeZoneName =
-    zones.find((zone) => zone.id === input.zoneId)?.name ?? null
-
   return (
     <div className="max-w-6xl mx-auto p-6 md:p-8" id="canopy-calculator">
       {!hideTitle && (
@@ -689,7 +684,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                         <div className="mt-4 flex flex-wrap gap-2">
                           {attachments.map((att, i) => (
                             <div key={i} className="relative group">
-                              <img src={att.url} alt="Attachment" className="w-12 h-12 rounded object-cover border" />
+                              <Image src={att.url} alt="Attachment" width={48} height={48} className="w-12 h-12 rounded object-cover border" />
                               <div className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] px-1 rounded uppercase font-bold">
                                 {att.type}
                               </div>
@@ -967,9 +962,9 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                         result={result}
                         leadName={leadInfo.name}
                         projectId={projectId}
-                        zoneName={activeZoneName}
                         logoUrl={logoUrl}
-                        customNotes={input.customNotes || null}
+                        customNotes={input.customNotes}
+                        onReset={handleReset}
                         onBookSurvey={result.isCustom ? handleCustomConsultation : handleBookSurvey}
                       />
                     ) : (

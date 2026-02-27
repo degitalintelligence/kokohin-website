@@ -3,19 +3,72 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+interface AttachmentPayload {
+    name: string
+    url: string
+    type: string
+    created_at: string
+}
+
+type BuilderCostSnapshot = Record<string, unknown>
+
+interface QuotationItem {
+    name: string
+    unit: string
+    quantity: number
+    unit_price: number
+    subtotal: number
+    type: string
+    builder_costs?: BuilderCostSnapshot[]
+    catalog_id?: string | null
+    atap_id?: string | null
+    rangka_id?: string | null
+    finishing_id?: string | null
+    isian_id?: string | null
+    zone_id?: string | null
+    panjang?: number | null
+    lebar?: number | null
+    unit_qty?: number | null
+    markup_percentage?: number
+    markup_flat_fee?: number
+}
+
+interface Lead {
+    id: string
+    project_id?: string
+    panjang?: number
+    lebar?: number
+    unit_qty?: number
+    total_hpp?: number
+    total_selling_price?: number
+    original_selling_price?: number
+    catalog_id?: string
+    zone_id?: string
+    attachments?: AttachmentPayload[]
+    catalog?: {
+        title: string
+        base_price_unit?: string
+    }
+    zone?: {
+        markup_percentage?: number
+        flat_fee?: number
+    }
+}
+
 export async function createQuotationForLead(leadId: string) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Unauthorized')
 
     // 1. Fetch lead data first
-    const { data: lead, error: leadError } = await supabase
+    const { data: leadRaw, error: leadError } = await supabase
         .from('leads')
         .select('*, zone:zone_id(*), catalog:catalog_id(*)')
         .eq('id', leadId)
         .single()
     
-    if (leadError || !lead) throw new Error('Lead not found')
+    if (leadError || !leadRaw) throw new Error('Lead not found')
+    const lead = leadRaw as unknown as Lead
 
     // 2. Check if there's an existing estimation
     const { data: estimation } = await supabase
@@ -36,8 +89,8 @@ export async function createQuotationForLead(leadId: string) {
     const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
     const qtnNumber = `QTN-${dateStr}-${randomSuffix}`
 
-    const catalogTitle = (lead as any).catalog?.title || 'Paket Pekerjaan'
-    const catalogUnitRaw = (lead as any).catalog?.base_price_unit
+    const catalogTitle = lead.catalog?.title || 'Paket Pekerjaan'
+    const catalogUnitRaw = lead.catalog?.base_price_unit
     const catalogUnit = catalogUnitRaw === 'm2' ? 'm²' : catalogUnitRaw === 'm1' ? 'm¹' : 'unit'
 
     const totalAmount = lead.original_selling_price || lead.total_selling_price || 0
@@ -74,7 +127,7 @@ export async function createQuotationForLead(leadId: string) {
     
     // Add Zone Markup to total amount if applicable (Internal calculation, not separate line)
     const zone = lead.zone
-    let finalTotalAmount = totalAmount
+    const finalTotalAmount = totalAmount
     let markupPercentage = 0
     let markupFlatFee = 0
 
@@ -88,9 +141,8 @@ export async function createQuotationForLead(leadId: string) {
 
     const unitPrice = qty > 0 ? Math.ceil(finalTotalAmount / qty) : finalTotalAmount
 
-    const qtnItems: any[] = [
+    const qtnItems: QuotationItem[] = [
         {
-            quotation_id: quotation.id,
             name: catalogTitle,
             unit: catalogUnit,
             quantity: qty,
@@ -109,7 +161,9 @@ export async function createQuotationForLead(leadId: string) {
         }
     ]
 
-    const { error: itemError } = await supabase.from('erp_quotation_items').insert(qtnItems)
+    const { error: itemError } = await supabase.from('erp_quotation_items').insert(
+        qtnItems.map(item => ({ ...item, quotation_id: quotation.id }))
+    )
     if (itemError) {
         console.error('Failed to create quotation items from lead:', itemError)
         throw itemError
@@ -129,19 +183,30 @@ export async function createQuotationForLead(leadId: string) {
     return { success: true, quotationId: quotation.id }
 }
 
+interface Estimation {
+    id: string
+    lead_id: string
+    project_id?: string
+    total_selling_price: number
+    margin_percentage: number
+    total_hpp: number
+    lead?: Lead
+}
+
 export async function createQuotationFromEstimation(estimationId: string) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Unauthorized')
 
     // 1. Fetch estimation data
-    const { data: estimation, error: estError } = await supabase
+    const { data: estRaw, error: estError } = await supabase
         .from('estimations')
         .select('*, lead:lead_id(*, zone:zone_id(*), catalog:catalog_id(*)), project:project_id(*)')
         .eq('id', estimationId)
         .single()
 
-    if (estError || !estimation) throw new Error('Estimation not found')
+    if (estError || !estRaw) throw new Error('Estimation not found')
+    const estimation = estRaw as unknown as Estimation
 
     // 2. Generate quotation number (e.g., QTN-20260225-XXXX)
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '')
@@ -161,12 +226,12 @@ export async function createQuotationFromEstimation(estimationId: string) {
             created_by: user.id,
             valid_until: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days validity
             // Builder metadata snapshots
-            panjang: (estimation as any).lead?.panjang,
-            lebar: (estimation as any).lead?.lebar,
-            unit_qty: (estimation as any).lead?.unit_qty,
+            panjang: estimation.lead?.panjang,
+            lebar: estimation.lead?.lebar,
+            unit_qty: estimation.lead?.unit_qty,
             margin_percentage: estimation.margin_percentage,
-            catalog_id: (estimation as any).lead?.catalog_id,
-            zone_id: (estimation as any).lead?.zone_id,
+            catalog_id: estimation.lead?.catalog_id,
+            zone_id: estimation.lead?.zone_id,
             total_hpp: estimation.total_hpp
         })
         .select()
@@ -179,7 +244,7 @@ export async function createQuotationFromEstimation(estimationId: string) {
 
     // 3.5. Create initial quotation items (Catalog + Zone Markup)
     // Instead of copying HPP materials, we use the Catalog Package pattern
-    const leadData = (estimation as any).lead
+    const leadData = estimation.lead
     const zone = leadData?.zone
     const initialTotalAmount = Number(estimation.total_selling_price)
     
@@ -189,7 +254,7 @@ export async function createQuotationFromEstimation(estimationId: string) {
     const qty = (Number(leadData?.panjang) * Number(leadData?.lebar)) || Number(leadData?.unit_qty) || 1
     
     // Add Zone Markup to total amount if applicable (Internal calculation, not separate line)
-    let finalTotalAmount = initialTotalAmount
+    const finalTotalAmount = initialTotalAmount
     let markupPercentage = 0
     let markupFlatFee = 0
 
@@ -202,9 +267,8 @@ export async function createQuotationFromEstimation(estimationId: string) {
 
     const unitPrice = qty > 0 ? Math.ceil(finalTotalAmount / qty) : finalTotalAmount
 
-    const qtnItems: any[] = [
+    const qtnItems: QuotationItem[] = [
         {
-            quotation_id: quotation.id,
             name: leadData?.catalog?.title || 'Paket Pekerjaan',
             unit: catalogUnit,
             quantity: qty,
@@ -223,7 +287,9 @@ export async function createQuotationFromEstimation(estimationId: string) {
         }
     ]
 
-    const { error: itemError } = await supabase.from('erp_quotation_items').insert(qtnItems)
+    const { error: itemError } = await supabase.from('erp_quotation_items').insert(
+        qtnItems.map(item => ({ ...item, quotation_id: quotation.id }))
+    )
     if (itemError) {
         console.error('Failed to create quotation items from estimation:', itemError)
         throw itemError
@@ -271,7 +337,7 @@ export async function updateQuotationStatus(quotationId: string, newStatus: stri
     return { success: true }
 }
 
-export async function updateQuotationItems(quotationId: string, items: any[], totalAmount: number, paymentTermId?: string, notes?: string, attachments?: any[]) {
+export async function updateQuotationItems(quotationId: string, items: QuotationItem[], totalAmount: number, paymentTermId?: string, notes?: string, attachments?: AttachmentPayload[]) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Unauthorized')
@@ -308,7 +374,15 @@ export async function updateQuotationItems(quotationId: string, items: any[], to
     if (insertError) throw insertError
 
     // 3. Update quotation total and payment terms
-    const updateData: any = { 
+    interface QuotationUpdateData {
+        total_amount: number
+        updated_at: string
+        payment_term_id?: string
+        notes?: string
+        attachments?: AttachmentPayload[]
+    }
+
+    const updateData: QuotationUpdateData = { 
         total_amount: totalAmount, 
         updated_at: new Date().toISOString() 
     }
@@ -345,7 +419,7 @@ export async function updateQuotationBuilder(
         margin_percentage: number
         total_hpp: number
         total_amount: number
-        items: any[]
+        items: QuotationItem[]
         custom_unit_price?: number
         standard_unit_price?: number
         zone_id?: string
@@ -386,9 +460,9 @@ export async function updateQuotationBuilder(
             quotation_id: quotationId,
             name: item.name,
             unit: item.unit,
-            quantity: item.qtyCharged || item.quantity || 0,
-            unit_price: item.hpp || item.unit_price || 0,
-            subtotal: item.subtotal || 0,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            subtotal: item.subtotal,
             type: item.type
         }))
     )
@@ -396,7 +470,7 @@ export async function updateQuotationBuilder(
     if (itemError) throw itemError
 
     // 4. Log Audit Trail with Price Comparison & Zoning
-    const standardPrice = data.standard_unit_price || (currentQtn?.catalogs as any)?.base_price_per_m2 || 0
+    const standardPrice = data.standard_unit_price || (currentQtn?.catalogs as unknown as { base_price_per_m2?: number })?.base_price_per_m2 || 0
     const deviance = standardPrice > 0 ? ((data.custom_unit_price || 0) - standardPrice) / standardPrice * 100 : 0
 
     await supabase.from('erp_audit_trail').insert({

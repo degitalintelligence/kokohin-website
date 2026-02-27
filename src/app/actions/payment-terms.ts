@@ -14,7 +14,12 @@ export async function getPaymentTerms() {
     return data
 }
 
-export async function upsertPaymentTerm(payload: { id?: string, name: string, description?: string, terms_json: any[], is_active?: boolean }) {
+interface PaymentTermItem {
+    percent: number
+    label: string
+}
+
+export async function upsertPaymentTerm(payload: { id?: string, name: string, description?: string, terms_json: PaymentTermItem[], is_active?: boolean }) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Unauthorized')

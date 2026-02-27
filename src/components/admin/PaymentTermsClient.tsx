@@ -5,20 +5,25 @@ import { Plus, Trash2, Edit2, Save, X, AlertCircle, Loader2 } from 'lucide-react
 import { upsertPaymentTerm, deletePaymentTerm } from '@/app/actions/payment-terms'
 import { toast } from '@/components/ui/toaster'
 
+interface PaymentTermItem {
+  percent: number
+  label: string
+}
+
 interface PaymentTerm {
   id?: string
   name: string
-  description: string
-  terms_json: { percent: number, label: string }[]
-  is_active: boolean
+  description?: string
+  terms_json: PaymentTermItem[]
+  is_active?: boolean
 }
 
 interface PaymentTermsClientProps {
-  initialData: any[]
+  initialData: PaymentTerm[]
 }
 
 export default function PaymentTermsClient({ initialData }: PaymentTermsClientProps) {
-  const [terms, setTerms] = useState<PaymentTerm[]>(initialData)
+  const [terms] = useState<PaymentTerm[]>(initialData)
   const [editingTerm, setEditingTerm] = useState<PaymentTerm | null>(null)
   const [isPending, startTransition] = useTransition()
 
@@ -59,8 +64,9 @@ export default function PaymentTermsClient({ initialData }: PaymentTermsClientPr
         setEditingTerm(null)
         // Refresh local state (simplified, better use router.refresh or react-query)
         window.location.reload()
-      } catch (error: any) {
-        toast.error('Gagal', error.message || 'Terjadi kesalahan saat menyimpan.')
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan saat menyimpan.'
+        toast.error('Gagal', errorMessage)
       }
     })
   }
@@ -72,15 +78,16 @@ export default function PaymentTermsClient({ initialData }: PaymentTermsClientPr
       await deletePaymentTerm(id)
       toast.success('Berhasil', 'Payment term berhasil dihapus.')
       window.location.reload()
-    } catch (error: any) {
-      toast.error('Gagal', error.message || 'Gagal menghapus.')
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Gagal menghapus.'
+      toast.error('Gagal', errorMessage)
     }
   }
 
-  const handleTermChange = (idx: number, field: 'percent' | 'label', value: any) => {
+  const handleTermChange = (idx: number, field: 'percent' | 'label', value: string | number) => {
     if (!editingTerm) return
     const newTermsJson = [...editingTerm.terms_json]
-    newTermsJson[idx] = { ...newTermsJson[idx], [field]: value }
+    newTermsJson[idx] = { ...newTermsJson[idx], [field]: value } as { percent: number, label: string }
     setEditingTerm({ ...editingTerm, terms_json: newTermsJson })
   }
 

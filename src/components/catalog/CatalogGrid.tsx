@@ -7,9 +7,16 @@ import type { Catalog } from '@/lib/types'
 
 const FALLBACK_WA = '628000000000'
 
+interface CatalogWithRelations extends Omit<Catalog, 'atap' | 'rangka' | 'finishing' | 'isian'> {
+  atap?: { name: string }
+  rangka?: { name: string }
+  finishing?: { name: string }
+  isian?: { name: string }
+}
+
 export default function CatalogGrid() {
   const [selectedCatalog, setSelectedCatalog] = useState<string | null>(null)
-  const [catalogs, setCatalogs] = useState<Catalog[]>([])
+  const [catalogs, setCatalogs] = useState<CatalogWithRelations[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [category, setCategory] = useState<'all' | 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya'>('all')
@@ -27,7 +34,7 @@ export default function CatalogGrid() {
           setCatalogs([])
           return
         }
-        const json = await res.json() as { catalogs?: Catalog[] }
+        const json = await res.json() as { catalogs?: CatalogWithRelations[] }
         setCatalogs(json.catalogs ?? [])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Gagal memuat katalog')
@@ -240,7 +247,7 @@ export default function CatalogGrid() {
                     </p>
                   </div>
                   
-                  {(catalog.atap?.name || catalog.rangka?.name) && (
+                  {catalog.atap?.name || catalog.rangka?.name || catalog.isian?.name || catalog.finishing?.name ? (
                     <div className="pb-4">
                       <h4 className="text-sm font-semibold text-gray-700 mb-2">Material yang digunakan:</h4>
                       <ul className="space-y-2">
@@ -256,21 +263,21 @@ export default function CatalogGrid() {
                             <span>Rangka: {catalog.rangka.name}</span>
                           </li>
                         )}
-                        {(catalog as any).isian?.name && (
+                        {catalog.isian?.name && (
                           <li className="flex items-start gap-2 text-sm">
                             <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
-                            <span>Isian: {(catalog as any).isian.name}</span>
+                            <span>Isian: {catalog.isian.name}</span>
                           </li>
                         )}
-                        {(catalog as any).finishing?.name && (
+                        {catalog.finishing?.name && (
                           <li className="flex items-start gap-2 text-sm">
                             <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
-                            <span>Finishing: {(catalog as any).finishing.name}</span>
+                            <span>Finishing: {catalog.finishing.name}</span>
                           </li>
                         )}
                       </ul>
                     </div>
-                  )}
+                  ) : null}
                   
                   <div className="pt-4 border-t border-gray-100">
                     <h4 className="text-sm font-semibold text-gray-700 mb-2">Termasuk:</h4>

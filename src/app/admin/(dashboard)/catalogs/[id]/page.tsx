@@ -90,7 +90,6 @@ export default async function AdminCatalogDetailPage({
     )
   }
 
-  const marginPercentage = (catalog as { margin_percentage?: number | null }).margin_percentage ?? 0
   const basePrice = (catalog as { base_price_per_m2?: number | null }).base_price_per_m2 ?? 0
   const hppPerUnit = (catalog as { hpp_per_unit?: number | null }).hpp_per_unit ?? 0
   
@@ -101,19 +100,38 @@ export default async function AdminCatalogDetailPage({
 
   const unit = ((catalog as { base_price_unit?: 'm2'|'m1'|'unit' | null }).base_price_unit ?? 'm2') as 'm2'|'m1'|'unit'
 
+  interface CatalogFormMetadata {
+    title: string
+    category: string
+    atap_id: string
+    rangka_id: string
+    finishing_id: string
+    isian_id: string
+    base_price_per_m2: number
+    base_price_unit: string
+    margin_percentage: number
+    use_std_calculation: boolean
+    std_calculation: number
+    labor_cost: number
+    transport_cost: number
+    is_active: boolean
+  }
+
+  const catalogMetadata = catalog as unknown as CatalogFormMetadata
+
   const autosaveBaseline: Record<string, string> = {
-    title: (catalog as { title?: string }).title ?? '',
-    category: (catalog as { category?: string | null }).category ?? '',
-    atap_id: (catalog as { atap_id?: string | null }).atap_id ?? '',
-    rangka_id: (catalog as { rangka_id?: string | null }).rangka_id ?? '',
-    base_price_per_m2: String((catalog as { base_price_per_m2?: number | null }).base_price_per_m2 ?? ''),
+    title: catalogMetadata.title ?? '',
+    category: catalogMetadata.category ?? '',
+    atap_id: catalogMetadata.atap_id ?? '',
+    rangka_id: catalogMetadata.rangka_id ?? '',
+    base_price_per_m2: String(catalogMetadata.base_price_per_m2 ?? ''),
     base_price_unit: unit,
-    margin_percentage: String((catalog as { margin_percentage?: number | null }).margin_percentage ?? 0),
-    use_std_calculation: (catalog as { use_std_calculation?: boolean | null }).use_std_calculation ? 'on' : '',
-    std_calculation: String((catalog as { std_calculation?: number | null }).std_calculation ?? 1),
-    labor_cost: String((catalog as { labor_cost?: number | null }).labor_cost ?? 0),
-    transport_cost: String((catalog as { transport_cost?: number | null }).transport_cost ?? 0),
-    is_active: (catalog as { is_active?: boolean | null }).is_active ? 'on' : '',
+    margin_percentage: String(catalogMetadata.margin_percentage ?? 0),
+    use_std_calculation: catalogMetadata.use_std_calculation ? 'on' : '',
+    std_calculation: String(catalogMetadata.std_calculation ?? 1),
+    labor_cost: String(catalogMetadata.labor_cost ?? 0),
+    transport_cost: String(catalogMetadata.transport_cost ?? 0),
+    is_active: catalogMetadata.is_active ? 'on' : '',
   }
 
   return (
@@ -198,7 +216,7 @@ export default async function AdminCatalogDetailPage({
                     <CatalogTitleField defaultValue={catalog.title} />
 
                     <CatalogBaseFields
-                      key={`${catalog.id}-${catalog.atap_id}-${catalog.rangka_id}-${(catalog as any).finishing_id || ''}-${(catalog as any).isian_id || ''}`}
+                      key={`${catalog.id}-${catalog.atap_id}-${catalog.rangka_id}-${catalogMetadata.finishing_id || ''}-${catalogMetadata.isian_id || ''}`}
                       atapList={atapList ?? []}
                       rangkaList={rangkaList ?? []}
                       finishingList={finishingList ?? []}
@@ -206,8 +224,8 @@ export default async function AdminCatalogDetailPage({
                       initialCategory={catalog.category ?? ''}
                       initialAtapId={catalog.atap_id || ''}
                       initialRangkaId={catalog.rangka_id || ''}
-                      initialFinishingId={(catalog as any).finishing_id || ''}
-                      initialIsianId={(catalog as any).isian_id || ''}
+                      initialFinishingId={catalogMetadata.finishing_id || ''}
+                      initialIsianId={catalogMetadata.isian_id || ''}
                     />
 
                     <div id="gambar" className={`md:col-span-2`}>
@@ -480,7 +498,7 @@ export default async function AdminCatalogDetailPage({
                           <span className="absolute right-4 top-3.5 text-gray-400 font-bold">%</span>
                         </div>
                         <p className="text-xs text-gray-400 mt-2 italic">
-                          * Margin hanya sebagai referensi, harga jual final tetap mengikuti input "Harga Jual per Satuan".
+                          * Margin hanya sebagai referensi, harga jual final tetap mengikuti input &quot;Harga Jual per Satuan&quot;.
                         </p>
                       </div>
                     </div>

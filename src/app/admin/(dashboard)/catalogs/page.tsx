@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { FolderOpen, BadgeDollarSign, BarChart3, Search, CheckCircle, AlertTriangle } from 'lucide-react'
-import { relNameFrom } from '@/lib/utils'
 import ImportCsvForm from './components/ImportCsvForm'
 import CatalogsListClient from './components/CatalogsListClient'
 

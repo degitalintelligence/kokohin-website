@@ -3,6 +3,20 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+interface PaymentTermsJson {
+    t1_percent?: number
+    t2_percent?: number
+    t3_percent?: number
+    [key: string]: unknown
+}
+
+interface AttachmentPayload {
+    name: string
+    url: string
+    type: string
+    created_at: string
+}
+
 // --- CONTRACT ACTIONS ---
 
 export async function createContractFromQuotation(quotationId: string) {
@@ -27,7 +41,7 @@ export async function createContractFromQuotation(quotationId: string) {
 
     // 2.5 Prepare dynamic scope snapshot from quotation items
     const scopeSnapshot = qtn.erp_quotation_items
-        ?.map((item: any) => {
+        ?.map((item: { name: string; quantity: number; unit: string; atap?: { name: string }; rangka?: { name: string }; isian?: { name: string }; finishing?: { name: string } }) => {
             let spec = `- ${item.name} (${item.quantity} ${item.unit})`
             const details = []
             if (item.atap?.name) details.push(`Atap: ${item.atap.name}`)
@@ -43,7 +57,7 @@ export async function createContractFromQuotation(quotationId: string) {
         .join('\n') || 'Pekerjaan sesuai spesifikasi penawaran.'
 
     // Prepare payment terms JSON from the linked term if available
-    const paymentTermsJson = qtn.erp_payment_terms?.terms_json || {
+    const paymentTermsJson = (qtn.erp_payment_terms as unknown as { terms_json?: PaymentTermsJson | null })?.terms_json || {
         t1_percent: 50,
         t2_percent: 40,
         t3_percent: 10
@@ -65,7 +79,7 @@ export async function createContractFromQuotation(quotationId: string) {
         p_scope_snapshot: scopeSnapshot,
         p_attachments: qtn.attachments || [],
         p_payment_terms_json: paymentTermsJson,
-        p_items: qtn.erp_quotation_items?.map((item: any) => ({
+        p_items: qtn.erp_quotation_items?.map((item: { name: string; unit: string; quantity: number; unit_price: number; subtotal: number; type: string }) => ({
             name: item.name,
             unit: item.unit,
             quantity: item.quantity,
@@ -168,7 +182,28 @@ export async function createInvoiceFromContract(contractId: string, options?: { 
     return { success: true, invoiceId: invoice.id }
 }
 
-export async function updateContractItems(contractId: string, items: any[], totalAmount: number, metadata?: { signatory_id?: string, client_ktp?: string, client_address?: string, client_email?: string, terms_and_conditions?: string, attachments?: any[] }) {
+interface ErpItem {
+    name: string
+    unit: string
+    quantity: number
+    unit_price: number
+    subtotal: number
+    type: string
+}
+
+export async function updateContractItems(
+    contractId: string, 
+    items: ErpItem[], 
+    totalAmount: number, 
+    metadata?: { 
+        signatory_id?: string
+        client_ktp?: string
+        client_address?: string
+        client_email?: string
+        terms_and_conditions?: string
+        attachments?: AttachmentPayload[] 
+    }
+) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Unauthorized')
@@ -194,7 +229,16 @@ export async function updateContractItems(contractId: string, items: any[], tota
     )
     if (insertError) throw insertError
 
-    const updateData: any = { 
+    interface ContractUpdateData {
+        total_value: number
+        updated_at: string
+        signatory_id?: string
+        client_ktp?: string
+        terms_and_conditions?: string
+        attachments?: AttachmentPayload[]
+    }
+
+    const updateData: ContractUpdateData = { 
         total_value: totalAmount, 
         updated_at: new Date().toISOString() 
     }
@@ -204,7 +248,8 @@ export async function updateContractItems(contractId: string, items: any[], tota
     if (metadata?.attachments) updateData.attachments = metadata.attachments
 
     // Sync to Customer Profile if exists
-    if (currentCtr?.erp_quotations?.leads?.id) {
+    const leadId = (currentCtr as unknown as { erp_quotations?: { leads?: { id: string } } })?.erp_quotations?.leads?.id
+    if (leadId) {
         await supabase
             .from('erp_customer_profiles')
             .update({
@@ -212,7 +257,7 @@ export async function updateContractItems(contractId: string, items: any[], tota
                 address: metadata?.client_address,
                 email: metadata?.client_email
             })
-            .eq('lead_id', currentCtr.erp_quotations.leads.id)
+            .eq('lead_id', leadId)
     }
 
     await supabase.from('erp_contracts').update(updateData).eq('id', contractId)
@@ -242,7 +287,7 @@ export async function updateCustomerProfile(leadId: string, data: { name?: strin
     return { success: true }
 }
 
-export async function updateInvoiceItems(invoiceId: string, items: any[], totalAmount: number, notes?: string, attachments?: any[]) {
+export async function updateInvoiceItems(invoiceId: string, items: ErpItem[], totalAmount: number, notes?: string, attachments?: AttachmentPayload[]) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Unauthorized')
@@ -261,7 +306,14 @@ export async function updateInvoiceItems(invoiceId: string, items: any[], totalA
     )
     if (insertError) throw insertError
 
-    const updateData: any = { total_amount: totalAmount, updated_at: new Date().toISOString() }
+    interface InvoiceUpdateData {
+        total_amount: number
+        updated_at: string
+        notes?: string
+        attachments?: AttachmentPayload[]
+    }
+
+    const updateData: InvoiceUpdateData = { total_amount: totalAmount, updated_at: new Date().toISOString() }
     if (notes) updateData.notes = notes
     if (attachments) updateData.attachments = attachments
 

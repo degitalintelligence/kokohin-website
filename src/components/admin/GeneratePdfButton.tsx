@@ -20,8 +20,69 @@ const PDFDownloadLink = dynamic(
   }
 )
 
+interface AttachmentPayload {
+  url: string
+  name?: string
+  type?: string
+  created_at?: string
+}
+
+interface QuotationPdfItem {
+  name: string
+  unit: string
+  quantity: number
+  unit_price: number
+  subtotal: number
+  catalog_id?: string
+  rangka?: { name?: string }
+  isian?: { name?: string }
+  atap?: { name?: string }
+  finishing?: { name?: string }
+  builder_costs?: { name?: string; type?: string; section?: string }[]
+}
+
+interface PaymentTermsForPdf {
+  name: string
+  terms_json: {
+    t1_percent: number
+    t2_percent: number
+    t3_percent: number
+    t1_desc?: string
+    t2_desc?: string
+    t3_desc?: string
+  }
+} 
+
+interface QuotationData {
+  id: string
+  quotation_number?: string
+  total_amount?: number
+  total_hpp?: number
+  margin_percentage?: number
+  panjang?: number
+  lebar?: number
+  unit_qty?: number
+  client_address?: string
+  notes?: string
+  attachments?: AttachmentPayload[]
+  leads?: {
+    name?: string
+    phone?: string
+    location?: string
+  }
+  zones?: {
+    name?: string
+  }
+  catalogs?: {
+    base_price_unit?: string
+    image_url?: string | null
+  }
+  erp_quotation_items?: QuotationPdfItem[]
+  erp_payment_terms?: PaymentTermsForPdf | null
+}
+
 interface GeneratePdfButtonProps {
-  quotation?: any
+  quotation?: QuotationData
   projectId?: string
   logoUrl?: string | null
   disabled?: boolean
@@ -29,7 +90,7 @@ interface GeneratePdfButtonProps {
 }
 
 export default function GeneratePdfButton({ quotation: initialQuotation, projectId, logoUrl: initialLogoUrl, disabled, className }: GeneratePdfButtonProps) {
-  const [quotation, setQuotation] = useState<any>(initialQuotation)
+  const [quotation, setQuotation] = useState<QuotationData | undefined>(initialQuotation)
   const [logoUrl, setLogoUrl] = useState<string | null>(initialLogoUrl || null)
   const [loading, setLoading] = useState(!initialQuotation && !!projectId)
 
@@ -91,14 +152,14 @@ export default function GeneratePdfButton({ quotation: initialQuotation, project
   const attachments = quotation.attachments || []
   
   // Map ERP items to CalculatorResult for the PDF component
-  const filteredItems = items.filter((item: any) => {
+  const filteredItems = items.filter((item: { name?: string }) => {
     const name = (item.name || '').toLowerCase()
     return !name.includes('markup') && !name.includes('mark-up')
   })
 
   const result: CalculatorResult = {
     luas: (Number(quotation.panjang) * Number(quotation.lebar)) || Number(quotation.unit_qty) || 0,
-    unitUsed: (quotation.catalogs?.base_price_unit) || 'm2',
+    unitUsed: (quotation.catalogs?.base_price_unit as 'm2' | 'm1' | 'unit' | undefined) || 'm2',
     totalHpp: Number(quotation.total_hpp || 0),
     materialCost: 0,
     wasteCost: 0,
@@ -107,14 +168,14 @@ export default function GeneratePdfButton({ quotation: initialQuotation, project
     flatFee: 0,
     totalSellingPrice: Number(quotation.total_amount),
     estimatedPrice: Number(quotation.total_amount),
-    breakdown: filteredItems.map((item: any) => ({
-      name: item.name,
+    breakdown: filteredItems.map((item: { name?: string; quantity?: number; unit?: string; unit_price?: number; subtotal?: number; catalog_id?: string }) => ({
+      name: item.name || '',
       qtyNeeded: Number(item.quantity),
       qtyCharged: Number(item.quantity),
       unit: item.unit || 'unit',
       pricePerUnit: Number(item.unit_price),
       subtotal: Number(item.subtotal),
-      image_url: item.catalog_id ? quotation.catalogs?.image_url : null
+      image_url: item.catalog_id ? (quotation.catalogs?.image_url || null) : null
     }))
   }
 
@@ -133,13 +194,9 @@ export default function GeneratePdfButton({ quotation: initialQuotation, project
           projectId={quotation.quotation_number || quotation.id}
           zoneName={quotation.zones?.name || null}
           logoUrl={logoUrl}
-          specifications={filteredItems.map((item: any) => item.name).join(', ')}
-          projectArea={result.luas}
-          areaUnit={result.unitUsed === 'm2' ? 'm²' : result.unitUsed === 'm1' ? 'm¹' : 'unit'}
           attachments={attachments}
           paymentTerms={quotation.erp_payment_terms}
           items={items}
-          notes={quotation.notes}
         />
       }
       fileName={fileName}

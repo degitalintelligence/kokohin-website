@@ -1,6 +1,3 @@
-
-const { resolveItemSpecs, cleanName } = require('../src/lib/pdf-spec-utils');
-
 // Mock implementation because we can't require TS directly in node without compilation
 // This is to verify the LOGIC, assuming the TS implementation matches this behavior.
 // In a real project with ts-jest, we would import the source directly.

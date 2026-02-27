@@ -19,13 +19,25 @@ const PDFDownloadLink = dynamic(
   }
 )
 
+interface InvoiceData {
+  id: string
+  invoice_number?: string
+  erp_contracts?: {
+    erp_quotations?: {
+      leads?: {
+        name?: string
+      }
+    }
+  }
+}
+
 interface DownloadInvoicePdfButtonProps {
-  invoice: any
+  invoice: InvoiceData
   logoUrl: string | null
 }
 
 export default function DownloadInvoicePdfButton({ invoice: initialInvoice, logoUrl }: DownloadInvoicePdfButtonProps) {
-  const [invoice, setInvoice] = useState<any>(initialInvoice)
+  const [invoice, setInvoice] = useState<InvoiceData>(initialInvoice)
   const [loading, setLoading] = useState(false)
 
   const fetchFullData = async () => {

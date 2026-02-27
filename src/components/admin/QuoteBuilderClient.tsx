@@ -1,50 +1,41 @@
 'use client'
 
 import { useState, useMemo, useEffect, useTransition } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Calculator, 
-  PenTool, 
   HardHat, 
   AlertCircle, 
-  TrendingUp, 
-  ArrowLeft,
-  Save,
-  Loader2,
-  Maximize2,
-  Minimize2,
-  Package,
-  MapPin,
-  Globe,
-  X,
-  CheckCircle2,
-  Info,
   History,
   ShieldCheck,
   ShieldAlert,
   ArrowDownCircle,
   ArrowUpCircle,
-  Search
+  Package,
+  MapPin,
+  X,
+  CheckCircle2,
+  Loader2
 } from 'lucide-react'
-import { buildCostingItems, formatCurrency } from '@/lib/utils/costing'
-import { updateQuotationBuilder } from '@/app/actions/quotations'
+import { buildCostingItems, formatCurrency, type CatalogCosting, type CostingItem, type HppComponent } from '@/lib/utils/costing'
 import { toast } from '@/components/ui/toaster'
 
 interface QuoteBuilderProps {
   initialData: {
     id?: string
     name: string
+    unit: string
+    quantity: number
     catalog_id?: string
     panjang?: number
     lebar?: number
     unit_qty?: number
     unit_price?: number
-    builder_costs?: any[]
+    builder_costs?: CostingItem[]
     zone_id?: string
     margin_percentage?: number
     markup_percentage?: number
     markup_flat_fee?: number
-    type?: string
+    type: string
   }
   parentZoneId?: string
   customerInfo?: {
@@ -54,8 +45,21 @@ interface QuoteBuilderProps {
     tier?: string
   }
   disableFlatFee?: boolean
-  onSave: (data: any) => void
+  onSave: (data: QuoteBuilderSavePayload) => void
   onClose: () => void
+}
+
+type QuoteBuilderSavePayload = QuoteBuilderProps['initialData'] & {
+  unit_price: number
+  subtotal: number
+  total_hpp: number
+}
+
+interface Zone {
+  id: string
+  name: string
+  markup_percentage: number
+  flat_fee: number
 }
 
 export default function QuoteBuilderClient({
@@ -66,36 +70,24 @@ export default function QuoteBuilderClient({
   onSave,
   onClose
 }: QuoteBuilderProps) {
-  // 1. Interactive States
-  const [panjang, setPanjang] = useState(Number(initialData.panjang || 0))
-  const [lebar, setLebar] = useState(Number(initialData.lebar || 0))
-  const [unitQty, setUnitQty] = useState(Number(initialData.unit_qty || 1))
-  
-  // Zoning & Markup States
-  const [zones, setZones] = useState<any[]>([])
-  const [selectedZoneId, setSelectedZoneId] = useState<string>(initialData.zone_id || parentZoneId || '')
-  const [isZoneSearchOpen, setIsZoneSearchOpen] = useState(false)
-  const [zoneSearchQuery, setZoneSearchQuery] = useState('')
-
-  const filteredZones = useMemo(() => {
-    return zones.filter(z => z.name.toLowerCase().includes(zoneSearchQuery.toLowerCase()))
-  }, [zones, zoneSearchQuery])
-
-  const selectedZone = useMemo(() => zones.find(z => z.id === selectedZoneId), [zones, selectedZoneId])
+  const [zones, setZones] = useState<Zone[]>([])
+  const selectedZoneId = initialData.zone_id || parentZoneId || ''
   
   // Custom Pricing State
-  const [activeCatalog, setActiveCatalog] = useState<any>(null)
+  const [activeCatalog, setActiveCatalog] = useState<CatalogCosting | null>(null)
+  const [panjang, setPanjang] = useState(initialData.panjang || 1)
+  const [lebar, setLebar] = useState(initialData.lebar || 1)
+  const [unitQty, setUnitQty] = useState(initialData.unit_qty || 1)
 
   // Default unit price from catalog
   const defaultUnitPrice = Number(activeCatalog?.base_price_per_m2 || 0)
-  
-  // Initialize unitPrice correctly
-  const initialQty = Number(panjang * lebar || unitQty || 1)
   const [unitPrice, setUnitPrice] = useState(initialData.unit_price || defaultUnitPrice)
 
   const [isSaving, startSaveTransition] = useTransition()
-  const [hppComponents, setHppComponents] = useState<any[]>([])
+  const [hppComponents, setHppComponents] = useState<HppComponent[]>([])
   const [isLoadingComponents, setIsLoadingComponents] = useState(false)
+
+  const selectedZone = useMemo(() => zones.find(z => z.id === selectedZoneId), [zones, selectedZoneId])
 
   // 2. Constants & Derived Data
   const catalogUnit = activeCatalog?.base_price_unit ?? 'm2'
@@ -120,18 +112,20 @@ export default function QuoteBuilderClient({
           .select('*, atap:atap_id(*), rangka:rangka_id(*), finishing:finishing_id(*), isian:isian_id(*)')
           .eq('id', initialData.catalog_id)
           .single()
-        setActiveCatalog(catData)
+        setActiveCatalog(catData as CatalogCosting)
         
         // 3. Fetch HPP Components
         setIsLoadingComponents(true)
         try {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('catalog_hpp_components')
             .select('id, material_id, quantity, section, material:material_id(name, unit, base_price_per_unit)')
             .eq('catalog_id', initialData.catalog_id)
-          setHppComponents(data || [])
-        } catch (err) {
-          console.error('Failed to fetch HPP components:', err)
+
+          if (error) throw error
+          setHppComponents((data ?? []) as unknown as HppComponent[])
+        } catch (err: unknown) {
+          console.error('Error fetching catalog components:', err)
         } finally {
           setIsLoadingComponents(false)
         }
@@ -156,7 +150,10 @@ export default function QuoteBuilderClient({
 
   const { costingItems, totalHpp } = useMemo(() => {
     if (isLoadingComponents && (initialData.builder_costs?.length || 0) > 0) {
-        return { costingItems: initialData.builder_costs || [], totalHpp: (initialData.builder_costs || []).reduce((acc: number, item: any) => acc + item.subtotal, 0) }
+        return { 
+          costingItems: initialData.builder_costs || [], 
+          totalHpp: (initialData.builder_costs || []).reduce((acc: number, item: CostingItem) => acc + item.subtotal, 0) 
+        }
     }
     const items = buildCostingItems(activeCatalog, { panjang, lebar, unitQty }, isCustom, hppComponents)
     const hpp = items.reduce((acc, item) => acc + item.subtotal, 0)
@@ -227,8 +224,9 @@ export default function QuoteBuilderClient({
         onSave(updatedLine)
         toast.success('Sukses', 'Kalkulasi item telah diperbarui.')
         onClose()
-      } catch (err: any) {
-        toast.error('Gagal', err.message || 'Terjadi kesalahan saat menyimpan.')
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Terjadi kesalahan saat menyimpan.'
+        toast.error('Gagal', errorMessage)
       }
     })
   }

@@ -1,8 +1,5 @@
 import React from 'react';
-import { Page, Text, View, Document, StyleSheet, Font, Image } from '@react-pdf/renderer';
-
-// Register Fonts if needed, but standard ones are usually enough for SPK
-// Using standard Helvetica for clean look
+import { Page, Text, View, Document, StyleSheet, Image as PdfImage } from '@react-pdf/renderer';
 
 const styles = StyleSheet.create({
   page: {
@@ -102,9 +99,55 @@ const styles = StyleSheet.create({
   }
 });
 
+interface PaymentTermsJson {
+  t1_percent?: number
+  t2_percent?: number
+  t3_percent?: number
+  [key: string]: unknown
+}
+
+interface AttachmentPayload {
+  name: string
+  url: string
+  type: string
+  created_at: string
+}
+
+interface PaymentTerm {
+  percent: number
+  label: string
+}
+
 interface ContractPDFProps {
-  contract: any;
-  logoUrl?: string | null;
+  contract: {
+    created_at?: string
+    contract_number?: string
+    total_value?: number
+    payment_terms_json?: PaymentTermsJson | PaymentTerm[] | null
+    client_ktp?: string
+    scope_snapshot?: string
+    leads?: {
+      name?: string
+      location?: string
+      address?: string
+      phone?: string
+    }
+    customer_profile?: {
+      name?: string
+      ktp_number?: string
+      address?: string
+      phone?: string
+    }
+    erp_signatories?: {
+      name?: string
+      job_title?: string
+    }
+    quotations?: {
+      quotation_number?: string
+    }
+    attachments?: AttachmentPayload[]
+  }
+  logoUrl?: string | null
 }
 
 export const ContractPDF = ({ contract, logoUrl }: ContractPDFProps) => {
@@ -143,15 +186,18 @@ export const ContractPDF = ({ contract, logoUrl }: ContractPDFProps) => {
   const total = contract.total_value || 0;
   
   // Handle dynamic payment terms from JSON array or default 50-40-10 object
-  let termsArray = [];
+  let termsArray: PaymentTerm[] = [];
   if (Array.isArray(contract.payment_terms_json)) {
-    termsArray = contract.payment_terms_json;
+    termsArray = contract.payment_terms_json as PaymentTerm[];
   } else {
-    const defaultTerms = contract.payment_terms_json || { t1_percent: 50, t2_percent: 40, t3_percent: 10 };
+    const rawTerms = contract.payment_terms_json || { t1_percent: 50, t2_percent: 40, t3_percent: 10 };
+    const t1 = Number(rawTerms.t1_percent ?? 50);
+    const t2 = Number(rawTerms.t2_percent ?? 40);
+    const t3 = Number(rawTerms.t3_percent ?? 10);
     termsArray = [
-      { percent: defaultTerms.t1_percent, label: `Termin 1 (${defaultTerms.t1_percent}%)` },
-      { percent: defaultTerms.t2_percent, label: `Termin 2 (${defaultTerms.t2_percent}%)` },
-      { percent: defaultTerms.t3_percent, label: `Termin 3 (${defaultTerms.t3_percent}%)` }
+      { percent: t1, label: `Termin 1 (${t1}%)` },
+      { percent: t2, label: `Termin 2 (${t2}%)` },
+      { percent: t3, label: `Termin 3 (${t3}%)` }
     ];
   }
 
@@ -172,7 +218,7 @@ export const ContractPDF = ({ contract, logoUrl }: ContractPDFProps) => {
       <Page size="A4" style={styles.page}>
         {/* Header with optional Logo */}
         <View style={styles.header}>
-          {logoUrl && <Image src={logoUrl} style={{ width: 120, marginBottom: 10, alignSelf: 'center' }} />}
+          {logoUrl && <PdfImage src={logoUrl} style={{ width: 120, marginBottom: 10, alignSelf: 'center' }} />}
           <Text style={styles.title}>SURAT PERINTAH KERJA (SPK) & PERSETUJUAN PROYEK</Text>
           <Text style={styles.subtitle}>Nomor: {contract.contract_number || '000/SPK/II/2026'}</Text>
         </View>
@@ -244,10 +290,10 @@ export const ContractPDF = ({ contract, logoUrl }: ContractPDFProps) => {
             Total Nilai Investasi Proyek yang disepakati adalah <Text style={styles.bold}>{formatCurrency(total)} ({terbilang(total)})</Text>. Pembayaran dilakukan secara bertahap (Termin) dengan rincian:
           </Text>
           <View style={{ marginLeft: 15 }}>
-            {termsArray.map((term: any, idx: number) => {
+            {termsArray.map((term: PaymentTerm, idx: number) => {
               const amount = Math.ceil(total * (term.percent / 100));
               const isLast = idx === termsArray.length - 1;
-              const finalAmount = isLast ? total - termsArray.slice(0, -1).reduce((acc: number, t: any) => acc + Math.ceil(total * (t.percent / 100)), 0) : amount;
+              const finalAmount = isLast ? total - termsArray.slice(0, -1).reduce((acc: number, t: PaymentTerm) => acc + Math.ceil(total * (t.percent / 100)), 0) : amount;
               
               return (
                 <Text key={idx} style={styles.paragraph}>
@@ -310,12 +356,12 @@ export const ContractPDF = ({ contract, logoUrl }: ContractPDFProps) => {
           <View break>
             <Text style={styles.sectionTitle}>LAMPIRAN VISUAL PROYEK</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
-              {attachments.map((att: any, idx: number) => (
+              {attachments.map((att: AttachmentPayload, idx: number) => (
                 <View key={idx} style={{ width: '45%', marginBottom: 20 }}>
                   <Text style={{ fontSize: 8, marginBottom: 5, color: '#666', textTransform: 'uppercase' }}>
                     Lampiran {idx + 1}: {att.type}
                   </Text>
-                  <Image src={att.url} style={{ width: '100%', height: 150, objectFit: 'cover', borderRadius: 5, border: '1pt solid #eee' }} />
+                  <PdfImage src={att.url} style={{ width: '100%', height: 150, objectFit: 'cover', borderRadius: 5, border: '1pt solid #eee' }} />
                 </View>
               ))}
             </View>

@@ -109,14 +109,14 @@ export async function GET(request: Request) {
     category: row.category,
     atap_id: row.atap_id,
     rangka_id: row.rangka_id,
-    finishing_id: (row as any).finishing_id,
-    isian_id: (row as any).isian_id,
+    finishing_id: row.finishing_id,
+    isian_id: row.isian_id,
     base_price_per_m2: row.base_price_per_m2,
     base_price_unit: row.base_price_unit ?? null,
     atap: unwrapRel(row.atap ?? null),
     rangka: unwrapRel(row.rangka ?? null),
-    finishing: unwrapRel((row as any).finishing ?? null),
-    isian: unwrapRel((row as any).isian ?? null),
+    finishing: unwrapRel(row.finishing ?? null),
+    isian: unwrapRel(row.isian ?? null),
     is_popular: !!row.is_popular
   }))
   return NextResponse.json({ catalogs: items })

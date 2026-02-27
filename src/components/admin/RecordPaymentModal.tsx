@@ -1,13 +1,20 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { X, DollarSign, Calendar, CreditCard, Hash, Loader2 } from 'lucide-react'
+import { X, DollarSign, Loader2 } from 'lucide-react'
 import { recordPayment } from '@/app/actions/erp'
 import { formatCurrency } from '@/lib/utils/costing'
 import { toast } from '@/components/ui/toaster'
 
+interface InvoiceData {
+  id: string
+  invoice_number?: string
+  total_amount: number
+  amount_paid: number
+}
+
 interface RecordPaymentModalProps {
-  invoice: any
+  invoice: InvoiceData
   onClose: () => void
 }
 
@@ -32,8 +39,9 @@ export default function RecordPaymentModal({ invoice, onClose }: RecordPaymentMo
         })
         toast.success('Berhasil', 'Pembayaran berhasil dicatat')
         onClose()
-      } catch (error: any) {
-        toast.error('Gagal', error.message || 'Gagal mencatat pembayaran')
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Gagal mencatat pembayaran'
+        toast.error('Gagal', errorMessage)
       }
     })
   }

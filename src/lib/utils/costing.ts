@@ -34,6 +34,10 @@ export type CatalogCosting = {
   isian_id?: string | null
   use_std_calculation?: boolean | null
   std_calculation?: number | null
+  atap?: { name: string; unit: string; base_price_per_unit: number } | null
+  rangka?: { name: string; unit: string; base_price_per_unit: number } | null
+  finishing?: { name: string; unit: string; base_price_per_unit: number } | null
+  isian?: { name: string; unit: string; base_price_per_unit: number } | null
 }
 
 export type HppComponent = {
@@ -48,12 +52,24 @@ export type HppComponent = {
   }
 }
 
+export type CostingItem = {
+  id: string
+  name: string
+  unit: string
+  hpp: number
+  lengthPerUnit: number
+  qtyNeeded: number
+  qtyCharged: number
+  subtotal: number
+  type: string
+}
+
 export const buildCostingItems = (
   activeCatalog: CatalogCosting | null,
   dimensions: { panjang: number; lebar: number; unitQty: number },
   isCustom: boolean,
   hppComponents: HppComponent[] = []
-) => {
+): CostingItem[] => {
   if (isCustom) {
     return [
       {
@@ -81,7 +97,7 @@ export const buildCostingItems = (
       ? Math.max(0, panjang)
       : Math.max(1, unitQty)
 
-  const items: any[] = []
+  const items: CostingItem[] = []
   const useStd = activeCatalog.use_std_calculation ?? false
   const stdCalc = activeCatalog.std_calculation && activeCatalog.std_calculation > 0 ? activeCatalog.std_calculation : 1
   
@@ -91,10 +107,10 @@ export const buildCostingItems = (
   const hppMaterialIds = new Set(hppComponents.map(c => c.material_id))
   
   const mainComponents = [
-    { id: activeCatalog.atap_id, material: (activeCatalog as any).atap, type: 'atap' },
-    { id: activeCatalog.rangka_id, material: (activeCatalog as any).rangka, type: 'rangka' },
-    { id: activeCatalog.finishing_id, material: (activeCatalog as any).finishing, type: 'finishing' },
-    { id: activeCatalog.isian_id, material: (activeCatalog as any).isian, type: 'isian' }
+    { id: activeCatalog.atap_id, material: activeCatalog.atap, type: 'atap' },
+    { id: activeCatalog.rangka_id, material: activeCatalog.rangka, type: 'rangka' },
+    { id: activeCatalog.finishing_id, material: activeCatalog.finishing, type: 'finishing' },
+    { id: activeCatalog.isian_id, material: activeCatalog.isian, type: 'isian' }
   ].filter(c => c.id && !hppMaterialIds.has(c.id))
 
   mainComponents.forEach((comp) => {

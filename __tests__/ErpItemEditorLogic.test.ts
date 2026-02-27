@@ -1,9 +1,28 @@
 
 import { describe, it, expect } from 'vitest'
 
-// Mocking the business logic from ErpItemEditor
-function calculateMinPrice(item: any, selectedZone: any, index: number) {
-  const totalHpp = item.builder_costs.reduce((acc: number, cost: any) => acc + (cost.subtotal || 0), 0)
+type TestBuilderCost = {
+  subtotal?: number
+}
+
+type TestItem = {
+  unit?: string
+  panjang?: number
+  lebar?: number
+  unit_qty?: number
+  quantity?: number
+  builder_costs: TestBuilderCost[]
+  markup_percentage?: number
+  markup_flat_fee?: number
+}
+
+type TestZone = {
+  markup_percentage?: number | string
+  flat_fee?: number | string
+} | null
+
+function calculateMinPrice(item: TestItem, selectedZone: TestZone, index: number) {
+  const totalHpp = item.builder_costs.reduce((acc: number, cost: TestBuilderCost) => acc + (cost.subtotal || 0), 0)
   const catalogMargin = 30 
   
   const unit = item.unit === 'm²' ? 'm2' : item.unit === 'm¹' ? 'm1' : 'unit'

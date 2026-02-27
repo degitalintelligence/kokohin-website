@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import { FileDown, Loader2 } from 'lucide-react'
 import { ContractPDF } from '@/components/admin/ContractPDF'
@@ -19,13 +19,22 @@ const PDFDownloadLink = dynamic(
   }
 )
 
+interface ContractData {
+  id: string
+  contract_number?: string
+  leads?: {
+    id: string
+    name?: string
+  }
+}
+
 interface DownloadContractPdfButtonProps {
-  contract: any
+  contract: ContractData
   logoUrl: string | null
 }
 
 export default function DownloadContractPdfButton({ contract: initialContract, logoUrl }: DownloadContractPdfButtonProps) {
-  const [contract, setContract] = useState<any>(initialContract)
+  const [contract, setContract] = useState<ContractData>(initialContract)
   const [loading, setLoading] = useState(false)
 
   // Re-fetch full contract data with relations for PDF

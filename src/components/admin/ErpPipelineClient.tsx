@@ -14,37 +14,105 @@ import {
   Filter,
   History,
   Clock,
-  ExternalLink,
-  Edit3,
-  Calculator
+  Edit3
 } from 'lucide-react'
-import Link from 'next/link'
 import { formatCurrency } from '@/lib/utils/costing'
 import { toast } from '@/components/ui/toaster'
 import ErpActionButton from '@/components/admin/ErpActionButton'
 import ErpItemEditor from '@/components/admin/ErpItemEditor'
-import QuoteBuilderClient from '@/components/admin/QuoteBuilderClient'
 import GeneratePdfButton from './GeneratePdfButton'
 import DownloadContractPdfButton from './DownloadContractPdfButton'
 import DownloadInvoicePdfButton from './DownloadInvoicePdfButton'
 import RecordPaymentModal from './RecordPaymentModal'
 import CreateInvoiceModal from './CreateInvoiceModal'
 
+interface PipelineItem {
+  id?: string
+  name: string
+  unit: string
+  quantity: number
+  unit_price: number
+  subtotal: number
+  type: string
+}
+
+interface Quotation {
+  id: string
+  quotation_number: string
+  status: string
+  total_amount: number
+  created_at: string
+  leads?: { 
+    name: string
+    phone?: string
+  }
+  erp_quotation_items?: PipelineItem[]
+}
+
+interface Contract {
+  id: string
+  contract_number: string
+  status: string
+  total_value: number
+  created_at: string
+  quotation_id?: string
+  erp_quotations?: {
+    leads?: {
+      phone?: string
+    }
+  }
+  erp_contract_items?: PipelineItem[]
+}
+
+interface Invoice {
+  id: string
+  invoice_number: string
+  status: string
+  total_amount: number
+  amount_paid: number
+  created_at: string
+  erp_contracts?: {
+    erp_quotations?: {
+      leads?: {
+        name?: string
+        phone?: string
+      }
+    }
+  }
+  erp_invoice_items?: PipelineItem[]
+}
+
+interface AuditLog {
+  id: string
+  entity_type: string
+  entity_id: string
+  action_type: string
+  new_value: unknown
+  timestamp?: string
+  created_at?: string
+}
+
+interface Signatory {
+  id: string
+  name: string
+  job_title: string
+}
+
 interface ErpPipelineProps {
   initialData: {
-    quotations: any[]
-    contracts: any[]
-    invoices: any[]
-    auditLogs: any[]
+    quotations: Quotation[]
+    contracts: Contract[]
+    invoices: Invoice[]
+    auditLogs: AuditLog[]
   }
   logoUrl: string | null
 }
 
 export default function ErpPipelineClient({ initialData, logoUrl }: ErpPipelineProps) {
   const { quotations, contracts, invoices, auditLogs } = initialData
-  const [editingEntity, setEditingEntity] = useState<{ id: string, type: 'quotation' | 'contract' | 'invoice', items: any[] } | null>(null)
-  const [recordingPayment, setRecordingPayment] = useState<any | null>(null)
-  const [creatingInvoiceForContract, setCreatingInvoiceForContract] = useState<any | null>(null)
+  const [editingEntity, setEditingEntity] = useState<{ id: string, type: 'quotation' | 'contract' | 'invoice', items: PipelineItem[] } | null>(null)
+  const [recordingPayment, setRecordingPayment] = useState<Invoice | null>(null)
+  const [creatingInvoiceForContract, setCreatingInvoiceForContract] = useState<Contract | null>(null)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -53,9 +121,9 @@ export default function ErpPipelineClient({ initialData, logoUrl }: ErpPipelineP
 
   const stats = [
     { label: 'Total Penawaran', value: quotations?.length ?? 0, icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Kontrak Aktif', value: contracts?.filter((c: any) => c.status === 'active' || c.status === 'draft').length ?? 0, icon: FileCheck, color: 'text-green-600', bg: 'bg-green-50' },
-    { label: 'Invoice Unpaid', value: invoices?.filter((i: any) => i.status === 'unpaid').length ?? 0, icon: Receipt, color: 'text-red-600', bg: 'bg-red-50' },
-    { label: 'Total Revenue', value: `Rp ${formatCurrency(invoices?.reduce((acc: number, i: any) => acc + Number(i.amount_paid), 0) ?? 0)}`, icon: CreditCard, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { label: 'Kontrak Aktif', value: contracts?.filter(c => c.status === 'active' || c.status === 'draft').length ?? 0, icon: FileCheck, color: 'text-green-600', bg: 'bg-green-50' },
+    { label: 'Invoice Unpaid', value: invoices?.filter(i => i.status === 'unpaid').length ?? 0, icon: Receipt, color: 'text-red-600', bg: 'bg-red-50' },
+    { label: 'Total Revenue', value: `Rp ${formatCurrency(invoices?.reduce((acc: number, i) => acc + Number(i.amount_paid), 0) ?? 0)}`, icon: CreditCard, color: 'text-purple-600', bg: 'bg-purple-50' },
   ]
 
   const handleCreateQuotation = async () => {
@@ -78,18 +146,23 @@ export default function ErpPipelineClient({ initialData, logoUrl }: ErpPipelineP
     return "Baru saja"
   }
 
-  const handleEditItems = (id: string, type: 'quotation' | 'contract' | 'invoice', items: any[], fullData?: any) => {
+  const handleEditItems = (id: string, type: 'quotation' | 'contract' | 'invoice', items: PipelineItem[]) => {
     setEditingEntity({ id, type, items })
   }
 
   // Fetch signatries for contracts
-  const [signatories, setSignatories] = useState<any[]>([])
+  const [signatories, setSignatories] = useState<Signatory[]>([])
   useEffect(() => {
     async function fetchSignatories() {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
       const { data } = await supabase.from('erp_signatories').select('*').eq('is_active', true)
-      setSignatories(data || [])
+      const raw = (data ?? []) as { id: string; name: string; job_title?: string }[]
+      setSignatories(raw.map((s) => ({
+        id: s.id,
+        name: s.name,
+        job_title: s.job_title ?? ''
+      })))
     }
     fetchSignatories()
   }, [])
@@ -142,7 +215,7 @@ export default function ErpPipelineClient({ initialData, logoUrl }: ErpPipelineP
               <Filter size={14} className="text-gray-400 cursor-pointer hover:text-gray-600" />
             </div>
             <div className="flex-1 space-y-3">
-              {quotations?.map((qtn: any) => (
+              {quotations?.map((qtn: Quotation) => (
                 <div key={qtn.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:border-blue-300 transition-all cursor-pointer group relative">
                   <div className="flex justify-between items-start mb-2">
                     <span className="text-[10px] font-mono text-gray-400">#{qtn.quotation_number.split('-').pop()}</span>
@@ -152,7 +225,7 @@ export default function ErpPipelineClient({ initialData, logoUrl }: ErpPipelineP
                       {qtn.status}
                     </span>
                   </div>
-                  <h5 className="font-bold text-gray-900 text-sm group-hover:text-blue-600 transition-colors">{(qtn.leads as any)?.name}</h5>
+                  <h5 className="font-bold text-gray-900 text-sm group-hover:text-blue-600 transition-colors">{qtn.leads?.name}</h5>
                   <p className="text-xs font-black text-gray-700 mt-1">Rp {formatCurrency(qtn.total_amount)}</p>
                   
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -164,7 +237,7 @@ export default function ErpPipelineClient({ initialData, logoUrl }: ErpPipelineP
                         className="bg-green-600 text-white hover:bg-green-700"
                       />
                     )}
-                    {qtn.status === 'approved' && !contracts?.some((c: any) => c.quotation_id === qtn.id) && (
+                    {qtn.status === 'approved' && !contracts?.some((c: Contract) => c.quotation_id === qtn.id) && (
                       <ErpActionButton 
                         type="create_contract" 
                         id={qtn.id} 
@@ -173,7 +246,7 @@ export default function ErpPipelineClient({ initialData, logoUrl }: ErpPipelineP
                       />
                     )}
                     <button 
-                      onClick={() => handleEditItems(qtn.id, 'quotation', qtn.erp_quotation_items || [], qtn)}
+                      onClick={() => handleEditItems(qtn.id, 'quotation', qtn.erp_quotation_items || [])}
                       className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 bg-gray-100 text-gray-600 hover:bg-gray-200"
                     >
                       <Edit3 size={12} />
@@ -208,7 +281,7 @@ export default function ErpPipelineClient({ initialData, logoUrl }: ErpPipelineP
                   <p className="text-xs text-gray-400 font-medium italic">Belum ada kontrak aktif</p>
                 </div>
               )}
-              {contracts?.map((ctr: any) => (
+              {contracts?.map((ctr: Contract) => (
                 <div key={ctr.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:border-green-300 transition-all cursor-pointer group relative">
                   <div className="flex justify-between items-start mb-2">
                     <span className="text-[10px] font-mono text-gray-400">#{ctr.contract_number.split('-').pop()}</span>
@@ -249,7 +322,7 @@ export default function ErpPipelineClient({ initialData, logoUrl }: ErpPipelineP
               </div>
             </div>
             <div className="flex-1 space-y-3">
-              {invoices?.map((inv: any) => (
+              {invoices?.map((inv: Invoice) => (
                 <div key={inv.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:border-orange-300 transition-all cursor-pointer group relative">
                   <div className="flex justify-between items-start mb-2">
                     <span className="text-[10px] font-mono text-gray-400">#{inv.invoice_number.split('-').pop()}</span>
@@ -314,7 +387,7 @@ export default function ErpPipelineClient({ initialData, logoUrl }: ErpPipelineP
                 <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Aktivitas Terbaru</span>
               </div>
               <div className="flex-1 overflow-auto p-4 space-y-4">
-                {auditLogs?.map((log: any) => (
+                {auditLogs?.map((log: AuditLog) => (
                   <div key={log.id} className="flex gap-3 animate-in fade-in slide-in-from-right-2 duration-500">
                     <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
                       log.entity_type === 'quotation' ? 'bg-blue-500' :
@@ -329,7 +402,10 @@ export default function ErpPipelineClient({ initialData, logoUrl }: ErpPipelineP
                       <div className="flex items-center gap-2 mt-1">
                         <Clock size={10} className="text-gray-300" />
                         <span className="text-[9px] text-gray-400">
-                          {mounted ? getTimeAgo(log.timestamp) : new Date(log.timestamp).toLocaleDateString('id-ID')}
+                          {(() => {
+                            const timeValue = log.timestamp || log.created_at || ''
+                            return mounted ? getTimeAgo(timeValue) : new Date(timeValue).toLocaleDateString('id-ID')
+                          })()}
                         </span>
                       </div>
                     </div>
@@ -354,11 +430,11 @@ export default function ErpPipelineClient({ initialData, logoUrl }: ErpPipelineP
           initialItems={editingEntity.items}
           customerPhone={
             editingEntity.type === 'quotation' 
-              ? quotations.find((q: any) => q.id === editingEntity.id)?.leads?.phone 
+              ? quotations.find((q) => q.id === editingEntity.id)?.leads?.phone 
               : editingEntity.type === 'contract'
-              ? contracts.find((c: any) => c.id === editingEntity.id)?.erp_quotations?.leads?.phone
+              ? contracts.find((c) => c.id === editingEntity.id)?.erp_quotations?.leads?.phone
               : editingEntity.type === 'invoice'
-              ? invoices.find((i: any) => i.id === editingEntity.id)?.erp_contracts?.erp_quotations?.leads?.phone
+              ? invoices.find((i) => i.id === editingEntity.id)?.erp_contracts?.erp_quotations?.leads?.phone
               : undefined
           }
           signatories={signatories}

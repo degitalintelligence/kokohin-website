@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { CheckCircle, ArrowRight, Loader2, FileCheck, Receipt } from 'lucide-react'
+import { useTransition } from 'react'
+import { CheckCircle, ArrowRight, Loader2, FileCheck } from 'lucide-react'
 import { updateQuotationStatus } from '@/app/actions/quotations'
-import { createContractFromQuotation, createInvoiceFromContract } from '@/app/actions/erp'
+import { createContractFromQuotation } from '@/app/actions/erp'
 import { toast } from '@/components/ui/toaster'
 
 interface ErpActionButtonProps {
@@ -26,9 +26,10 @@ export default function ErpActionButton({ type, id, label, className }: ErpActio
           await createContractFromQuotation(id)
           toast.success('Kontrak berhasil diterbitkan')
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan sistem'
         console.error(`ERP Action ${type} failed:`, error)
-        toast.error('Gagal memproses aksi', error.message || 'Terjadi kesalahan sistem')
+        toast.error('Gagal memproses aksi', errorMessage)
       }
     })
   }

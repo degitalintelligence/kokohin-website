@@ -134,6 +134,17 @@ export async function submitLead(
     }
 }
 
+interface EstimationItem {
+    name: string
+    unit: string
+    qtyCharged?: number
+    quantity?: number
+    hpp?: number
+    unit_price?: number
+    subtotal: number
+    type: string
+}
+
 export async function saveLeadEstimation(
     leadId: string,
     data: {
@@ -146,7 +157,7 @@ export async function saveLeadEstimation(
         lebar?: number
         unit_qty?: number
         status?: string
-        items?: any[]
+        items?: EstimationItem[]
     }
 ) {
     const supabase = await createClient()
@@ -226,12 +237,6 @@ export async function saveLeadEstimation(
 
     // 1. Create entry in Audit Trail
     try {
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('id', user.id)
-            .single()
-            
         await supabase.from('erp_audit_trail').insert({
             user_id: user.id,
             entity_type: 'estimation',

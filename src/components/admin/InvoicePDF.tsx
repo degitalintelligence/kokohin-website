@@ -1,5 +1,5 @@
 import React from 'react';
-import { Page, Text, View, Document, StyleSheet, Image, Font } from '@react-pdf/renderer';
+import { Page, Text, View, Document, StyleSheet, Image as PdfImage } from '@react-pdf/renderer';
 
 // Standard Helvetica or register Montserrat if needed
 const styles = StyleSheet.create({
@@ -182,17 +182,42 @@ const styles = StyleSheet.create({
 });
 
 interface InvoicePDFProps {
-  invoice: any;
-  logoUrl?: string | null;
+  invoice: {
+    invoice_number?: string
+    created_at?: string
+    due_date?: string
+    total_amount?: number
+    amount_paid?: number
+    erp_contracts?: {
+      contract_number?: string
+      erp_quotations?: {
+        quotation_number?: string
+        leads?: {
+          name?: string
+          address?: string
+          location?: string
+          phone?: string
+        }
+      }
+    }
+    erp_invoice_items?: {
+      name: string
+      quantity: number
+      unit: string
+      unit_price: number
+      subtotal: number
+    }[]
+  }
+  logoUrl?: string | null
 }
 
 export const InvoicePDF = ({ invoice, logoUrl }: InvoicePDFProps) => {
-  const contract = invoice.erp_contracts || {};
-  const quotation = contract.erp_quotations || {};
-  const lead = quotation.leads || {};
-  const items = invoice.erp_invoice_items || [];
+  const contract = invoice.erp_contracts
+  const quotation = contract?.erp_quotations
+  const lead = quotation?.leads
+  const items = invoice.erp_invoice_items || []
   
-  const formatDate = (dateStr: string) => {
+  const formatDate = (dateStr?: string) => {
     if (!dateStr) return '-';
     return new Date(dateStr).toLocaleDateString('id-ID', {
       day: 'numeric',
@@ -201,7 +226,8 @@ export const InvoicePDF = ({ invoice, logoUrl }: InvoicePDFProps) => {
     });
   };
 
-  const formatCurrency = (val: number) => {
+  const formatCurrency = (val?: number) => {
+    if (val === undefined || val === null) return 'Rp 0';
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
       currency: 'IDR',
@@ -217,7 +243,7 @@ export const InvoicePDF = ({ invoice, logoUrl }: InvoicePDFProps) => {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            {logoUrl && <Image src={logoUrl} style={styles.logo} />}
+            {logoUrl && <PdfImage src={logoUrl} style={styles.logo} />}
             <Text style={styles.bold}>PT POHON KEAHLIAN DIGITAL</Text>
             <Text style={styles.companyInfo}>Jl. Raya Serpong, BSD City, Tangerang Selatan</Text>
             <Text style={styles.companyInfo}>WhatsApp: 0813-1418-5400 | Email: hi@kokohin.com</Text>
@@ -239,14 +265,14 @@ export const InvoicePDF = ({ invoice, logoUrl }: InvoicePDFProps) => {
         <View style={styles.customerSection}>
           <View style={styles.customerBox}>
             <Text style={styles.sectionLabel}>Ditagihkan Kepada:</Text>
-            <Text style={styles.customerName}>{lead.name || 'Pelanggan'}</Text>
-            <Text style={styles.customerDetail}>{lead.address || lead.location || '-'}</Text>
-            <Text style={styles.customerDetail}>{lead.phone || '-'}</Text>
+            <Text style={styles.customerName}>{lead?.name || 'Pelanggan'}</Text>
+            <Text style={styles.customerDetail}>{lead?.address || lead?.location || '-'}</Text>
+            <Text style={styles.customerDetail}>{lead?.phone || '-'}</Text>
           </View>
           <View style={styles.customerBox}>
             <Text style={styles.sectionLabel}>Referensi Proyek:</Text>
-            <Text style={styles.customerDetail}>No. Kontrak: {contract.contract_number || '-'}</Text>
-            <Text style={styles.customerDetail}>No. Penawaran: {quotation.quotation_number || '-'}</Text>
+            <Text style={styles.customerDetail}>No. Kontrak: {contract?.contract_number || '-'}</Text>
+            <Text style={styles.customerDetail}>No. Penawaran: {quotation?.quotation_number || '-'}</Text>
           </View>
         </View>
 
@@ -259,7 +285,7 @@ export const InvoicePDF = ({ invoice, logoUrl }: InvoicePDFProps) => {
             <Text style={[styles.tableHeaderCell, { flex: 1, textAlign: 'right' }]}>Subtotal</Text>
           </View>
           
-          {items.map((item: any, idx: number) => (
+          {items.map((item, idx: number) => (
             <View key={idx} style={styles.tableRow}>
               <Text style={[styles.tableCell, { flex: 2 }]}>{item.name}</Text>
               <Text style={[styles.tableCell, { flex: 0.5, textAlign: 'center' }]}>{item.quantity} {item.unit}</Text>

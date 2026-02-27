@@ -1,16 +1,30 @@
 
+interface BuilderCost {
+  name?: string;
+  type?: string;
+  section?: string;
+}
+
+interface PdfItem {
+  rangka?: { name?: string };
+  isian?: { name?: string };
+  atap?: { name?: string };
+  finishing?: { name?: string };
+  builder_costs?: BuilderCost[];
+}
+
 export const cleanName = (name: string | null | undefined) => {
   if (!name) return '-';
   return name.replace(/\s+\d+\s+(Kg|unit|m2|m1|btg|lembar|bt|lbr)$|(\s+\d+Kg)$|(\s+1\s+K)$/i, '').trim();
 };
 
-export const resolveItemSpecs = (item: any) => {
+export const resolveItemSpecs = (item: PdfItem) => {
     const builderCosts = item.builder_costs || [];
     
     // 1. Trace Rangka Utama
     const rangkaUtamaRaw = (item.rangka?.name) || 
-      builderCosts.find((c: any) => c.type === 'rangka' || c.section === 'rangka')?.name ||
-      builderCosts.find((c: any) => 
+      builderCosts.find((c: BuilderCost) => c.type === 'rangka' || c.section === 'rangka')?.name ||
+      builderCosts.find((c: BuilderCost) => 
         ((c.name || '').toLowerCase().includes('hollow') && 
          !(c.name || '').toLowerCase().includes('20x') && 
          !(c.name || '').toLowerCase().includes('jari') && 
@@ -20,8 +34,8 @@ export const resolveItemSpecs = (item: any) => {
     
     // 2. Trace Isian / Jari-jari
     const rangkaDalamRaw = (item.isian?.name) || 
-      builderCosts.find((c: any) => c.type === 'isian' || c.section === 'isian')?.name ||
-      builderCosts.find((c: any) => 
+      builderCosts.find((c: BuilderCost) => c.type === 'isian' || c.section === 'isian')?.name ||
+      builderCosts.find((c: BuilderCost) => 
         (c.name || '').toLowerCase().includes('jari') || 
         (c.name || '').toLowerCase().includes('kisi') ||
         (c.name || '').toLowerCase().includes('20x') ||
@@ -31,8 +45,8 @@ export const resolveItemSpecs = (item: any) => {
     
     // 3. Trace Atap / Cover
     const atapRaw = (item.atap?.name) || 
-      builderCosts.find((c: any) => c.type === 'atap' || c.section === 'atap')?.name ||
-      builderCosts.find((c: any) => 
+      builderCosts.find((c: BuilderCost) => c.type === 'atap' || c.section === 'atap')?.name ||
+      builderCosts.find((c: BuilderCost) => 
         (c.name || '').toLowerCase().includes('alderon') || 
         (c.name || '').toLowerCase().includes('spandek') || 
         (c.name || '').toLowerCase().includes('solarflat') ||
@@ -42,8 +56,8 @@ export const resolveItemSpecs = (item: any) => {
     
     // 4. Trace Finishing
     const finishingRaw = (item.finishing?.name) || 
-      builderCosts.find((c: any) => c.type === 'finishing' || c.section === 'finishing')?.name ||
-      builderCosts.find((c: any) => 
+      builderCosts.find((c: BuilderCost) => c.type === 'finishing' || c.section === 'finishing')?.name ||
+      builderCosts.find((c: BuilderCost) => 
         (c.name || '').toLowerCase().includes('cat') || 
         (c.name || '').toLowerCase().includes('duco') ||
         (c.name || '').toLowerCase().includes('epoxy') ||

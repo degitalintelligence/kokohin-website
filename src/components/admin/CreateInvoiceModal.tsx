@@ -1,13 +1,30 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { X, Receipt, CheckCircle2, Loader2, AlertCircle } from 'lucide-react'
+import { useTransition } from 'react'
+import { X, Receipt, CheckCircle2, AlertCircle } from 'lucide-react'
 import { createInvoiceFromContract } from '@/app/actions/erp'
 import { formatCurrency } from '@/lib/utils/costing'
 import { toast } from '@/components/ui/toaster'
 
+interface PaymentTermsJson {
+  t1_percent?: number
+  t2_percent?: number
+  t3_percent?: number
+  [key: string]: unknown
+}
+
+interface PaymentTerm {
+  percent: number
+  label: string
+}
+
 interface CreateInvoiceModalProps {
-  contract: any
+  contract: {
+    id: string
+    contract_number: string
+    total_value: number
+    payment_terms_json?: PaymentTermsJson | PaymentTerm[] | null
+  }
   onClose: () => void
 }
 
@@ -15,19 +32,22 @@ export default function CreateInvoiceModal({ contract, onClose }: CreateInvoiceM
   const [isPending, startTransition] = useTransition()
   
   // Parse payment terms
-  let termsArray = []
+  let termsArray: PaymentTerm[] = []
   if (Array.isArray(contract.payment_terms_json)) {
-    termsArray = contract.payment_terms_json
+    termsArray = contract.payment_terms_json as PaymentTerm[]
   } else {
-    const defaultTerms = contract.payment_terms_json || { t1_percent: 50, t2_percent: 40, t3_percent: 10 }
+    const rawTerms = contract.payment_terms_json || { t1_percent: 50, t2_percent: 40, t3_percent: 10 }
+    const t1 = Number(rawTerms.t1_percent ?? 50)
+    const t2 = Number(rawTerms.t2_percent ?? 40)
+    const t3 = Number(rawTerms.t3_percent ?? 10)
     termsArray = [
-      { percent: defaultTerms.t1_percent, label: `Down Payment (${defaultTerms.t1_percent}%)` },
-      { percent: defaultTerms.t2_percent, label: `Progress (${defaultTerms.t2_percent}%)` },
-      { percent: defaultTerms.t3_percent, label: `Pelunasan (${defaultTerms.t3_percent}%)` }
+      { percent: t1, label: `Down Payment (${t1}%)` },
+      { percent: t2, label: `Progress (${t2}%)` },
+      { percent: t3, label: `Pelunasan (${t3}%)` }
     ]
   }
 
-  const handleCreateInvoice = (term: any) => {
+  const handleCreateInvoice = (term: PaymentTerm) => {
     startTransition(async () => {
       try {
         await createInvoiceFromContract(contract.id, {
@@ -36,8 +56,9 @@ export default function CreateInvoiceModal({ contract, onClose }: CreateInvoiceM
         })
         toast.success('Berhasil', `Invoice untuk ${term.label} berhasil diterbitkan.`)
         onClose()
-      } catch (error: any) {
-        toast.error('Gagal', error.message || 'Gagal menerbitkan invoice.')
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Gagal menerbitkan invoice.'
+        toast.error('Gagal', errorMessage)
       }
     })
   }
@@ -70,7 +91,7 @@ export default function CreateInvoiceModal({ contract, onClose }: CreateInvoiceM
 
           <div className="space-y-3">
             <label className="text-[10px] font-black text-gray-500 uppercase tracking-tight ml-1">Pilih Termin Pembayaran</label>
-            {termsArray.map((term: any, idx: number) => {
+            {termsArray.map((term: PaymentTerm, idx: number) => {
               const amount = Math.ceil(contract.total_value * (term.percent / 100))
               return (
                 <button

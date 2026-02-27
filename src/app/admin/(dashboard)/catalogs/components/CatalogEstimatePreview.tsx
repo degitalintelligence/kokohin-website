@@ -23,14 +23,12 @@ export default function CatalogEstimatePreview({
   const [labor, setLabor] = useState(0)
   const [transport, setTransport] = useState(0)
   const [marginPct, setMarginPct] = useState(0)
-  const [addonsPerUnit, setAddonsPerUnit] = useState(0)
   const [hppComponentsTotal, setHppComponentsTotal] = useState(0)
   const [stdCalc, setStdCalc] = useState(1)
   const [useStd, setUseStd] = useState(false)
   const [zones, setZones] = useState<Zone[]>([])
   const [zoneId, setZoneId] = useState<string | null>(null)
   const [zoneMarkup, setZoneMarkup] = useState(0)
-  const [zoneFlatFee, setZoneFlatFee] = useState(0)
 
   const materialPriceMap = useMemo(() => new Map(materials.map(m => [m.id, m.base_price_per_unit])), [materials])
 
@@ -47,7 +45,6 @@ export default function CatalogEstimatePreview({
     const rangkaEl = form.elements.namedItem('rangka_id') as HTMLSelectElement | null
     const finishingEl = form.elements.namedItem('finishing_id') as HTMLSelectElement | null
     const isianEl = form.elements.namedItem('isian_id') as HTMLSelectElement | null
-    const addonsEl = form.elements.namedItem('addons_json') as HTMLInputElement | null
     const hppEl = form.elements.namedItem('hpp_components_json') as HTMLInputElement | null
     const useStdEl = form.elements.namedItem('use_std_calculation') as HTMLInputElement | null
     const stdCalcEl = form.elements.namedItem('std_calculation') as HTMLInputElement | null
@@ -61,25 +58,16 @@ export default function CatalogEstimatePreview({
       setUseStd(useStdEl?.checked ?? false)
       setStdCalc(Math.max(0.01, getNumber(stdCalcEl)))
 
-      // 1. Hitung Addons (non-opsional)
+      // 1. Hitung Komponen HPP dari material
       try {
-        const rawAddons = addonsEl?.value ? JSON.parse(addonsEl.value) : []
-        const perUnitAddons = (rawAddons as any[]).filter(a => !a.is_optional).reduce((sum, a) => {
-          const basis = a.basis ?? 'm2'
-          const qty = Number(a.qty_per_basis) || 0
-          const price = Number(a.material_price) || 0
-          const currentUnit = (unitEl?.value || 'm2')
-          return sum + (basis === currentUnit ? qty * price : 0)
-        }, 0)
-        setAddonsPerUnit(perUnitAddons)
-      } catch { setAddonsPerUnit(0) }
-
-      // 2. Hitung Komponen HPP dari material
-      try {
-        const rawHpp = hppEl?.value ? JSON.parse(hppEl.value) : []
-        const hppMaterialIds = new Set((rawHpp as any[]).map(item => item.material_id))
+        interface HppComponent {
+          material_id: string
+          quantity: number
+        }
+        const rawHpp = hppEl?.value ? JSON.parse(hppEl.value) as HppComponent[] : []
+        const hppMaterialIds = new Set(rawHpp.map(item => item.material_id))
         
-        const totalMatFromTable = (rawHpp as any[]).reduce((sum, item) => {
+        const totalMatFromTable = rawHpp.reduce((sum, item) => {
           const matPrice = materialPriceMap.get(item.material_id) || 0
           const qty = Number(item.quantity) || 0
           return sum + (matPrice * qty)
@@ -99,7 +87,7 @@ export default function CatalogEstimatePreview({
 
     readAll()
     const handlers: Array<[Element, string]> = []
-    const elsToWatch = [baseEl, unitEl, laborEl, transportEl, marginEl, atapEl, rangkaEl, finishingEl, isianEl, addonsEl, hppEl, useStdEl, stdCalcEl]
+    const elsToWatch = [baseEl, unitEl, laborEl, transportEl, marginEl, atapEl, rangkaEl, finishingEl, isianEl, hppEl, useStdEl, stdCalcEl]
     for (const el of elsToWatch) {
       if (!el) continue
       const evt = (el instanceof HTMLSelectElement || el.type === 'checkbox') ? 'change' : 'input'
@@ -125,7 +113,6 @@ export default function CatalogEstimatePreview({
           if (!zoneId && data.length > 0) {
             setZoneId(data[0].id)
             setZoneMarkup(data[0].markup_percentage)
-            setZoneFlatFee(data[0].flat_fee)
           }
         }
       })
@@ -168,7 +155,6 @@ export default function CatalogEstimatePreview({
                   const z = zones.find(zz => zz.id === e.target.value) || null
                   setZoneId(z?.id ?? null)
                   setZoneMarkup(z?.markup_percentage ?? 0)
-                  setZoneFlatFee(z?.flat_fee ?? 0)
                 }}
               >
                 {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}

@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { ButtonLoadingSpinner } from '@/components/ui/loading-spinner'
-import { useFormStatus } from 'react-dom'
 
 export default function CatalogSaveButton({ formId, label = 'Simpan Perubahan' }: { formId: string; label?: string }) {
   // Use a simple timeout to prevent infinite loading state if submission fails silently

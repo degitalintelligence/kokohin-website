@@ -107,8 +107,13 @@ export async function updateHppPerUnit(catalogId: string, userId?: string) {
 
   const totalMaterialCost = hppComponentsCost + mainFieldsCost
 
-  const laborCost = Number((catalog as any).labor_cost || 0)
-  const transportCost = Number((catalog as any).transport_cost || 0)
+  interface CatalogCosts {
+    labor_cost?: number
+    transport_cost?: number
+  }
+  const catalogCosts = catalog as unknown as CatalogCosts
+  const laborCost = Number(catalogCosts.labor_cost || 0)
+  const transportCost = Number(catalogCosts.transport_cost || 0)
   const totalCost = totalMaterialCost + laborCost + transportCost
 
   // 6. Calculate HPP per unit/m2 based on use_std_calculation flag

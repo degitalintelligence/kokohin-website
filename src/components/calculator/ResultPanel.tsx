@@ -11,25 +11,25 @@ const PDFDownloadLink = dynamic(
   { ssr: false }
 )
 
-type Props = {
+interface ResultPanelProps {
   result: CalculatorResult & { isCustom?: boolean; warnings?: string[]; suggestedItems?: { name: string; estimatedCost: number; reason: string }[] }
+  onReset: () => void
+  onBookSurvey: () => void
   leadName: string
   projectId: string | null
-  zoneName: string | null
   logoUrl: string | null
   customNotes?: string | null
-  onBookSurvey: () => void
 }
 
 export default function ResultPanel({
   result,
+  onReset,
+  onBookSurvey,
   leadName,
   projectId,
-  zoneName,
   logoUrl,
-  customNotes,
-  onBookSurvey
-}: Props) {
+  customNotes
+}: ResultPanelProps) {
   if (result.isCustom) {
     return (
       <div className="space-y-6">
@@ -140,19 +140,14 @@ export default function ResultPanel({
               result={result}
               leadInfo={{ name: leadName, whatsapp: '' }}
               projectId={projectId}
-              zoneName={zoneName}
               logoUrl={logoUrl}
-              specifications={result.breakdown?.map(item => item.name).join(', ') || 'Paket Pekerjaan Kanopi'}
-              projectArea={result.unitUsed === 'm2' ? result.luas : (result.computedQty ?? result.luas)}
-              projectType={'Pekerjaan Pembuatan Kanopi'}
-              areaUnit={result.unitUsed === 'm2' ? 'm²' : result.unitUsed === 'm1' ? 'm¹' : 'pcs'}
               items={result.breakdown?.map(item => ({
                 name: item.name,
                 unit: item.unit,
                 quantity: item.qtyCharged,
                 unit_price: item.pricePerUnit,
                 subtotal: item.subtotal,
-                type: 'catalog'
+                catalog_id: undefined
               }))}
             />
           }
@@ -167,10 +162,10 @@ export default function ResultPanel({
           )}
         </PDFDownloadLink>
         <button
-          onClick={() => { window.location.href = '/katalog' }}
+          onClick={onReset}
           className="w-full btn bg-transparent border border-white/30 text-white hover:bg-white/10 font-bold py-4"
         >
-          Lihat Katalog Paket
+          Hitung Ulang
         </button>
       </div>
     </div>

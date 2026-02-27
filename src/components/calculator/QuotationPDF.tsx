@@ -254,13 +254,20 @@ interface QuotationPDFProps {
   projectId: string | null;
   zoneName?: string | null;
   logoUrl?: string | null;
-  specifications: string;
-  projectArea: number;
-  projectType?: string;
-  areaUnit?: string;
-  attachments?: any[];
-  notes?: string;
-  items?: any[]; // The full ERP items with specifications
+  attachments?: { url: string }[];
+  items?: {
+    name: string
+    unit: string
+    quantity: number
+    unit_price: number
+    subtotal: number
+    catalog_id?: string
+    rangka?: { name?: string };
+    isian?: { name?: string };
+    atap?: { name?: string };
+    finishing?: { name?: string };
+    builder_costs?: { name?: string; type?: string; section?: string }[];
+  }[]; // The full ERP items with specifications
   paymentTerms?: {
     name: string;
     terms_json: {
@@ -279,23 +286,15 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
   result,
   leadInfo,
   projectId,
-  zoneName,
   logoUrl,
-  specifications,
-  projectArea,
-  projectType = 'Pekerjaan Pembuatan Kanopi',
-  areaUnit = 'm²',
   attachments = [],
-  notes,
   items = [],
   paymentTerms,
 }) => {
   ensureFontsRegistered()
   const estimationNumber = projectId ? (projectId.startsWith('WEB-') ? projectId : `QTN-${projectId.slice(0, 8).toUpperCase()}`) : 'WEB-PREVIEW';
   const customerName = leadInfo.name || 'Customer';
-  const customerPhone = leadInfo.whatsapp || '-';
   const customerAddress = leadInfo.address || '-';
-  const zoneLabel = zoneName || 'Belum dipilih';
 
   const totalPrice = result.estimatedPrice;
   const companyName = 'KOKOHIN';
