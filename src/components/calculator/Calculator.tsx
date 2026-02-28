@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { Calculator, Ruler, MapPin, Package, AlertCircle } from 'lucide-react'
 import { calculateCanopyPrice, formatRupiah, formatNumber } from '@/lib/calculator'
+import { formatZoneName } from '@/lib/zone'
 import type { CalculatorInput, CalculatorResult, Material, Zone, Catalog, CatalogAddon } from '@/lib/types'
 import { createProjectWithEstimation, type CreateProjectDTO } from '@/app/actions/createProjectWithEstimation'
 import { createClient } from '@/lib/supabase/client'
@@ -57,6 +58,10 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
   const [dataError, setDataError] = useState<string | null>(null)
   const [calcError, setCalcError] = useState<string | null>(null)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [companyName, setCompanyName] = useState<string | null>(null)
+  const [companyAddress, setCompanyAddress] = useState<string | null>(null)
+  const [companyPhone, setCompanyPhone] = useState<string | null>(null)
+  const [companyEmail, setCompanyEmail] = useState<string | null>(null)
   const [waNumber, setWaNumber] = useState<string>(FALLBACK_WA)
   const [showLeadModal, setShowLeadModal] = useState(false)
   const [leadModalAnim, setLeadModalAnim] = useState(false)
@@ -327,15 +332,20 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
           zonesRes,
           catalogsRes,
           logoRes,
+          basicRes,
         ] = await Promise.all([
           fetch('/api/public/zones', { cache: 'no-store' }).then(r => r.json() as Promise<{ zones?: Array<{ id: string; name: string; markup_percentage: number; flat_fee: number }> }>).catch(() => ({ zones: [] })),
           fetch('/api/public/catalogs', { cache: 'no-store' }).then(r => r.json() as Promise<{ catalogs?: Array<{ id: string; title: string; base_price_per_m2: number | null }> }>).catch(() => ({ catalogs: [] })),
           fetch('/api/site-settings/logo-url', { cache: 'no-store' }).then(r => r.ok ? r.json() as Promise<{ logo_url?: string | null }> : ({ logo_url: null })).catch(() => ({ logo_url: null })),
+          fetch('/api/site-settings/basic-public', { cache: 'no-store' }).then(r => r.ok ? r.json() as Promise<{ site_name?: string; contact_address?: string; support_phone?: string; support_email?: string }> : ({})).catch(() => ({})),
         ])
         if (!zonesRes) {
           throw new Error('Gagal memuat data kalkulator')
         }
-        const safeZones = (zonesRes?.zones ?? [])
+        const safeZones = (zonesRes?.zones ?? []).map((z) => ({
+          ...z,
+          name: formatZoneName(z.name)
+        }))
         const safeCatalogs = (catalogsRes?.catalogs ?? []).map(c => ({
           id: c.id,
           title: c.title,
@@ -344,6 +354,11 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
         setZones(safeZones)
         setCatalogs(safeCatalogs)
         setLogoUrl(logoRes?.logo_url ?? null)
+        const basic = basicRes ?? {}
+        setCompanyName((basic as { site_name?: string }).site_name ?? null)
+        setCompanyAddress((basic as { contact_address?: string }).contact_address ?? null)
+        setCompanyPhone((basic as { support_phone?: string }).support_phone ?? null)
+        setCompanyEmail((basic as { support_email?: string }).support_email ?? null)
         try {
           const res = await fetch('/api/site-settings/wa-number', { cache: 'no-store' })
           if (res.ok) {
@@ -963,6 +978,11 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                         leadName={leadInfo.name}
                         projectId={projectId}
                         logoUrl={logoUrl}
+                        companyName={companyName}
+                        companyAddress={companyAddress}
+                        companyPhone={companyPhone}
+                        companyEmail={companyEmail}
+                        catalogTitle={catalogData?.title}
                         customNotes={input.customNotes}
                         onReset={handleReset}
                         onBookSurvey={result.isCustom ? handleCustomConsultation : handleBookSurvey}

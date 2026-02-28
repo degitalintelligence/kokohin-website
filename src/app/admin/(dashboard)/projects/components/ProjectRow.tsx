@@ -3,6 +3,7 @@ import Link from 'next/link'
 import styles from '../../page.module.css'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useState, Fragment } from 'react'
+import { formatZoneName } from '@/lib/zone'
 
 type Zone = { name?: string | null } | null
 type Estimation = { total_selling_price?: number | null; version_number?: number | null } | null
@@ -43,7 +44,8 @@ const getStatus = (status: string) => {
 export default function ProjectRow({ project }: { project: Project }) {
   const [open, setOpen] = useState(false)
   const statusConfig = getStatus(project.status)
-  const zoneName = project.zone?.name || '—'
+  const rawZoneName = project.zone?.name || ''
+  const zoneName = rawZoneName ? formatZoneName(rawZoneName) : '—'
   const totalPrice = project.estimation?.total_selling_price || 0
   return (
     <Fragment>

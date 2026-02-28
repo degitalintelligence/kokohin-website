@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { formatZoneName } from '@/lib/zone'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       zone: {
         id: row.id,
-        name: row.name,
+        name: formatZoneName(row.name),
         markup_percentage: Number(row.markup_percentage || 0),
         flat_fee: Number(row.flat_fee || 0)
       }
@@ -36,5 +37,13 @@ export async function GET(request: Request) {
     .eq('is_active', true)
     .order('name')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ zones: data ?? [] })
+  const rows = (data as Array<{ id: string; name: string; markup_percentage: number | null; flat_fee: number | null }> | null) ?? []
+  return NextResponse.json({
+    zones: rows.map((row) => ({
+      id: row.id,
+      name: formatZoneName(row.name),
+      markup_percentage: Number(row.markup_percentage || 0),
+      flat_fee: Number(row.flat_fee || 0)
+    }))
+  })
 }

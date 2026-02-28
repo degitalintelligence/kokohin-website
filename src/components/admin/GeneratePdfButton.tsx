@@ -6,6 +6,7 @@ import { FileDown, Loader2 } from 'lucide-react'
 import { QuotationPDF } from '@/components/calculator/QuotationPDF'
 import type { CalculatorResult } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
+import { formatZoneName } from '@/lib/zone'
 
 const PDFDownloadLink = dynamic(
   () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
@@ -192,7 +193,7 @@ export default function GeneratePdfButton({ quotation: initialQuotation, project
             address: lead.location || quotation.client_address || ''
           }}
           projectId={quotation.quotation_number || quotation.id}
-          zoneName={quotation.zones?.name || null}
+          zoneName={formatZoneName(quotation.zones?.name || null) || null}
           logoUrl={logoUrl}
           attachments={attachments}
           paymentTerms={quotation.erp_payment_terms}

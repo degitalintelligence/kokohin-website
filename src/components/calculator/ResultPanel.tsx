@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic'
 import { AlertCircle, FileDown } from 'lucide-react'
 import { formatNumber, formatRupiah } from '@/lib/calculator'
 import type { CalculatorResult } from '@/lib/types'
-import QuotationPDF from './QuotationPDF'
+import EstimationPDF from './EstimationPDF'
 
 const PDFDownloadLink = dynamic(
   () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
@@ -18,7 +18,39 @@ interface ResultPanelProps {
   leadName: string
   projectId: string | null
   logoUrl: string | null
+  companyName: string | null
+  companyAddress: string | null
+  companyPhone: string | null
+  companyEmail: string | null
+  catalogTitle?: string | null
   customNotes?: string | null
+}
+
+function validateEstimation(result: CalculatorResult) {
+  const errors: string[] = []
+  if (typeof result.luas !== 'number' || !Number.isFinite(result.luas) || result.luas <= 0) {
+    errors.push('Luas estimasi tidak valid.')
+  }
+  if (typeof result.estimatedPrice !== 'number' || !Number.isFinite(result.estimatedPrice) || result.estimatedPrice <= 0) {
+    errors.push('Total estimasi harga tidak valid.')
+  }
+  if (Array.isArray(result.breakdown)) {
+    result.breakdown.forEach((item, idx) => {
+      if (!item.name || !item.name.trim()) {
+        errors.push(`Nama item #${idx + 1} kosong.`)
+      }
+      if (typeof item.qtyCharged !== 'number' || !Number.isFinite(item.qtyCharged) || item.qtyCharged <= 0) {
+        errors.push(`Volume item #${idx + 1} tidak valid.`)
+      }
+      if (typeof item.pricePerUnit !== 'number' || !Number.isFinite(item.pricePerUnit) || item.pricePerUnit < 0) {
+        errors.push(`Harga satuan item #${idx + 1} tidak valid.`)
+      }
+      if (typeof item.subtotal !== 'number' || !Number.isFinite(item.subtotal) || item.subtotal < 0) {
+        errors.push(`Subtotal item #${idx + 1} tidak valid.`)
+      }
+    })
+  }
+  return { valid: errors.length === 0, errors }
 }
 
 export default function ResultPanel({
@@ -28,8 +60,14 @@ export default function ResultPanel({
   leadName,
   projectId,
   logoUrl,
+  companyName,
+  companyAddress,
+  companyPhone,
+  companyEmail,
+  catalogTitle,
   customNotes
 }: ResultPanelProps) {
+  const { valid: isEstimationValid, errors: estimationErrors } = validateEstimation(result)
   if (result.isCustom) {
     return (
       <div className="space-y-6">
@@ -134,33 +172,56 @@ export default function ResultPanel({
         >
           Book Jadwal Survei
         </button>
-        <PDFDownloadLink
-          document={
-            <QuotationPDF
-              result={result}
-              leadInfo={{ name: leadName, whatsapp: '' }}
-              projectId={projectId}
-              logoUrl={logoUrl}
-              items={result.breakdown?.map(item => ({
-                name: item.name,
-                unit: item.unit,
-                quantity: item.qtyCharged,
-                unit_price: item.pricePerUnit,
-                subtotal: item.subtotal,
-                catalog_id: undefined
-              }))}
-            />
-          }
-          fileName={`Penawaran_Kokohin_${leadName.replace(/\s+/g, '_')}.pdf`}
-          className="w-full btn bg-white/20 text-white hover:bg-white/30 font-bold py-4 flex items-center justify-center gap-2"
-        >
-          {({ loading }) => (
-            <>
-              <FileDown className="w-5 h-5" />
-              {loading ? 'Menyiapkan PDF...' : 'Download Penawaran PDF'}
-            </>
-          )}
-        </PDFDownloadLink>
+        {!isEstimationValid && (
+          <div className="p-3 bg-red-500/10 border border-red-500/40 rounded-lg text-xs text-red-100 mb-1">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 mt-0.5" />
+              <div>
+                <p className="font-semibold mb-1">Data estimasi belum lengkap untuk generate PDF.</p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  {estimationErrors.map((err, idx) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+        {isEstimationValid ? (
+          <PDFDownloadLink
+            document={
+              <EstimationPDF
+                result={result}
+                leadName={leadName}
+                projectId={projectId}
+                logoUrl={logoUrl}
+                companyName={companyName}
+                companyAddress={companyAddress}
+                companyPhone={companyPhone}
+                companyEmail={companyEmail}
+                catalogTitle={catalogTitle}
+              />
+            }
+            fileName={`Estimation_Kokohin_${leadName.replace(/\s+/g, '_')}.pdf`}
+            className="w-full btn bg-white/20 text-white hover:bg-white/30 font-bold py-4 flex items-center justify-center gap-2"
+          >
+            {({ loading }) => (
+              <>
+                <FileDown className="w-5 h-5" />
+                {loading ? 'Menyiapkan PDF...' : 'Download Estimation PDF'}
+              </>
+            )}
+          </PDFDownloadLink>
+        ) : (
+          <button
+            type="button"
+            className="w-full btn bg-white/10 text-white/60 font-bold py-4 flex items-center justify-center gap-2 cursor-not-allowed"
+            disabled
+          >
+            <FileDown className="w-5 h-5" />
+            Download Estimation PDF
+          </button>
+        )}
         <button
           onClick={onReset}
           className="w-full btn bg-transparent border border-white/30 text-white hover:bg-white/10 font-bold py-4"
