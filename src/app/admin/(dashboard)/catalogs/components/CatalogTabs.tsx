@@ -1,53 +1,74 @@
 'use client'
 
-import React, { useState } from 'react'
-import { Info, DollarSign, Wrench, UploadCloud, Eye, Calculator } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { Info, DollarSign, Wrench, Puzzle } from 'lucide-react'
 
-const TABS = [
-  { id: 'info', label: 'Informasi', icon: Info },
-  { id: 'hpp', label: 'Formulasi HPP', icon: Calculator },
+const tabs = [
+  { id: 'info', label: 'Informasi Dasar', icon: Info },
+  { id: 'hpp', label: 'Formulasi HPP', icon: Wrench },
   { id: 'biaya', label: 'Harga Jual', icon: DollarSign },
-  { id: 'addons', label: 'Addons Opsional', icon: Wrench },
-  { id: 'import', label: 'Import', icon: UploadCloud },
-  { id: 'preview', label: 'Preview', icon: Eye },
+  { id: 'addons', label: 'Komponen Addons', icon: Puzzle },
 ]
 
-type CatalogTabChild = React.ReactElement<{ id: string }>
+type TabId = 'info' | 'hpp' | 'biaya' | 'addons'
 
-export default function CatalogTabs({ children }: { children: React.ReactNode }) {
-  const [activeTab, setActiveTab] = useState('info')
+export default function CatalogTabs({
+  children,
+  saveBar,
+}: {
+  children: React.ReactNode
+  saveBar?: React.ReactNode
+}) {
+  const [activeTab, setActiveTab] = useState<TabId>(() => {
+    if (typeof window === 'undefined') return 'info'
+    const saved = window.sessionStorage.getItem('catalog-tabs-active') as TabId | null
+    return saved && tabs.some((t) => t.id === saved) ? saved : 'info'
+  })
 
-  const childrenArray = React.Children.toArray(children).filter(
-    (child): child is CatalogTabChild => React.isValidElement(child)
-  )
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.sessionStorage.setItem('catalog-tabs-active', activeTab)
+  }, [activeTab])
+
+  const childArray = React.Children.toArray(children).filter((child) =>
+    React.isValidElement(child),
+  ) as React.ReactElement[]
+
+  const activeChild =
+    childArray.find((child) => (child.props as { id?: string }).id === activeTab) ??
+    childArray[0] ??
+    null
 
   return (
     <div>
       <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-2 overflow-x-auto" aria-label="Tabs">
-          {TABS.map((tab) => (
+        <nav className="-mb-px flex space-x-6" aria-label="Tabs">
+          {tabs.map((tab) => (
             <button
               key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`${
+              onClick={() => {
+                setActiveTab(tab.id as TabId)
+              }}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
                 activeTab === tab.id
-                  ? 'border-[#E30613] text-[#E30613] bg-[#E30613]/5'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 hover:bg-gray-50'
-              } whitespace-nowrap py-3 px-4 border-b-2 font-bold text-sm flex items-center gap-2 transition-all duration-200 rounded-t-lg`}
+                  ? 'border-[#E30613] text-[#E30613]'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+              aria-current={activeTab === tab.id ? 'page' : undefined}
             >
-              <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-[#E30613]' : 'text-gray-400'}`} />
+              <tab.icon className="w-4 h-4" />
               {tab.label}
             </button>
           ))}
         </nav>
       </div>
-      <div className="pt-6 animate-in fade-in duration-300 slide-in-from-bottom-2">
-        {childrenArray.map((child) => (
-          <div key={child.props.id} id={child.props.id} style={{ display: activeTab === child.props.id ? 'block' : 'none' }}>
-            {child}
-          </div>
-        ))}
+      {saveBar && (
+        <div className="mt-3 flex justify-end">
+          {saveBar}
+        </div>
+      )}
+      <div className="mt-6">
+        {activeChild}
       </div>
     </div>
   )

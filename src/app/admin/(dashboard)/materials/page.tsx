@@ -7,6 +7,7 @@ import ImportCsvForm from './components/ImportCsvForm'
 import { ALLOWED_MATERIALS_ROLES, isRoleAllowed } from '@/lib/rbac'
 import { revalidatePath } from 'next/cache'
 import MaterialsListClient from './components/MaterialsListClient'
+import { buildCopyCode, buildCopyName } from '@/lib/materialsCopyLogic'
 
 type MaterialImportData = {
   id?: string
@@ -99,6 +100,90 @@ export async function importMaterials(formData: FormData) {
 
   revalidatePath('/admin/materials')
   return 'ok'
+}
+
+export async function copyMaterial(materialId: string) {
+  'use server'
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const bypass = await isDevBypass()
+  if (!user && !bypass) {
+    throw new Error('Sesi telah berakhir, silakan login kembali')
+  }
+  if (user && !bypass) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle()
+    const role = (profile as { role?: string } | null)?.role ?? null
+    if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES)) {
+      throw new Error('Anda tidak memiliki akses untuk menyalin material')
+    }
+  }
+
+  if (!materialId) {
+    throw new Error('ID material tidak valid')
+  }
+
+  const { data: original, error } = await supabase
+    .from('materials')
+    .select('*')
+    .eq('id', materialId)
+    .single()
+
+  if (error || !original) {
+    throw new Error('Material tidak ditemukan')
+  }
+
+  const baseName = (original as { name?: string }).name || ''
+  const copyName = buildCopyName(baseName)
+
+  const { data: existingCopy } = await supabase
+    .from('materials')
+    .select('id')
+    .eq('name', copyName)
+    .limit(1)
+
+  if (existingCopy && existingCopy.length > 0) {
+    throw new Error('Salinan material sudah ada. Silakan gunakan atau ubah material hasil copy tersebut.')
+  }
+
+  const baseCode = (original as { code?: string }).code || ''
+
+  const { data: sameCodeRows } = await supabase
+    .from('materials')
+    .select('code')
+    .like('code', `${baseCode}-COPY%`)
+
+  type CodeRow = { code: string }
+  const existingCodes = (sameCodeRows ?? []).map((r: CodeRow) => r.code)
+  const newCode = buildCopyCode(baseCode, existingCodes)
+
+  const clone: Record<string, unknown> = { ...(original as Record<string, unknown>) }
+  delete clone.id
+  delete clone.created_at
+  delete clone.updated_at
+
+  const payload = {
+    ...clone,
+    code: newCode,
+    name: copyName,
+    is_active: true,
+  }
+
+  const { data: inserted, error: insErr } = await supabase
+    .from('materials')
+    .insert(payload)
+    .select('id')
+    .single()
+
+  if (insErr || !inserted) {
+    throw new Error(insErr?.message || 'Gagal menyalin material')
+  }
+
+  revalidatePath('/admin/materials')
+  return { id: inserted.id as string }
 }
 
 export async function replaceMaterialsWithBusinessList() {

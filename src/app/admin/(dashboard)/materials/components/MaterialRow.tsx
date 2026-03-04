@@ -1,8 +1,12 @@
 'use client'
+
 import Link from 'next/link'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ChevronDown, ChevronUp, Copy } from 'lucide-react'
 import styles from '../../page.module.css'
-import { useState, Fragment } from 'react'
+import { useState, Fragment, useTransition } from 'react'
+import { copyMaterial } from '../actions'
+import { useToast } from '@/components/ui/use-toast'
 
 type Material = {
   id: string
@@ -25,6 +29,9 @@ const formatLengthUnit = (lengthPerUnit: number | null) => {
 
 export default function MaterialRow({ material }: { material: Material }) {
   const [open, setOpen] = useState(false)
+  const [isCopying, startCopy] = useTransition()
+  const router = useRouter()
+  const { toast } = useToast()
   const wasteLabel = material.length_per_unit && material.length_per_unit > 1 ? 'Math.ceil()' : 'Satuan'
   const categoryClass =
     material.category === 'atap'
@@ -68,6 +75,36 @@ export default function MaterialRow({ material }: { material: Material }) {
             <Link href={`/admin/materials/${material.id}`} className="btn btn-outline-dark btn-sm">
               Edit
             </Link>
+            <button
+              type="button"
+              className="btn btn-outline-dark btn-sm inline-flex items-center gap-1 disabled:opacity-60"
+              disabled={isCopying}
+              onClick={() => {
+                startCopy(async () => {
+                  try {
+                    const result = await copyMaterial(material.id)
+                    toast({
+                      title: 'Material berhasil disalin',
+                      description: `Salinan dari ${material.name}`,
+                    })
+                    router.push(`/admin/materials/${result.id}`)
+                  } catch (e) {
+                    const message =
+                      e instanceof Error
+                        ? e.message
+                        : 'Gagal menyalin material. Silakan coba lagi.'
+                    toast({
+                      variant: 'destructive',
+                      title: 'Gagal menyalin material',
+                      description: message,
+                    })
+                  }
+                })
+              }}
+            >
+              <Copy className="w-3 h-3" />
+              <span>Copy</span>
+            </button>
             <button className="btn btn-outline-danger btn-sm">
               Hapus
             </button>

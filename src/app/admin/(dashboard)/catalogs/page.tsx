@@ -2,7 +2,7 @@ import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { FolderOpen, BadgeDollarSign, BarChart3, Search, CheckCircle, AlertTriangle } from 'lucide-react'
+import { FolderOpen, BadgeDollarSign, BarChart3, CheckCircle, AlertTriangle } from 'lucide-react'
 import ImportCsvForm from './components/ImportCsvForm'
 import CatalogsListClient from './components/CatalogsListClient'
 
@@ -50,8 +50,6 @@ async function importCatalogs(formData: FormData) {
   }
   redirect('/admin/catalogs?notice=imported')
 }
-
-
 
 const escapeCsvValue = (value: string | number | boolean | null | undefined) => {
   const text = value === null || value === undefined ? '' : String(value)
@@ -131,33 +129,58 @@ const parseCsv = (text: string) => {
   return rows
 }
 
-export default async function AdminCatalogsPage({ searchParams }: { searchParams: Promise<{ hmin?: string; hmax?: string; sort?: string; error?: string; notice?: string }> }) {
-  const { hmin, hmax, sort, error: errorParam, notice } = await searchParams
+export default async function AdminCatalogsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    q?: string
+    sort?: string
+    category?: string
+    page?: string
+    error?: string
+    notice?: string
+  }>
+}) {
+  const { q, sort, category, page, error: errorParam, notice } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
   if (!user && !bypass) redirect('/admin/login')
 
+  const currentPage = Math.max(1, Number(page || '1'))
+  const pageSize = 20;
+
   let query = supabase
     .from('catalogs')
-    .select('*')
-  const minVal = hmin ? Number(hmin) : NaN
-  const maxVal = hmax ? Number(hmax) : NaN
-  if (!isNaN(minVal)) {
-    query = query.gte('hpp_per_unit', Math.max(0, Math.floor(minVal)))
+    .select('*', { count: 'exact' })
+
+  if (q) {
+    query = query.ilike('title', `%${q}%`)
   }
-  if (!isNaN(maxVal)) {
-    query = query.lte('hpp_per_unit', Math.max(0, Math.floor(maxVal)))
+
+  if (category && category !== 'all') {
+    query = query.eq('category', category)
   }
-  const s = (sort || '').toLowerCase()
+
+  const s = (sort || 'created_at_desc').toLowerCase()
   if (s === 'hpp_asc') {
     query = query.order('hpp_per_unit', { ascending: true, nullsFirst: true })
   } else if (s === 'hpp_desc') {
     query = query.order('hpp_per_unit', { ascending: false, nullsFirst: false })
+  } else if (s === 'price_asc') {
+    query = query.order('base_price_per_m2', { ascending: true, nullsFirst: true })
+  } else if (s === 'price_desc') {
+    query = query.order('base_price_per_m2', { ascending: false, nullsFirst: false })
+  } else if (s === 'title_asc') {
+    query = query.order('title', { ascending: true })
   } else {
     query = query.order('created_at', { ascending: false })
   }
-  const { data: catalogs, error } = await query.limit(500)
+
+  const startIndex = (currentPage - 1) * pageSize
+  query = query.range(startIndex, startIndex + pageSize - 1)
+
+  const { data: catalogs, error, count } = await query
 
   if (error) {
     return (
@@ -170,6 +193,8 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
       </div>
     )
   }
+
+  const totalCatalogs = count ?? 0
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('id-ID', {
@@ -221,10 +246,6 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
               <p className="text-sm text-gray-500 mt-1">Paket kanopi standar yang ditawarkan ke customer</p>
             </div>
             <div className="flex items-center gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input type="text" placeholder="Cari ID/Nama..." className="pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613]" />
-              </div>
               <div className="w-10 h-10 rounded-full bg-gray-200 border-2 border-white shadow-sm overflow-hidden">
                 <Image
                   src="https://ui-avatars.com/api/?name=Admin+Katalog&background=1D1D1B&color=fff"
@@ -281,7 +302,7 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
             </div>
             <div>
               <p className="text-sm font-bold text-gray-500">Total Paket</p>
-              <h3 className="text-2xl font-extrabold text-gray-900">{catalogs?.length ?? 0}</h3>
+              <h3 className="text-2xl font-extrabold text-gray-900">{totalCatalogs}</h3>
             </div>
           </div>
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4 border-l-4 border-l-[#E30613]">
@@ -315,7 +336,7 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
           <div className="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Daftar Paket</h2>
-              <p className="text-sm text-gray-500 mt-1">Total {catalogs?.length ?? 0} paket ditemukan.</p>
+              <p className="text-sm text-gray-500 mt-1">Total {totalCatalogs} paket ditemukan. Menampilkan halaman {currentPage} dari {Math.ceil(totalCatalogs/pageSize)}</p>
             </div>
             <div className="flex items-center gap-2">
               <Link href="/admin/catalogs/new" className="btn btn-primary btn-sm">
@@ -328,7 +349,7 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
             </div>
           </div>
           <div className="p-5">
-            <CatalogsListClient catalogs={mappedCatalogs} />
+            <CatalogsListClient catalogs={mappedCatalogs} totalCount={totalCatalogs} pageSize={pageSize} />
           </div>
         </section>
 

@@ -12,6 +12,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
 import { generateWhatsAppLink } from '@/utils/generateWhatsAppLink'
 import ResultPanel from './ResultPanel'
+import { TimeoutError, withTimeout } from '@/lib/withTimeout'
 
 function getFriendlySupabaseError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : ''
@@ -82,6 +83,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
   const canContinue = nameValid && whatsappValid && !loading
   const MIN_ORDER_AREA = 10
   const MIN_ORDER_LENGTH = 5
+  const MAX_SAVE_MS = 10000
   
   const handleInputChange = (field: keyof CalculatorInput, value: CalculatorInput[typeof field]) => {
     setInput(prev => ({
@@ -227,19 +229,23 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
           status: 'draft' as const
         } : null
       }
-      const res = await createProjectWithEstimation(dto)
+      const res = await withTimeout(createProjectWithEstimation(dto), MAX_SAVE_MS)
       setProjectId(res.project_id)
       setResult(currentResult)
       setCalcError(null)
     } catch (error) {
       const fallback = 'Gagal menyimpan data ke sistem. Silakan coba beberapa saat lagi atau hubungi kami via WhatsApp.'
-      const code = (error as { code?: string } | null)?.code
-      const isDuplicateV1 = String(code) === '23505'
-      if (isDuplicateV1) {
-        setCalcError('Data penawaran Anda sudah tersimpan sebelumnya. Silakan buka rincian estimasi atau cek riwayat penawaran.')
+      if (error instanceof TimeoutError) {
+        setCalcError('Server lambat merespons. Data penawaran Anda mungkin belum tersimpan. Periksa koneksi internet Anda lalu coba simpan kembali.')
       } else {
-        const friendly = getFriendlySupabaseError(error, fallback)
-        setCalcError(friendly)
+        const code = (error as { code?: string } | null)?.code
+        const isDuplicateV1 = String(code) === '23505'
+        if (isDuplicateV1) {
+          setCalcError('Data penawaran Anda sudah tersimpan sebelumnya. Silakan buka rincian estimasi atau cek riwayat penawaran.')
+        } else {
+          const friendly = getFriendlySupabaseError(error, fallback)
+          setCalcError(friendly)
+        }
       }
     } finally {
       setSavingLead(false)
@@ -974,6 +980,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                       </div>
                     ) : result ? (
                       <ResultPanel
+                        key={projectId || 'no-project'}
                         result={result}
                         leadName={leadInfo.name}
                         projectId={projectId}
@@ -986,6 +993,7 @@ export default function CanopyCalculator({ hideTitle = false }: { hideTitle?: bo
                         customNotes={input.customNotes}
                         onReset={handleReset}
                         onBookSurvey={result.isCustom ? handleCustomConsultation : handleBookSurvey}
+                        canDownload={!!projectId}
                       />
                     ) : (
                       <div className="text-center py-12">

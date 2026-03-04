@@ -1,6 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
+import { useState } from 'react'
 import { AlertCircle, FileDown } from 'lucide-react'
 import { formatNumber, formatRupiah } from '@/lib/calculator'
 import type { CalculatorResult } from '@/lib/types'
@@ -8,7 +9,7 @@ import EstimationPDF from './EstimationPDF'
 
 const PDFDownloadLink = dynamic(
   () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
-  { ssr: false }
+  { ssr: false },
 )
 
 interface ResultPanelProps {
@@ -24,6 +25,7 @@ interface ResultPanelProps {
   companyEmail: string | null
   catalogTitle?: string | null
   customNotes?: string | null
+  canDownload: boolean
 }
 
 function validateEstimation(result: CalculatorResult) {
@@ -65,9 +67,12 @@ export default function ResultPanel({
   companyPhone,
   companyEmail,
   catalogTitle,
-  customNotes
+  customNotes,
+  canDownload,
 }: ResultPanelProps) {
   const { valid: isEstimationValid, errors: estimationErrors } = validateEstimation(result)
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   if (result.isCustom) {
     return (
       <div className="space-y-6">
@@ -187,32 +192,7 @@ export default function ResultPanel({
             </div>
           </div>
         )}
-        {isEstimationValid ? (
-          <PDFDownloadLink
-            document={
-              <EstimationPDF
-                result={result}
-                leadName={leadName}
-                projectId={projectId}
-                logoUrl={logoUrl}
-                companyName={companyName}
-                companyAddress={companyAddress}
-                companyPhone={companyPhone}
-                companyEmail={companyEmail}
-                catalogTitle={catalogTitle}
-              />
-            }
-            fileName={`Estimation_Kokohin_${leadName.replace(/\s+/g, '_')}.pdf`}
-            className="w-full btn bg-white/20 text-white hover:bg-white/30 font-bold py-4 flex items-center justify-center gap-2"
-          >
-            {({ loading }) => (
-              <>
-                <FileDown className="w-5 h-5" />
-                {loading ? 'Menyiapkan PDF...' : 'Download Estimation PDF'}
-              </>
-            )}
-          </PDFDownloadLink>
-        ) : (
+        {(!canDownload || !isEstimationValid) && (
           <button
             type="button"
             className="w-full btn bg-white/10 text-white/60 font-bold py-4 flex items-center justify-center gap-2 cursor-not-allowed"
@@ -221,6 +201,54 @@ export default function ResultPanel({
             <FileDown className="w-5 h-5" />
             Download Estimation PDF
           </button>
+        )}
+        {canDownload && isEstimationValid && (
+          <>
+            <PDFDownloadLink
+              document={
+                <EstimationPDF
+                  result={result}
+                  leadName={leadName}
+                  projectId={projectId}
+                  logoUrl={logoUrl}
+                  companyName={companyName}
+                  companyAddress={companyAddress}
+                  companyPhone={companyPhone}
+                  companyEmail={companyEmail}
+                  catalogTitle={catalogTitle}
+                />
+              }
+              fileName={`Estimation_Kokohin_${leadName.replace(/\s+/g, '_')}.pdf`}
+            >
+              {({ url, loading }) => {
+                if (loading !== pdfLoading) {
+                  setPdfLoading(loading)
+                }
+                if (!loading && url && url !== pdfUrl) {
+                  setPdfUrl(url)
+                }
+                return null
+              }}
+            </PDFDownloadLink>
+            {pdfLoading && (
+              <div className="w-full flex flex-col items-center gap-2 text-xs text-white/80 mt-2">
+                <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-2 w-3/4 bg-white/70 animate-pulse" />
+                </div>
+                <span>Menyiapkan file PDF (±1–3 detik)...</span>
+              </div>
+            )}
+            {!pdfLoading && pdfUrl && (
+              <a
+                href={pdfUrl}
+                download={`Estimation_Kokohin_${leadName.replace(/\s+/g, '_')}.pdf`}
+                className="w-full btn bg-white/20 text-white hover:bg-white/30 font-bold py-4 flex items-center justify-center gap-2 mt-2"
+              >
+                <FileDown className="w-5 h-5" />
+                Download Estimation PDF
+              </a>
+            )}
+          </>
         )}
         <button
           onClick={onReset}

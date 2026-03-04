@@ -28,6 +28,8 @@ type CatalogItem = {
 
 type Props = {
   catalogs: CatalogItem[]
+  totalCount?: number
+  pageSize?: number
 }
 
 const formatCurrency = (amount: number) => {
@@ -41,13 +43,17 @@ const formatCurrency = (amount: number) => {
 
 export default function CatalogsListClient({ catalogs }: Props) {
   const [query, setQuery] = useState('')
-  const [sortKey, setSortKey] = useState<'recent' | 'price_asc' | 'price_desc' | 'hpp_asc' | 'hpp_desc' | 'title_asc'>('recent')
+  const [sortKey, setSortKey] = useState<
+    'recent' | 'price_asc' | 'price_desc' | 'hpp_asc' | 'hpp_desc' | 'title_asc'
+  >('recent')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya'>('all')
+  const [categoryFilter, setCategoryFilter] = useState<
+    'all' | 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya'
+  >('all')
+  const [onlyPopular, setOnlyPopular] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
-  const [onlyPopular, setOnlyPopular] = useState(false)
   const [rowsState, setRowsState] = useState<CatalogItem[]>(catalogs)
   const [confirm, setConfirm] = useState<{ id: string; nextVal: boolean; title: string } | null>(null)
   const [saving, setSaving] = useState(false)
@@ -61,12 +67,12 @@ export default function CatalogsListClient({ catalogs }: Props) {
   useEffect(() => {
     const id = window.setTimeout(() => setPage(1), 0)
     return () => window.clearTimeout(id)
-  }, [query, sortKey, pageSize])
+  }, [query, sortKey, pageSize, categoryFilter, onlyPopular])
 
   useEffect(() => {
     if (menuOpenId) {
       setTimeout(() => {
-        const first = document.querySelector(`#row-menu-\${menuOpenId} a`) as HTMLAnchorElement | null
+        const first = document.querySelector(`#row-menu-${menuOpenId} a`) as HTMLAnchorElement | null
         first?.focus()
       }, 0)
     }
@@ -92,8 +98,10 @@ export default function CatalogsListClient({ catalogs }: Props) {
       .map((c) => Number(c.hpp_per_unit || 0))
       .filter((v) => v > 0)
       .sort((a, b) => a - b)
+
     const lowCut = hppsSorted.length ? hppsSorted[Math.floor((hppsSorted.length - 1) * 0.33)] : 0
     const highCut = hppsSorted.length ? hppsSorted[Math.floor((hppsSorted.length - 1) * 0.66)] : 0
+
     const getPriority = (hpp?: number | null) => {
       const v = Number(hpp || 0)
       if (!(v > 0) || hppsSorted.length === 0)
@@ -116,8 +124,10 @@ export default function CatalogsListClient({ catalogs }: Props) {
         className: 'bg-green-100 text-green-800',
       }
     }
+
     const q = query.trim().toLowerCase()
     let rows = rowsState.slice()
+
     if (q) {
       rows = rows.filter((c) => {
         return (
@@ -129,12 +139,15 @@ export default function CatalogsListClient({ catalogs }: Props) {
         )
       })
     }
+
     if (onlyPopular) {
       rows = rows.filter((c) => !!c.is_popular)
     }
+
     if (categoryFilter !== 'all') {
       rows = rows.filter((c) => (c.category ?? null) === categoryFilter)
     }
+
     rows.sort((a, b) => {
       if (sortKey === 'recent') {
         const da = a.created_at ? Date.parse(a.created_at) : 0
@@ -158,6 +171,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
       }
       return 0
     })
+
     return rows.map((c) => {
       const p = getPriority(c.hpp_per_unit)
       return {
@@ -169,7 +183,6 @@ export default function CatalogsListClient({ catalogs }: Props) {
   }, [rowsState, query, sortKey, onlyPopular, categoryFilter])
 
   const isFiltering = query.trim().length > 0
-
   const total = processed.length
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const currentPage = Math.min(page, totalPages)
@@ -205,7 +218,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
       const res = await fetch('/api/admin/catalogs/popular', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: confirm.id, is_popular: confirm.nextVal })
+        body: JSON.stringify({ id: confirm.id, is_popular: confirm.nextVal }),
       })
       if (!res.ok) return
       setRowsState((prev) => prev.map((c) => (c.id === confirm.id ? { ...c, is_popular: confirm.nextVal } : c)))
@@ -226,7 +239,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
       const res = await fetch('/api/admin/catalogs/active', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: confirmActive.id, is_active: confirmActive.nextVal })
+        body: JSON.stringify({ id: confirmActive.id, is_active: confirmActive.nextVal }),
       })
       if (!res.ok) return
       setRowsState((prev) => prev.map((c) => (c.id === confirmActive.id ? { ...c, is_active: confirmActive.nextVal } : c)))
@@ -312,7 +325,9 @@ export default function CatalogsListClient({ catalogs }: Props) {
           <div className="relative w-full max-w-md bg-white rounded-xl border border-gray-200 shadow-xl p-6">
             <h3 className="text-lg font-bold text-gray-900">Ubah Status Populer</h3>
             <p className="mt-2 text-sm text-gray-600">
-              {`Tandai paket "`}<span className="font-semibold text-gray-900">{confirm.title}</span>{`" sebagai `}
+              {`Tandai paket "`}
+              <span className="font-semibold text-gray-900">{confirm.title}</span>
+              {`" sebagai `}
               <span className="font-semibold">{confirm.nextVal ? 'populer' : 'tidak populer'}</span>
               {`?`}
             </p>
@@ -350,7 +365,9 @@ export default function CatalogsListClient({ catalogs }: Props) {
           <div className="relative w-full max-w-md bg-white rounded-xl border border-gray-200 shadow-xl p-6">
             <h3 className="text-lg font-bold text-gray-900">Ubah Status Aktif</h3>
             <p className="mt-2 text-sm text-gray-600">
-              {`Ubah paket "`}<span className="font-semibold text-gray-900">{confirmActive.title}</span>{`" menjadi `}
+              {`Ubah paket "`}
+              <span className="font-semibold text-gray-900">{confirmActive.title}</span>
+              {`" menjadi `}
               <span className="font-semibold">{confirmActive.nextVal ? 'Aktif' : 'Nonaktif'}</span>
               {`?`}
             </p>
@@ -386,202 +403,249 @@ export default function CatalogsListClient({ catalogs }: Props) {
         <table id="catalogs-table" className="w-full table-fixed text-left border-collapse">
           <caption className="sr-only">Daftar paket katalog</caption>
           <thead className="sticky top-0 z-10">
-              <tr className="bg-white border-b border-gray-200 text-xs md:text-sm">
-              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[30%]" aria-sort={sortKey === 'title_asc' ? 'ascending' : undefined}>Nama Paket</th>
-              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[12%] hidden xl:table-cell">Kategori</th>
-              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[18%]" aria-sort={sortKey === 'price_asc' ? 'ascending' : sortKey === 'price_desc' ? 'descending' : undefined}>Harga/Unit</th>
-              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[14%]" aria-sort={sortKey === 'hpp_asc' ? 'ascending' : sortKey === 'hpp_desc' ? 'descending' : undefined}>HPP/Unit</th>
-              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[12%] hidden xl:table-cell">Estimasi</th>
-              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[8%]">Status</th>
-              <th scope="col" className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap text-right w-[8%]">Aksi</th>
+            <tr className="bg-white border-b border-gray-200 text-xs md:text-sm">
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[30%]"
+                aria-sort={sortKey === 'title_asc' ? 'ascending' : undefined}
+              >
+                Nama Paket
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[12%] hidden xl:table-cell"
+              >
+                Kategori
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[18%]"
+                aria-sort={
+                  sortKey === 'price_asc'
+                    ? 'ascending'
+                    : sortKey === 'price_desc'
+                    ? 'descending'
+                    : undefined
+                }
+              >
+                Harga/Unit
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[14%]"
+                aria-sort={
+                  sortKey === 'hpp_asc'
+                    ? 'ascending'
+                    : sortKey === 'hpp_desc'
+                    ? 'descending'
+                    : undefined
+                }
+              >
+                HPP/Unit
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[12%] hidden xl:table-cell"
+              >
+                Estimasi
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[8%]"
+              >
+                Status
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap text-right w-[8%]"
+              >
+                Aksi
+              </th>
             </tr>
           </thead>
           <tbody className="bg-white">
             {pageItems.map((catalog) => {
-              const unitLabel = catalog.base_price_unit === 'm2' ? 'm²' : catalog.base_price_unit === 'm1' ? 'm¹' : 'unit'
+              const unitLabel =
+                catalog.base_price_unit === 'm2'
+                  ? 'm²'
+                  : catalog.base_price_unit === 'm1'
+                  ? 'm¹'
+                  : 'unit'
               const sampleQty = catalog.base_price_unit === 'unit' ? 1 : 10
               const estimatedPrice = (catalog.base_price_per_m2 || 0) * sampleQty
               const isExpanded = expandedId === catalog.id
               const isMenuOpen = menuOpenId === catalog.id
               const categoryClass = getCategoryBadgeClass(catalog.category ?? null)
+
               return (
                 <Fragment key={catalog.id}>
-                <tr className="group hover:bg-gray-50 border-b border-gray-100">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
+                  <tr className="group hover:bg-gray-50 border-b border-gray-100">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            openConfirm(catalog.id, !catalog.is_popular, catalog.title)
+                          }}
+                          aria-pressed={catalog.is_popular}
+                          aria-label={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
+                          title={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
+                          className={`inline-flex items-center justify-center w-5 h-5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${
+                            catalog.is_popular
+                              ? 'bg-[#E30613] text-white'
+                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                          }`}
+                        >
+                          <Star className="w-3 h-3" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleExpand(catalog.id)}
+                          aria-expanded={isExpanded}
+                          aria-controls={`row-details-${catalog.id}`}
+                          aria-label={
+                            isExpanded
+                              ? `Sembunyikan detail ${catalog.title}`
+                              : `Tampilkan detail ${catalog.title}`
+                          }
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
+                        >
+                          {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        </button>
+                        <div>
+                          <div
+                            className="text-sm font-medium text-gray-900 max-w-[220px] xl:max-w-[320px] truncate"
+                            title={catalog.title}
+                          >
+                            {catalog.title}
+                          </div>
+                          <div className="mt-1 text-xs text-gray-500">
+                            Dibuat:{' '}
+                            {catalog.created_at
+                              ? new Date(catalog.created_at).toLocaleDateString('id-ID', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })
+                              : '-'}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap hidden xl:table-cell">
+                      <span
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${categoryClass}`}
+                      >
+                        {catalog.category ?? '-'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {formatCurrency(catalog.base_price_per_m2)} <span>/ {unitLabel}</span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {typeof catalog.hpp_per_unit === 'number' && catalog.hpp_per_unit > 0 ? (
+                        <div>
+                          <div className="text-sm text-gray-900">
+                            {formatCurrency(catalog.hpp_per_unit)}
+                          </div>
+                          <div className="mt-1">
+                            <span
+                              title="Prioritas berdasarkan HPP relatif"
+                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.priorityClassName}`}
+                            >
+                              {catalog.priorityLabel}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-500">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 hidden xl:table-cell">
+                      <div>{formatCurrency(estimatedPrice)}</div>
+                      <div>
+                        Estimasi {sampleQty} {unitLabel}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.preventDefault()
                           e.stopPropagation()
-                          openConfirm(catalog.id, !catalog.is_popular, catalog.title)
+                          openConfirmActive(catalog.id, !catalog.is_active, catalog.title)
                         }}
-                        aria-pressed={catalog.is_popular}
-                        aria-label={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
-                        title={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
-                        className={`inline-flex items-center justify-center w-5 h-5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${catalog.is_popular ? 'bg-[#E30613] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                        aria-pressed={catalog.is_active}
+                        aria-label={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
+                        title={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${
+                          catalog.is_active
+                            ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                            : 'bg-red-100 text-red-800 hover:bg-red-200'
+                        }`}
                       >
-                        <Star className="w-3 h-3" aria-hidden="true" />
+                        {catalog.is_active ? 'Aktif' : 'Nonaktif'}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleExpand(catalog.id)}
-                        aria-expanded={isExpanded}
-                        aria-controls={`row-details-${catalog.id}`}
-                        aria-label={isExpanded ? `Sembunyikan detail ${catalog.title}` : `Tampilkan detail ${catalog.title}`}
-                        className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
-                      >
-                        {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                      </button>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900 max-w-[220px] xl:max-w-[320px] truncate" title={catalog.title}>{catalog.title}</div>
-                        <div className="mt-1 text-xs text-gray-500">
-                          Dibuat:{' '}
-                          {catalog.created_at
-                            ? new Date(catalog.created_at).toLocaleDateString('id-ID', {
-                                day: '2-digit',
-                                month: 'short',
-                                year: 'numeric',
-                              })
-                            : '-'}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap hidden xl:table-cell">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${categoryClass}`}>{catalog.category ?? '-'}</span>
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {formatCurrency(catalog.base_price_per_m2)} <span>/ {unitLabel}</span>
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    {typeof catalog.hpp_per_unit === 'number' && catalog.hpp_per_unit > 0 ? (
-                      <div>
-                        <div className="text-sm text-gray-900">{formatCurrency(catalog.hpp_per_unit)}</div>
-                        <div className="mt-1">
-                          <span title="Prioritas berdasarkan HPP relatif" className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.priorityClassName}`}>{catalog.priorityLabel}</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="text-sm text-gray-500">-</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 hidden xl:table-cell">
-                    <div>{formatCurrency(estimatedPrice)}</div>
-                    <div>Estimasi {sampleQty} {unitLabel}</div>
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        openConfirmActive(catalog.id, !catalog.is_active, catalog.title)
-                      }}
-                      aria-pressed={catalog.is_active}
-                      aria-label={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
-                      title={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
-                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${catalog.is_active ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-red-100 text-red-800 hover:bg-red-200'}`}
-                    >
-                      {catalog.is_active ? 'Aktif' : 'Nonaktif'}
-                    </button>
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="relative flex items-center justify-end gap-1" data-menu-id={catalog.id}>
-                      <Link
-                        href={`/admin/catalogs/${catalog.id}`}
-                        className="px-3 py-1.5 rounded-md border border-gray-300 text-xs text-gray-800 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
-                      >
-                        Edit
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleMenu(catalog.id)}
-                        aria-label="Buka menu tindakan"
-                        aria-haspopup="menu"
-                        aria-expanded={isMenuOpen}
-                        aria-controls={`row-menu-${catalog.id}`}
-                        id={`row-menu-button-${catalog.id}`}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </button>
-                      {isMenuOpen && (
-                        <div
-                          id={`row-menu-${catalog.id}`}
-                          role="menu"
-                          aria-labelledby={`row-menu-button-${catalog.id}`}
-                          tabIndex={-1}
-                          className="absolute right-0 top-8 z-20 w-44 rounded-md border border-gray-200 bg-white text-xs shadow-lg"
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="relative flex items-center justify-end gap-1" data-menu-id={catalog.id}>
+                        <Link
+                          href={`/admin/catalogs/${catalog.id}`}
+                          className="px-3 py-1.5 rounded-md border border-gray-300 text-xs text-gray-800 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
                         >
-                          <Link
-                            href={`/admin/catalogs/${catalog.id}`}
-                            role="menuitem"
-                            className="block px-3 py-2 hover:bg-gray-50 text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
+                          Edit
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleMenu(catalog.id)}
+                          aria-label="Buka menu tindakan"
+                        >
+                          <MoreHorizontal className="w-5 h-5 text-gray-500" />
+                        </button>
+                        {isMenuOpen && (
+                          <div
+                            id={`row-menu-${catalog.id}`}
+                            className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20"
                           >
-                            Edit paket
-                          </Link>
-                          <Link
-                            href={`/kalkulator?catalog_id=${catalog.id}`}
-                            role="menuitem"
-                            className="block px-3 py-2 hover:bg-gray-50 text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
-                          >
-                            Buka di kalkulator
-                          </Link>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-                {isExpanded && (
-                  <tr className="bg-gray-50 border-t border-gray-200">
-                    <td colSpan={7} className="p-4">
-                      <div id={`row-details-${catalog.id}`} role="region" aria-label={`Detail katalog ${catalog.title}`} className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <div className="text-xs text-gray-500">Ringkasan</div>
-                          <div className="mt-1"><span className="text-gray-500">Kategori: </span><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${categoryClass}`}>{catalog.category ?? '-'}</span></div>
-                          {catalog.atapName && <div className="mt-1"><span className="text-gray-500">Atap: </span><span className="font-medium text-gray-900">{catalog.atapName}</span></div>}
-                          {catalog.rangkaName && <div className="mt-1"><span className="text-gray-500">Rangka: </span><span className="font-medium text-gray-900">{catalog.rangkaName}</span></div>}
-                          {catalog.isianName && <div className="mt-1"><span className="text-gray-500">Isian: </span><span className="font-medium text-gray-900">{catalog.isianName}</span></div>}
-                          {catalog.finishingName && <div className="mt-1"><span className="text-gray-500">Finishing: </span><span className="font-medium text-gray-900">{catalog.finishingName}</span></div>}
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-500">Harga & HPP</div>
-                          <div className="mt-1 font-medium text-gray-900">{formatCurrency(catalog.base_price_per_m2)} / {unitLabel}</div>
-                          <div className="mt-1 flex items-center gap-2">
-                            {typeof catalog.hpp_per_unit === 'number' && catalog.hpp_per_unit > 0 ? (
-                              <>
-                                <span className="text-gray-800">{formatCurrency(catalog.hpp_per_unit)}</span>
-                                <span title="Prioritas berdasarkan HPP relatif" className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.priorityClassName}`}>{catalog.priorityLabel}</span>
-                              </>
-                            ) : (
-                              <span className="text-gray-500">-</span>
-                            )}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-gray-500">Estimasi</div>
-                          <div className="mt-1 text-gray-900">{formatCurrency(estimatedPrice)}</div>
-                          <div className="text-xs text-gray-500">Estimasi {sampleQty} {unitLabel}</div>
-                          <div className="mt-3 flex flex-wrap gap-2">
                             <Link
-                              href={`/admin/catalogs/${catalog.id}`}
-                            className="px-3 py-1.5 rounded-md border border-gray-300 text-xs text-gray-800 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
+                              href={`/katalog/${catalog.id}`}
+                              target="_blank"
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                             >
-                              Edit Paket
+                              Lihat Halaman Publik
                             </Link>
-                            <Link
-                              href={`/kalkulator?catalog_id=${catalog.id}`}
-                            className="px-3 py-1.5 rounded-md border border-gray-300 text-xs text-gray-800 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
+                            <button
+                              type="button"
+                              className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                             >
-                              Buka di Kalkulator
-                            </Link>
+                              Hapus
+                            </button>
                           </div>
-                        </div>
+                        )}
                       </div>
                     </td>
                   </tr>
-                )}
+                  {isExpanded && (
+                    <tr id={`row-details-${catalog.id}`}>
+                      <td colSpan={7} className="p-0">
+                        <div className="bg-gray-50 p-4 border-t border-gray-200">
+                          <h4 className="font-bold text-sm mb-2">Detail Komponen:</h4>
+                          <div className="text-xs grid grid-cols-2 gap-x-4 gap-y-1">
+                            <div className="font-semibold">Atap:</div>
+                            <div>{catalog.atapName || '-'}</div>
+                            <div className="font-semibold">Rangka:</div>
+                            <div>{catalog.rangkaName || '-'}</div>
+                            <div className="font-semibold">Finishing:</div>
+                            <div>{catalog.finishingName || '-'}</div>
+                            <div className="font-semibold">Isian:</div>
+                            <div>{catalog.isianName || '-'}</div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                 </Fragment>
               )
             })}
@@ -598,7 +662,12 @@ export default function CatalogsListClient({ catalogs }: Props) {
 
       <div className="grid grid-cols-1 gap-4 lg:hidden">
         {pageItems.map((catalog) => {
-          const unitLabel = catalog.base_price_unit === 'm2' ? 'm²' : catalog.base_price_unit === 'm1' ? 'm¹' : 'unit'
+          const unitLabel =
+            catalog.base_price_unit === 'm2'
+              ? 'm²'
+              : catalog.base_price_unit === 'm1'
+              ? 'm¹'
+              : 'unit'
           const sampleQty = catalog.base_price_unit === 'unit' ? 1 : 10
           const estimatedPrice = (catalog.base_price_per_m2 || 0) * sampleQty
           return (
@@ -631,7 +700,11 @@ export default function CatalogsListClient({ catalogs }: Props) {
                     aria-pressed={catalog.is_popular}
                     aria-label={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
                     title={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
-                    className={`inline-flex items-center justify-center w-5 h-5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${catalog.is_popular ? 'bg-[#E30613] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                    className={`inline-flex items-center justify-center w-5 h-5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${
+                      catalog.is_popular
+                        ? 'bg-[#E30613] text-white'
+                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    }`}
                   >
                     <Star className="w-3 h-3" aria-hidden="true" />
                   </button>
@@ -645,7 +718,11 @@ export default function CatalogsListClient({ catalogs }: Props) {
                     aria-pressed={catalog.is_active}
                     aria-label={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
                     title={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
-                    className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${catalog.is_active ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-red-100 text-red-800 hover:bg-red-200'}`}
+                    className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${
+                      catalog.is_active
+                        ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                        : 'bg-red-100 text-red-800 hover:bg-red-200'
+                    }`}
                   >
                     {catalog.is_active ? 'Aktif' : 'Nonaktif'}
                   </button>
@@ -662,85 +739,69 @@ export default function CatalogsListClient({ catalogs }: Props) {
                 </div>
                 <div>
                   <div className="text-xs text-gray-500">Harga / {unitLabel}</div>
-                  <div className="font-semibold text-gray-900">{formatCurrency(catalog.base_price_per_m2)}</div>
+                  <div className="font-semibold text-gray-900">
+                    {formatCurrency(catalog.base_price_per_m2)}
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-500">HPP / {unitLabel}</div>
-                  <div>
-                    {typeof catalog.hpp_per_unit === 'number' && catalog.hpp_per_unit > 0 ? (
-                      <span className="font-medium">{formatCurrency(catalog.hpp_per_unit)}</span>
-                    ) : (
-                      '-'
-                    )}
+                  <div className="font-semibold text-gray-900">
+                    {typeof catalog.hpp_per_unit === 'number' && catalog.hpp_per_unit > 0
+                      ? formatCurrency(catalog.hpp_per_unit)
+                      : '-'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500">Estimasi</div>
+                  <div className="font-semibold text-gray-900">
+                    {formatCurrency(estimatedPrice)}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Estimasi {sampleQty} {unitLabel}
                   </div>
                 </div>
               </div>
-              <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
-                <div>
-                  Estimasi {sampleQty} {unitLabel}:{' '}
-                  <span className="font-semibold text-gray-800">{formatCurrency(estimatedPrice)}</span>
-                </div>
-                {typeof catalog.hpp_per_unit === 'number' && catalog.hpp_per_unit > 0 && (
-                  <span title="Prioritas berdasarkan HPP relatif" className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.priorityClassName}`}>{catalog.priorityLabel}</span>
-                )}
-              </div>
-              <div className="mt-4 flex items-center justify-end gap-2">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <Link
                   href={`/admin/catalogs/${catalog.id}`}
-                  className="inline-flex items-center justify-center rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 transition-colors"
+                  className="px-3 py-1.5 rounded-md border border-gray-300 text-xs text-gray-800 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
                 >
-                  Edit
+                  Edit Paket
                 </Link>
                 <Link
                   href={`/kalkulator?catalog_id=${catalog.id}`}
-                  className="inline-flex items-center justify-center rounded-md bg-[#E30613] px-4 py-2 text-sm font-medium text-white hover:bg-[#c50511] transition-colors"
+                  className="px-3 py-1.5 rounded-md border border-gray-300 text-xs text-gray-800 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
                 >
-                  Kalkulator
+                  Buka di Kalkulator
                 </Link>
               </div>
             </div>
           )
         })}
         {total === 0 && (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-500">
+          <div className="text-center text-sm text-gray-500 py-8">
             Tidak ada paket yang cocok dengan filter. Coba ubah kata kunci pencarian.
           </div>
         )}
       </div>
 
-      <div className="mt-2 flex flex-col gap-2 text-xs text-gray-600 sm:flex-row sm:items-center sm:justify-between" role="status" aria-live="polite">
-        <div>
-          Menampilkan{' '}
-          <span className="font-semibold">
-            {total === 0 ? 0 : startIndex + 1}–{Math.min(endIndex, total)}
-          </span>{' '}
-          dari <span className="font-semibold">{total}</span> paket
+      {totalPages > 1 && (
+        <div className="mt-6 flex justify-center items-center gap-2">
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPage(p)}
+              className={`px-3 py-1 rounded-md text-sm font-medium ${
+                currentPage === p
+                  ? 'bg-[#E30613] text-white'
+                  : 'bg-white text-gray-700 border border-gray-300'
+              }`}
+            >
+              {p}
+            </button>
+          ))}
         </div>
-        <div className="flex items-center justify-end gap-1">
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-            aria-controls="catalogs-table"
-            className="inline-flex items-center rounded-md border border-gray-300 px-2 py-1 text-[11px] text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-gray-50 transition-colors"
-          >
-            Sebelumnya
-          </button>
-          <div className="px-2">
-            Halaman <span className="font-semibold">{currentPage}</span> dari{' '}
-            <span className="font-semibold">{totalPages}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-            aria-controls="catalogs-table"
-            className="inline-flex items-center rounded-md border border-gray-300 px-2 py-1 text-[11px] text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-gray-50 transition-colors"
-          >
-            Berikutnya
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   )
 }

@@ -2,31 +2,29 @@ import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { AlertTriangle, CheckCircle, Info, DollarSign, Wrench, Eye, UploadCloud } from 'lucide-react'
+import { AlertTriangle, Info, DollarSign, Wrench, UploadCloud } from 'lucide-react'
 import DeleteCatalogButton from '../components/DeleteCatalogButton'
 import CatalogAddonsEditor from '../components/CatalogAddonsEditor'
 import CatalogBaseFields from '../components/CatalogBaseFields'
-import CatalogEstimatePreview from '../components/CatalogEstimatePreview'
 import CatalogTabs from '../components/CatalogTabs'
 import CatalogHppEditor from '../components/CatalogHppEditor'
-import CatalogSaveButton from '../components/CatalogSaveButton'
+import CatalogPartialSaveButton from '../components/CatalogPartialSaveButton'
 import CatalogEditUXController from '../components/CatalogEditUXController'
-import CatalogDetailAnchorNav from '../components/CatalogDetailAnchorNav'
 import CatalogTitleField from '../components/CatalogTitleField'
 import CatalogAutosaveIndicator from '../components/CatalogAutosaveIndicator'
 
 // import styles from '../../page.module.css'
 import { updateCatalog, importCatalogAddons } from '@/app/actions/catalogs'
 
-export default async function AdminCatalogDetailPage({ 
+export default async function AdminCatalogDetailPage({
   params,
-  searchParams 
-}: { 
+  searchParams,
+}: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ error?: string; import?: string; import_detail?: string; import_detail_url?: string }> 
+  searchParams: Promise<{ error?: string; import?: string }>
 }) {
   const { id } = await params
-  const { error: errorMessage, import: importResult, import_detail: importDetail, import_detail_url: importDetailUrl } = await searchParams
+  const { error: errorMessage, import: importResult } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
@@ -74,6 +72,12 @@ export default async function AdminCatalogDetailPage({
     material: hppMaterialMap.get(c.material_id)
   }))
 
+  const { data: copySourceCatalogs } = await supabase
+    .from('catalogs')
+    .select('id, title, category')
+    .neq('id', id)
+    .order('title')
+
   if (error || !catalog) {
     return (
       <div className="flex-1 h-full p-6">
@@ -98,8 +102,6 @@ export default async function AdminCatalogDetailPage({
   const isHppTooHigh = hppRatio > 80
   const isHppWarning = hppRatio > 75
 
-  const unit = ((catalog as { base_price_unit?: 'm2'|'m1'|'unit' | null }).base_price_unit ?? 'm2') as 'm2'|'m1'|'unit'
-
   interface CatalogFormMetadata {
     title: string
     category: string
@@ -119,21 +121,6 @@ export default async function AdminCatalogDetailPage({
 
   const catalogMetadata = catalog as unknown as CatalogFormMetadata
 
-  const autosaveBaseline: Record<string, string> = {
-    title: catalogMetadata.title ?? '',
-    category: catalogMetadata.category ?? '',
-    atap_id: catalogMetadata.atap_id ?? '',
-    rangka_id: catalogMetadata.rangka_id ?? '',
-    base_price_per_m2: String(catalogMetadata.base_price_per_m2 ?? ''),
-    base_price_unit: unit,
-    margin_percentage: String(catalogMetadata.margin_percentage ?? 0),
-    use_std_calculation: catalogMetadata.use_std_calculation ? 'on' : '',
-    std_calculation: String(catalogMetadata.std_calculation ?? 1),
-    labor_cost: String(catalogMetadata.labor_cost ?? 0),
-    transport_cost: String(catalogMetadata.transport_cost ?? 0),
-    is_active: catalogMetadata.is_active ? 'on' : '',
-  }
-
   return (
     <div className="flex-1 h-full pb-28 scroll-smooth">
       <div className="bg-white shadow-md rounded-lg p-6 flex justify-between items-center">
@@ -148,14 +135,13 @@ export default async function AdminCatalogDetailPage({
             ← Kembali
           </Link>
           <DeleteCatalogButton id={catalog.id} />
-          <CatalogSaveButton formId="editCatalogForm" />
           </div>
-          <CatalogAutosaveIndicator catalogId={catalog.id} formId="editCatalogForm" baseline={autosaveBaseline} />
+          <CatalogAutosaveIndicator formId="editCatalogForm" />
         </div>
       </div>
 
       <div className="mt-6">
-        <CatalogDetailAnchorNav />
+        
         <CatalogEditUXController
           formId="editCatalogForm"
           errorMessage={errorMessage ?? null}
@@ -173,43 +159,10 @@ export default async function AdminCatalogDetailPage({
                     </div>
                     Informasi Katalog
                   </h2>
+                  <CatalogPartialSaveButton formId="editCatalogForm" mode="info" />
                 </div>
                 
-                {errorMessage && (
-                  <div className="mx-6 mt-6 p-4 bg-red-50 text-red-700 border border-red-200 rounded-xl flex items-center gap-2 text-sm font-medium">
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                    {decodeURIComponent(errorMessage)}
-                  </div>
-                )}
-                {importResult && (
-                  <div className="mx-6 mt-4 p-4 bg-green-50 text-green-700 border border-green-200 rounded-xl flex items-center gap-2 text-sm font-medium">
-                    <CheckCircle className="w-4 h-4 flex-shrink-0" />
-                    {decodeURIComponent(importResult)}
-                  </div>
-                )}
-                {importDetail && (
-                  <div className="mx-6 mt-2 p-4 border border-gray-200 rounded-xl bg-gray-50 text-sm">
-                    <div className="font-bold text-gray-700 mb-2">Detil Import:</div>
-                    <ul className="list-disc pl-5 space-y-1 text-gray-600">
-                      {decodeURIComponent(importDetail).split('|').filter(Boolean).map((d, i) => (
-                        <li key={i}>{d}</li>
-                      ))}
-                    </ul>
-                    {importDetailUrl && (
-                      <div className="mt-3">
-                        <a
-                          href={decodeURIComponent(importDetailUrl)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center px-4 py-2 rounded-lg text-white font-medium text-xs hover:bg-red-700 transition-colors"
-                          style={{ backgroundColor: '#E30613' }}
-                        >
-                          Download Log (JSON)
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                )}
+                
 
                 <div className="p-6 space-y-8">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -277,6 +230,7 @@ export default async function AdminCatalogDetailPage({
                     </div>
                     Formulasi HPP
                   </h2>
+                  <CatalogPartialSaveButton formId="editCatalogForm" mode="hpp" />
                 </div>
                 <div className="p-6 space-y-8">
                   <div className="flex items-start gap-3 p-4 bg-blue-50/50 border border-blue-100 rounded-lg text-sm text-blue-800">
@@ -359,6 +313,7 @@ export default async function AdminCatalogDetailPage({
                   <CatalogHppEditor
                     materials={allMaterials ?? []}
                     initialComponents={hppComponents ?? []}
+                    copySourceCatalogs={copySourceCatalogs ?? []}
                   />
                 </div>
               </div>
@@ -373,6 +328,7 @@ export default async function AdminCatalogDetailPage({
                     </div>
                     Harga Jual & Margin
                   </h2>
+                  <CatalogPartialSaveButton formId="editCatalogForm" mode="pricing" />
                 </div>
                 <div className="p-6 space-y-8">
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -515,6 +471,7 @@ export default async function AdminCatalogDetailPage({
                     </div>
                     Komponen Tambahan (Opsional)
                   </h2>
+                  <CatalogPartialSaveButton formId="editCatalogForm" mode="addons" />
                 </div>
                 <div className="p-6 space-y-8">
                   <div className="flex items-start gap-3 p-4 bg-purple-50/50 border border-purple-100 rounded-lg text-sm text-purple-800">
@@ -621,23 +578,6 @@ export default async function AdminCatalogDetailPage({
                   <p className="text-xs text-gray-400 mt-4 italic">
                     * Format kolom wajib: material_id, basis (m2/m1/unit), qty_per_basis, is_optional.
                   </p>
-                </div>
-              </div>
-            </div>
-
-            <div id="preview">
-              <div className="mt-6 bg-gradient-to-br from-[#FFF5F6] to-white border border-[#E30613]/20 rounded-xl p-1 shadow-sm">
-                <div className="bg-white/50 backdrop-blur-sm p-5 rounded-lg border border-[#E30613]/10">
-                  <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[#E30613]/10">
-                    <div className="p-2 bg-[#E30613]/10 rounded-full">
-                      <Eye className="w-5 h-5 text-[#E30613]" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-gray-900">Live Preview Harga</h3>
-                      <p className="text-xs text-gray-500">Simulasi perhitungan harga jual real-time</p>
-                    </div>
-                  </div>
-                  <CatalogEstimatePreview formId="editCatalogForm" materials={allMaterials ?? []} />
                 </div>
               </div>
             </div>

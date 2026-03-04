@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { toast } from '@/components/ui/toaster'
+import { useToast } from '@/components/ui/use-toast'
 
 type Props = {
   formId: string
@@ -10,18 +10,31 @@ type Props = {
 }
 
 export default function CatalogEditUXController({ formId, errorMessage, importResult }: Props) {
+  const { toast } = useToast()
+
   useEffect(() => {
     if (errorMessage) {
       try {
-        toast.error('Gagal menyimpan katalog', decodeURIComponent(errorMessage))
+        toast({
+          variant: 'destructive',
+          title: 'Gagal Menyimpan Katalog',
+          description: decodeURIComponent(errorMessage),
+        })
       } catch {
-        toast.error('Gagal menyimpan katalog', errorMessage)
+        toast({
+          variant: 'destructive',
+          title: 'Gagal Menyimpan Katalog',
+          description: errorMessage,
+        })
       }
     }
-    // Jika ada error atau hasil import, reset loading state di CatalogSaveButton
-    // (Note: ini workaround karena kita tidak punya akses langsung ke state tombol)
-    // Sebaiknya CatalogSaveButton menggunakan useFormStatus jika di dalam form
-  }, [errorMessage, importResult])
+    if (importResult) {
+      toast({
+        title: 'Impor Berhasil',
+        description: decodeURIComponent(importResult),
+      })
+    }
+  }, [errorMessage, importResult, toast])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

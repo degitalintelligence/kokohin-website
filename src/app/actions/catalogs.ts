@@ -145,6 +145,29 @@ export async function updateHppPerUnit(catalogId: string, userId?: string) {
   })
 }
 
+export async function fetchCatalogHppComponents(catalogId: string) {
+  const supabase = await createClient()
+
+  if (!catalogId) {
+    throw new Error('ID katalog sumber tidak valid')
+  }
+
+  const { data, error } = await supabase
+    .from('catalog_hpp_components')
+    .select(
+      'id, material_id, quantity, section, material:material_id(id, name, base_price_per_unit, unit, category)',
+    )
+    .eq('catalog_id', catalogId)
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('[HPP Copy] Error fetching components for catalog', catalogId, error)
+    throw new Error(`Gagal mengambil komponen HPP dari katalog sumber: ${error.message}`)
+  }
+
+  return data ?? []
+}
+
 export async function createCatalog(formData: FormData) {
   const supabase = await createClient()
 
@@ -290,9 +313,11 @@ export async function updateCatalog(formData: FormData) {
       throw new Error('ID katalog tidak valid')
     }
 
-    const title = formData.get('title') as string
+    const rawTitle = (formData.get('title') as string) || ''
+    const title = rawTitle.trim()
     const category = formData.get('category') as string
-    const basePriceStr = formData.get('base_price_per_m2') as string
+    const rawBasePriceStr = (formData.get('base_price_per_m2') as string) || ''
+    const basePriceStr = rawBasePriceStr.trim()
     const basePriceUnit = ((formData.get('base_price_unit') as string) || 'm2') as 'm2' | 'm1' | 'unit'
     const atapId = (formData.get('atap_id') as string) || ''
     const rangkaId = (formData.get('rangka_id') as string) || ''
@@ -307,8 +332,11 @@ export async function updateCatalog(formData: FormData) {
     const useStdCalculation = formData.get('use_std_calculation') === 'on'
     const stdCalculationStr = (formData.get('std_calculation') as string) || '1'
 
-    if (!title || !basePriceStr) {
-      throw new Error('Nama paket dan harga dasar wajib diisi')
+    const missing: string[] = []
+    if (!title) missing.push('Nama paket')
+    if (!basePriceStr) missing.push('Harga Jual per Satuan')
+    if (missing.length > 0) {
+      throw new Error(`Field wajib belum diisi: ${missing.join(' dan ')}`)
     }
 
     const basePrice = parseFloat(basePriceStr)
@@ -428,6 +456,310 @@ export async function updateCatalog(formData: FormData) {
   revalidatePath('/kalkulator')
   revalidatePath('/katalog')
   redirect('/admin/catalogs?notice=updated')
+}
+
+export async function saveCatalogInfo(formData: FormData) {
+  const supabase = await createClient()
+  const id = (formData.get('id') as string) || ''
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    throw new Error('Sesi telah berakhir, silakan login kembali')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
+    throw new Error('Anda tidak memiliki akses untuk mengubah katalog')
+  }
+
+  if (!id) {
+    throw new Error('ID katalog tidak valid')
+  }
+
+  const title = ((formData.get('title') as string) || '').trim()
+  const category = (formData.get('category') as string) || ''
+  const atapId = (formData.get('atap_id') as string) || ''
+  const rangkaId = (formData.get('rangka_id') as string) || ''
+  const finishingId = (formData.get('finishing_id') as string) || ''
+  const isianId = (formData.get('isian_id') as string) || ''
+  const imageFile = formData.get('image_file') as File
+  const currentImageUrl = (formData.get('current_image_url') as string) || ''
+  const isActive = formData.get('is_active') === 'on'
+
+  if (!title) {
+    throw new Error('Nama paket wajib diisi')
+  }
+
+  if (category === 'kanopi') {
+    if (!atapId) throw new Error('Kategori Kanopi wajib memilih Material Atap')
+    if (!rangkaId) throw new Error('Kategori Kanopi wajib memilih Material Rangka')
+    if (!finishingId) throw new Error('Kategori Kanopi wajib memilih Jenis Finishing')
+  }
+  if (category === 'pagar' || category === 'railing') {
+    if (!rangkaId) throw new Error('Kategori Pagar/Railing wajib memilih Material Rangka')
+    if (!isianId) throw new Error('Kategori Pagar/Railing wajib memilih Material Isian')
+    if (!finishingId) throw new Error('Kategori Pagar/Railing wajib memilih Jenis Finishing')
+  }
+
+  let imageUrl = currentImageUrl
+  const newImageUrl = await uploadImage(imageFile, supabase)
+  if (newImageUrl) {
+    imageUrl = newImageUrl
+  }
+
+  const payload = {
+    title,
+    category,
+    atap_id: atapId || null,
+    rangka_id: rangkaId || null,
+    finishing_id: finishingId || null,
+    isian_id: isianId || null,
+    image_url: imageUrl || null,
+    is_active: isActive,
+  }
+
+  const { error: updErr } = await supabase.from('catalogs').update(payload).eq('id', id)
+  if (updErr) {
+    throw new Error(`Gagal menyimpan informasi katalog: ${updErr.message}`)
+  }
+
+  revalidatePath(`/admin/catalogs/${id}`)
+  revalidatePath('/admin/catalogs')
+  return { ok: true }
+}
+
+export async function saveCatalogPricing(formData: FormData) {
+  const supabase = await createClient()
+  const id = (formData.get('id') as string) || ''
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    throw new Error('Sesi telah berakhir, silakan login kembali')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
+    throw new Error('Anda tidak memiliki akses untuk mengubah katalog')
+  }
+
+  if (!id) {
+    throw new Error('ID katalog tidak valid')
+  }
+
+  const basePriceStr = (formData.get('base_price_per_m2') as string) || ''
+  const basePriceUnit = ((formData.get('base_price_unit') as string) || 'm2') as
+    | 'm2'
+    | 'm1'
+    | 'unit'
+  const marginPercentageStr = (formData.get('margin_percentage') as string) || '0'
+
+  if (!basePriceStr) {
+    throw new Error('Harga dasar wajib diisi')
+  }
+
+  const basePrice = parseFloat(basePriceStr)
+  if (Number.isNaN(basePrice)) {
+    throw new Error('Harga harus berupa angka')
+  }
+
+  const marginPercentage = Math.max(0, Math.min(100, parseFloat(marginPercentageStr) || 0))
+  const allowedUnits = new Set(['m2', 'm1', 'unit'])
+  const safeUnit = allowedUnits.has(basePriceUnit) ? basePriceUnit : 'm2'
+
+  const payload = {
+    base_price_per_m2: basePrice,
+    base_price_unit: safeUnit,
+    margin_percentage: marginPercentage,
+  }
+
+  const { error: updErr } = await supabase.from('catalogs').update(payload).eq('id', id)
+  if (updErr) {
+    throw new Error(`Gagal menyimpan harga: ${updErr.message}`)
+  }
+
+  revalidatePath(`/admin/catalogs/${id}`)
+  revalidatePath('/admin/catalogs')
+  revalidatePath('/kalkulator')
+  revalidatePath('/katalog')
+  return { ok: true }
+}
+
+export async function saveCatalogHpp(formData: FormData) {
+  const supabase = await createClient()
+  const id = (formData.get('id') as string) || ''
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    throw new Error('Sesi telah berakhir, silakan login kembali')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
+    throw new Error('Anda tidak memiliki akses untuk mengubah katalog')
+  }
+
+  if (!id) {
+    throw new Error('ID katalog tidak valid')
+  }
+
+  const useStdCalculation = formData.get('use_std_calculation') === 'on'
+  const stdCalculationStr = (formData.get('std_calculation') as string) || '1'
+  const laborCostStr = (formData.get('labor_cost') as string) || '0'
+  const transportCostStr = (formData.get('transport_cost') as string) || '0'
+  const hppComponentsJson = (formData.get('hpp_components_json') as string) || '[]'
+
+  const stdCalculation = Math.max(0.01, parseFloat(stdCalculationStr) || 1)
+  const laborCost = laborCostStr ? parseFloat(laborCostStr) : 0
+  const transportCost = transportCostStr ? parseFloat(transportCostStr) : 0
+
+  const hppComponents: Array<{ id?: string; material_id: string; quantity: number; section?: string }> =
+    JSON.parse(hppComponentsJson) ?? []
+
+  const payload = {
+    std_calculation: stdCalculation,
+    use_std_calculation: useStdCalculation,
+    labor_cost: laborCost,
+    transport_cost: transportCost,
+  }
+
+  const { error: updErr } = await supabase.from('catalogs').update(payload).eq('id', id)
+  if (updErr) {
+    throw new Error(`Gagal menyimpan pengaturan HPP: ${updErr.message}`)
+  }
+
+  const { data: existingHppComponents } = await supabase
+    .from('catalog_hpp_components')
+    .select('id')
+    .eq('catalog_id', id)
+  const existingHppIds = new Set((existingHppComponents ?? []).map((x: { id: string }) => x.id))
+  const providedHppIds = new Set(hppComponents.filter((c) => c.id).map((c) => c.id as string))
+
+  const hppToDelete = [...existingHppIds].filter((eid) => !providedHppIds.has(eid))
+  if (hppToDelete.length > 0) {
+    const { error: delErr } = await supabase.from('catalog_hpp_components').delete().in('id', hppToDelete)
+    if (delErr) throw new Error(`Gagal menghapus komponen HPP: ${delErr.message}`)
+  }
+
+  for (const c of hppComponents.filter((c) => c.id)) {
+    const { error: uErr } = await supabase
+      .from('catalog_hpp_components')
+      .update({
+        material_id: c.material_id,
+        quantity: typeof c.quantity === 'number' ? c.quantity : 0,
+        section: c.section || 'lainnya',
+      })
+      .eq('id', c.id as string)
+    if (uErr) throw new Error(`Gagal mengupdate komponen HPP: ${uErr.message}`)
+  }
+
+  const hppToInsert = hppComponents.filter((c) => !c.id && c.material_id)
+  if (hppToInsert.length > 0) {
+    const rows = hppToInsert.map((c) => ({
+      catalog_id: id,
+      material_id: c.material_id,
+      quantity: Number(c.quantity) > 0 ? Number(c.quantity) : 1,
+      section: c.section || 'lainnya',
+    }))
+    const { error: insErr } = await supabase.from('catalog_hpp_components').insert(rows)
+    if (insErr) throw new Error(`Gagal menambah komponen HPP: ${insErr.message}`)
+  }
+
+  await updateHppPerUnit(id, user.id)
+
+  revalidatePath(`/admin/catalogs/${id}`)
+  revalidatePath('/admin/catalogs')
+  revalidatePath('/kalkulator')
+  revalidatePath('/katalog')
+  return { ok: true }
+}
+
+export async function saveCatalogAddons(formData: FormData) {
+  const supabase = await createClient()
+  const id = (formData.get('id') as string) || ''
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    throw new Error('Sesi telah berakhir, silakan login kembali')
+  }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
+    throw new Error('Anda tidak memiliki akses untuk mengubah katalog')
+  }
+
+  if (!id) {
+    throw new Error('ID katalog tidak valid')
+  }
+
+  const addonsJson = (formData.get('addons_json') as string) || '[]'
+  const addons: Array<{
+    id?: string
+    material_id: string
+    basis?: 'm2' | 'm1' | 'unit'
+    qty_per_basis?: number
+    is_optional: boolean
+  }> = JSON.parse(addonsJson) ?? []
+
+  const { data: existingAddons } = await supabase
+    .from('catalog_addons')
+    .select('id')
+    .eq('catalog_id', id)
+  const existingIds = new Set((existingAddons ?? []).map((x: { id: string }) => x.id))
+  const providedIds = new Set(addons.filter((a) => a.id).map((a) => a.id as string))
+
+  const toDelete = [...existingIds].filter((eid) => !providedIds.has(eid))
+  if (toDelete.length > 0) {
+    const { error: delErr } = await supabase.from('catalog_addons').delete().in('id', toDelete)
+    if (delErr) throw new Error(`Gagal menghapus addon: ${delErr.message}`)
+  }
+
+  for (const a of addons.filter((a) => a.id)) {
+    const { error: uErr } = await supabase
+      .from('catalog_addons')
+      .update({
+        material_id: a.material_id,
+        basis: a.basis === 'm1' || a.basis === 'unit' ? a.basis : 'm2',
+        qty_per_basis: typeof a.qty_per_basis === 'number' ? a.qty_per_basis : 0,
+        is_optional: !!a.is_optional,
+      })
+      .eq('id', a.id as string)
+    if (uErr) throw new Error(`Gagal mengupdate addon: ${uErr.message}`)
+  }
+
+  const toInsert = addons.filter((a) => !a.id && a.material_id)
+  if (toInsert.length > 0) {
+    const rows = toInsert.map((a) => ({
+      catalog_id: id,
+      material_id: a.material_id,
+      basis: a.basis === 'm1' || a.basis === 'unit' ? a.basis : 'm2',
+      qty_per_basis: typeof a.qty_per_basis === 'number' ? a.qty_per_basis : 0,
+      is_optional: !!a.is_optional,
+    }))
+    const { error: insErr } = await supabase.from('catalog_addons').insert(rows)
+    if (insErr) throw new Error(`Gagal menambah addon: ${insErr.message}`)
+  }
+
+  revalidatePath(`/admin/catalogs/${id}`)
+  revalidatePath('/admin/catalogs')
+  revalidatePath('/kalkulator')
+  revalidatePath('/katalog')
+  return { ok: true }
 }
 
 export async function deleteCatalog(formData: FormData) {
