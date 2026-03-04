@@ -1,0 +1,44 @@
+{
+  "audited_at": "2026-03-04T06:16:40.996Z",
+  "checks": {
+    "erp_customer_profiles_constraints": [
+      {
+        "constraint_name": "erp_customer_profiles_lead_id_fkey",
+        "constraint_type": "FOREIGN KEY",
+        "column_name": "lead_id",
+        "referenced_table": "leads",
+        "referenced_column": "id",
+        "delete_rule": "SET NULL"
+      },
+      {
+        "constraint_name": "erp_customer_profiles_lead_id_unique",
+        "constraint_type": "UNIQUE",
+        "column_name": "lead_id",
+        "referenced_table": "erp_customer_profiles",
+        "referenced_column": "lead_id",
+        "delete_rule": null
+      }
+    ],
+    "sync_function_definition": [
+      {
+        "function_name": "sync_lead_to_customer_profile",
+        "definition": "CREATE OR REPLACE FUNCTION public.sync_lead_to_customer_profile()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n    INSERT INTO public.erp_customer_profiles (name, phone, lead_id, address)\n    VALUES (\n        NEW.name,\n        NEW.phone,\n        NEW.id,\n        NULLIF(BTRIM(NEW.location), '')\n    )\n    ON CONFLICT (phone) DO UPDATE\n    SET\n        name = EXCLUDED.name,\n        lead_id = COALESCE(public.erp_customer_profiles.lead_id, EXCLUDED.lead_id),\n        address = CASE\n            WHEN COALESCE(NULLIF(BTRIM(public.erp_customer_profiles.address), ''), '') = ''\n                THEN EXCLUDED.address\n            ELSE public.erp_customer_profiles.address\n        END,\n        updated_at = now();\n\n    RETURN NEW;\nEND;\n$function$\n"
+      }
+    ],
+    "leads_trigger_binding": [
+      {
+        "trigger_name": "trg_sync_lead_customer",
+        "table_name": "leads",
+        "trigger_def": "CREATE TRIGGER trg_sync_lead_customer AFTER INSERT OR UPDATE ON leads FOR EACH ROW EXECUTE FUNCTION sync_lead_to_customer_profile()"
+      }
+    ],
+    "quotation_lead_relation": [
+      {
+        "constraint_name": "erp_quotations_lead_id_fkey",
+        "column_name": "lead_id",
+        "referenced_table": "leads",
+        "delete_rule": "SET NULL"
+      }
+    ]
+  }
+}

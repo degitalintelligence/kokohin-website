@@ -121,6 +121,49 @@ async function main() {
       and kcu.column_name = 'lead_id';
   `)
 
+  const auditAt = new Date().toISOString()
+  const complianceReport = {
+    audited_at: auditAt,
+    checks: {
+      erp_customer_profiles_constraints: fkAndUnique,
+      sync_function_definition: triggerDef,
+      leads_trigger_binding: triggerBinding,
+      quotation_lead_relation: quotationRel
+    }
+  }
+
+  const docsDir = path.join(__dirname, '..', 'docs')
+  if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true })
+  const jsonPath = path.join(docsDir, 'erp-relation-audit-report.json')
+  fs.writeFileSync(jsonPath, JSON.stringify(complianceReport, null, 2))
+
+  const firstFk = fkAndUnique.find(r => r.constraint_name === 'erp_customer_profiles_lead_id_fkey')
+  const hasUniqueLead = fkAndUnique.some(r => r.constraint_name === 'erp_customer_profiles_lead_id_unique')
+  const firstQuotationRel = quotationRel[0] || null
+  const triggerName = triggerBinding[0]?.trigger_name || '-'
+  const functionName = triggerDef[0]?.function_name || '-'
+
+  const markdown = [
+    '# ERP Relation Compliance Report',
+    '',
+    `Audit time: ${auditAt}`,
+    '',
+    '## Ringkasan',
+    '',
+    `- FK erp_customer_profiles.lead_id: ${firstFk ? `${firstFk.constraint_name} (ON DELETE ${firstFk.delete_rule})` : 'tidak ditemukan'}`,
+    `- Unique lead profile: ${hasUniqueLead ? 'erp_customer_profiles_lead_id_unique' : 'tidak ditemukan'}`,
+    `- Trigger leads: ${triggerName}`,
+    `- Function sinkronisasi: ${functionName}`,
+    `- FK erp_quotations.lead_id: ${firstQuotationRel ? `${firstQuotationRel.constraint_name} (ON DELETE ${firstQuotationRel.delete_rule})` : 'tidak ditemukan'}`,
+    '',
+    '## Detail JSON',
+    '',
+    `- Lihat file JSON: docs/erp-relation-audit-report.json`
+  ].join('\n')
+
+  const mdPath = path.join(docsDir, 'ERP_RELATION_COMPLIANCE_REPORT.md')
+  fs.writeFileSync(mdPath, markdown)
+
   console.log('\n=== FK & UNIQUE erp_customer_profiles ===')
   console.log(JSON.stringify(fkAndUnique, null, 2))
 
@@ -132,6 +175,8 @@ async function main() {
 
   console.log('\n=== Relasi erp_quotations.lead_id ===')
   console.log(JSON.stringify(quotationRel, null, 2))
+  console.log(`\nReport JSON: ${jsonPath}`)
+  console.log(`Report Markdown: ${mdPath}`)
 }
 
 main().catch((err) => {
