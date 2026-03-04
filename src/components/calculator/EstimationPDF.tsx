@@ -13,6 +13,7 @@ function ensureFontsRegistered() {
   try {
     Font.register({ family: 'Montserrat', src: `${path}/Montserrat-Regular.ttf` })
     Font.register({ family: 'Montserrat', src: `${path}/Montserrat-Bold.ttf`, fontWeight: 700 })
+    Font.register({ family: 'Montserrat', src: `${path}/Montserrat-Italic.ttf`, fontStyle: 'italic' })
     fontsRegistered = true
   } catch {
   }
@@ -35,11 +36,13 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E5E7EB'
   },
   companyBlock: {
-    maxWidth: '55%'
+    maxWidth: '55%',
+    alignItems: 'flex-start'
   },
   logo: {
     height: 40,
-    marginBottom: 6
+    marginBottom: 6,
+    alignSelf: 'flex-start'
   },
   companyName: {
     fontSize: 11,

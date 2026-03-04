@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { FileDown, Loader2 } from 'lucide-react'
-import { QuotationPDF } from '@/components/calculator/QuotationPDF'
+import EstimationPDF from '@/components/calculator/EstimationPDF'
 import type { CalculatorResult } from '@/lib/types'
 
 const PDFDownloadLink = dynamic(
@@ -64,7 +64,23 @@ interface DownloadLeadPdfButtonProps {
   logoUrl: string | null
 }
 
-export default function DownloadLeadPdfButton({ lead, estimation, items, logoUrl }: DownloadLeadPdfButtonProps) {
+export default function DownloadLeadPdfButton({
+  lead,
+  estimation,
+  items,
+  logoUrl,
+  companyName,
+  companyAddress,
+  companyPhone,
+  companyEmail,
+  catalogTitle,
+}: DownloadLeadPdfButtonProps & {
+  companyName: string | null
+  companyAddress: string | null
+  companyPhone: string | null
+  companyEmail: string | null
+  catalogTitle?: string | null
+}) {
   const hasLeadPrice = Number(lead.total_selling_price || lead.original_selling_price || 0) > 0;
   const hasEstimation = !!estimation && items && items.length > 0;
 
@@ -82,8 +98,18 @@ export default function DownloadLeadPdfButton({ lead, estimation, items, logoUrl
   }
 
   // Map estimation + items to CalculatorResult
+  const baseQty =
+    (Number(lead.panjang) * Number(lead.lebar)) ||
+    Number(lead.unit_qty) ||
+    0
+
+  const totalSelling =
+    hasEstimation
+      ? Number(estimation.total_selling_price)
+      : Number(lead.total_selling_price || lead.original_selling_price || 0)
+
   const result: CalculatorResult = {
-    luas: (Number(lead.panjang) * Number(lead.lebar)) || Number(lead.unit_qty) || 0,
+    luas: baseQty,
     unitUsed: (lead.catalog?.base_price_unit as 'm2' | 'm1' | 'unit' | undefined) || 'm2',
     totalHpp: hasEstimation ? Number(estimation.total_hpp) : Number(lead.total_hpp || 0),
     materialCost: 0, // Not explicitly used in simplified PDF
@@ -91,56 +117,59 @@ export default function DownloadLeadPdfButton({ lead, estimation, items, logoUrl
     marginPercentage: hasEstimation ? Number(estimation.margin_percentage) : Number(lead.margin_percentage || 30),
     markupPercentage: 0, // Already calculated in selling price
     flatFee: 0,
-    totalSellingPrice: hasEstimation ? Number(estimation.total_selling_price) : Number(lead.total_selling_price || lead.original_selling_price || 0),
-    estimatedPrice: hasEstimation ? Number(estimation.total_selling_price) : Number(lead.total_selling_price || lead.original_selling_price || 0),
-    breakdown: hasEstimation ? items.map(item => ({
-      name: item.material?.name || item.description || 'Item',
-      qtyNeeded: Number(item.qty_needed),
-      qtyCharged: Number(item.qty_charged),
-      unit: item.material?.unit || item.unit || 'unit',
-      pricePerUnit: Number(item.material?.base_price_per_unit || 0),
-      subtotal: Number(item.subtotal)
-    })) : [
-      {
-        name: lead.catalog?.title || 'Paket Pekerjaan',
-        qtyNeeded: (Number(lead.panjang) * Number(lead.lebar)) || Number(lead.unit_qty) || 1,
-        qtyCharged: (Number(lead.panjang) * Number(lead.lebar)) || Number(lead.unit_qty) || 1,
-        unit: lead.catalog?.base_price_unit || 'unit',
-        pricePerUnit: 0, // Not shown in summary PDF
-        subtotal: Number(lead.total_selling_price || lead.original_selling_price || 0)
-      }
-    ]
+    totalSellingPrice: totalSelling,
+    estimatedPrice: totalSelling,
+    breakdown: hasEstimation
+      ? items.map(item => {
+          const qty =
+            Number(item.qty_charged) ||
+            Number(item.qty_needed) ||
+            0
+          const subtotal = Number(item.subtotal || 0)
+          const pricePerUnit =
+            qty > 0 ? subtotal / qty : Number(item.material?.base_price_per_unit || 0)
+          return {
+            name: item.material?.name || item.description || 'Item',
+            qtyNeeded: qty,
+            qtyCharged: qty,
+            unit: item.material?.unit || item.unit || 'unit',
+            pricePerUnit,
+            subtotal,
+          }
+        })
+      : [
+          (() => {
+            const qty = baseQty > 0 ? baseQty : 1
+            const unit = lead.catalog?.base_price_unit || 'unit'
+            const pricePerUnit = qty > 0 ? totalSelling / qty : 0
+            return {
+              name: lead.catalog?.title || 'Paket Pekerjaan',
+              qtyNeeded: qty,
+              qtyCharged: qty,
+              unit,
+              pricePerUnit,
+              subtotal: totalSelling,
+            }
+          })(),
+        ],
   }
 
   const leadName = lead.name || 'Customer'
-  const fileName = `Penawaran_Kokohin_${leadName.replace(/\s+/g, '_')}.pdf`
+  const fileName = `Estimation_Kokohin_${leadName.replace(/\s+/g, '_')}.pdf`
 
   return (
     <PDFDownloadLink
       document={
-        <QuotationPDF
+        <EstimationPDF
           result={result}
-          leadInfo={{ 
-            name: leadName, 
-            whatsapp: lead.phone || '' 
-          }}
+          leadName={leadName}
           projectId={lead.id}
           logoUrl={logoUrl}
-          items={hasEstimation && items ? items.map(item => ({
-            name: item.material?.name || item.description || 'Material',
-            unit: item.material?.unit || item.unit || 'unit',
-            quantity: item.qty_charged || 0,
-            unit_price: item.material?.base_price_per_unit || 0,
-            subtotal: item.subtotal || 0
-          })) : [
-            {
-              name: lead.catalog?.title || 'Paket Pekerjaan',
-              unit: lead.catalog?.base_price_unit || 'unit',
-              quantity: (Number(lead.panjang) * Number(lead.lebar)) || Number(lead.unit_qty) || 1,
-              unit_price: 0,
-              subtotal: Number(lead.total_selling_price || lead.original_selling_price || 0)
-            }
-          ]}
+          companyName={companyName}
+          companyAddress={companyAddress}
+          companyPhone={companyPhone}
+          companyEmail={companyEmail}
+          catalogTitle={catalogTitle || lead.catalog?.title || null}
         />
       }
       fileName={fileName}

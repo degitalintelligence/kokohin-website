@@ -7,6 +7,7 @@ import { QuotationPDF } from '@/components/calculator/QuotationPDF'
 import type { CalculatorResult } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import { formatZoneName } from '@/lib/zone'
+import { normalizeQuotationNumber, normalizeAddressForSalutation, normalizeImageUrl, verifyImageUrlExists } from '@/lib/quotation-pdf-helpers'
 
 const PDFDownloadLink = dynamic(
   () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
@@ -35,6 +36,10 @@ interface QuotationPdfItem {
   unit_price: number
   subtotal: number
   catalog_id?: string
+  catalog?: {
+    image_url?: string | null
+  }
+  image_url?: string | null
   rangka?: { name?: string }
   isian?: { name?: string }
   atap?: { name?: string }
@@ -56,6 +61,8 @@ interface PaymentTermsForPdf {
 
 interface QuotationData {
   id: string
+  lead_id?: string
+  status?: string
   quotation_number?: string
   total_amount?: number
   total_hpp?: number
@@ -67,6 +74,7 @@ interface QuotationData {
   notes?: string
   attachments?: AttachmentPayload[]
   leads?: {
+    id?: string
     name?: string
     phone?: string
     location?: string
@@ -80,6 +88,9 @@ interface QuotationData {
   }
   erp_quotation_items?: QuotationPdfItem[]
   erp_payment_terms?: PaymentTermsForPdf | null
+  customer_profile?: {
+    address?: string
+  } | null
 }
 
 interface GeneratePdfButtonProps {
@@ -94,6 +105,21 @@ export default function GeneratePdfButton({ quotation: initialQuotation, project
   const [quotation, setQuotation] = useState<QuotationData | undefined>(initialQuotation)
   const [logoUrl, setLogoUrl] = useState<string | null>(initialLogoUrl || null)
   const [loading, setLoading] = useState(!initialQuotation && !!projectId)
+  const [verifiedImages, setVerifiedImages] = useState<Record<string, string | null>>({})
+  const [isCheckingImages, setIsCheckingImages] = useState(false)
+
+  const enrichCustomerProfile = async (baseQuotation: QuotationData | null) => {
+    if (!baseQuotation) return baseQuotation
+    const leadId = baseQuotation.lead_id || baseQuotation.leads?.id
+    if (!leadId) return baseQuotation
+    const supabase = createClient()
+    const { data: profile } = await supabase
+      .from('erp_customer_profiles')
+      .select('address')
+      .eq('lead_id', leadId)
+      .maybeSingle()
+    return { ...baseQuotation, customer_profile: profile || null }
+  }
 
   useEffect(() => {
     if (!initialQuotation && projectId) {
@@ -114,18 +140,53 @@ export default function GeneratePdfButton({ quotation: initialQuotation, project
         // Fetch quotation for this project
         const { data: qtnData } = await supabase
           .from('erp_quotations')
-          .select('*, leads(*), zones(*), catalogs(*), erp_quotation_items(*, atap:atap_id(name), rangka:rangka_id(name), finishing:finishing_id(name), isian:isian_id(name)), erp_payment_terms(*)')
+          .select('*, leads(*), zones(*), catalogs(*), erp_quotation_items(*, atap:atap_id(name), rangka:rangka_id(name), finishing:finishing_id(name), isian:isian_id(name), catalog:catalog_id(image_url)), erp_payment_terms(*)')
           .eq('project_id', projectId)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle()
         
-        setQuotation(qtnData)
+        const enriched = await enrichCustomerProfile(qtnData)
+        setQuotation(enriched || undefined)
         setLoading(false)
       }
       fetchData()
     }
   }, [initialQuotation, projectId, initialLogoUrl])
+
+  useEffect(() => {
+    if (!initialQuotation) return
+    let isMounted = true
+    ;(async () => {
+      const enriched = await enrichCustomerProfile(initialQuotation)
+      if (isMounted) setQuotation(enriched || initialQuotation)
+    })()
+    return () => {
+      isMounted = false
+    }
+  }, [initialQuotation])
+
+  useEffect(() => {
+    async function verifyImages() {
+      if (!quotation?.erp_quotation_items || quotation.erp_quotation_items.length === 0) {
+        setVerifiedImages({})
+        return
+      }
+      setIsCheckingImages(true)
+      const checks = await Promise.all(
+        quotation.erp_quotation_items.map(async (item, idx) => {
+          const key = `${item.catalog_id || 'item'}-${idx}`
+          const candidate = normalizeImageUrl(item.catalog?.image_url || null)
+          if (!candidate) return [key, null] as const
+          const exists = await verifyImageUrlExists(candidate)
+          return [key, exists ? candidate : null] as const
+        })
+      )
+      setVerifiedImages(Object.fromEntries(checks))
+      setIsCheckingImages(false)
+    }
+    verifyImages()
+  }, [quotation])
 
   if (loading) {
     return (
@@ -153,10 +214,16 @@ export default function GeneratePdfButton({ quotation: initialQuotation, project
   const attachments = quotation.attachments || []
   
   // Map ERP items to CalculatorResult for the PDF component
-  const filteredItems = items.filter((item: { name?: string }) => {
-    const name = (item.name || '').toLowerCase()
-    return !name.includes('markup') && !name.includes('mark-up')
-  })
+  const filteredItems = items
+    .map((item, idx) => ({ item, idx }))
+    .filter(({ item }) => {
+      const name = (item.name || '').toLowerCase()
+      return !name.includes('markup') && !name.includes('mark-up')
+    })
+    .map(({ item, idx }) => ({
+      ...item,
+      image_url: verifiedImages[`${item.catalog_id || 'item'}-${idx}`] || null
+    }))
 
   const result: CalculatorResult = {
     luas: (Number(quotation.panjang) * Number(quotation.lebar)) || Number(quotation.unit_qty) || 0,
@@ -169,18 +236,20 @@ export default function GeneratePdfButton({ quotation: initialQuotation, project
     flatFee: 0,
     totalSellingPrice: Number(quotation.total_amount),
     estimatedPrice: Number(quotation.total_amount),
-    breakdown: filteredItems.map((item: { name?: string; quantity?: number; unit?: string; unit_price?: number; subtotal?: number; catalog_id?: string }) => ({
+    breakdown: filteredItems.map((item: { name?: string; quantity?: number; unit?: string; unit_price?: number; subtotal?: number; image_url?: string | null }) => ({
       name: item.name || '',
       qtyNeeded: Number(item.quantity),
       qtyCharged: Number(item.quantity),
       unit: item.unit || 'unit',
       pricePerUnit: Number(item.unit_price),
       subtotal: Number(item.subtotal),
-      image_url: item.catalog_id ? (quotation.catalogs?.image_url || null) : null
+      image_url: item.image_url || null
     }))
   }
 
   const fileName = `Quotation_${quotation.quotation_number}_${(lead.name || 'Customer').replace(/\s+/g, '_')}.pdf`
+  const quotationNumber = normalizeQuotationNumber(quotation.quotation_number, quotation.id)
+  const customerAddress = normalizeAddressForSalutation(quotation.customer_profile?.address || lead.location || quotation.client_address || '')
 
   return (
     <PDFDownloadLink
@@ -190,23 +259,25 @@ export default function GeneratePdfButton({ quotation: initialQuotation, project
           leadInfo={{ 
             name: lead.name || 'Customer', 
             whatsapp: lead.phone || '',
-            address: lead.location || quotation.client_address || ''
+            address: customerAddress
           }}
-          projectId={quotation.quotation_number || quotation.id}
+          projectId={quotation.id}
+          quotationNumber={quotationNumber}
           zoneName={formatZoneName(quotation.zones?.name || null) || null}
           logoUrl={logoUrl}
           attachments={attachments}
           paymentTerms={quotation.erp_payment_terms}
-          items={items}
+          items={filteredItems}
+          isDraft={quotation.status !== 'approved'}
         />
       }
       fileName={fileName}
-      className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 bg-blue-600 text-white hover:bg-blue-700 shadow-sm ${disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''} ${className}`}
+      className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95 bg-blue-600 text-white hover:bg-blue-700 shadow-sm ${disabled || isCheckingImages ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''} ${className}`}
     >
       {({ loading: linkLoading }) => (
         <>
           {linkLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileDown size={12} />}
-          {linkLoading ? 'Wait...' : 'Download PDF'}
+          {linkLoading || isCheckingImages ? 'Wait...' : 'Download PDF'}
         </>
       )}
     </PDFDownloadLink>

@@ -193,6 +193,35 @@ interface Estimation {
     lead?: Lead
 }
 
+interface RevisionItemRow {
+    name: string
+    unit: string
+    quantity: number
+    unit_price: number
+    subtotal: number
+    type: string
+    builder_costs: BuilderCostSnapshot[] | null
+    catalog_id: string | null
+    atap_id: string | null
+    rangka_id: string | null
+    finishing_id: string | null
+    isian_id: string | null
+    zone_id: string | null
+    panjang: number | null
+    lebar: number | null
+    unit_qty: number | null
+    markup_percentage: number | null
+    markup_flat_fee: number | null
+}
+
+interface RevisionTermRow {
+    term_name: string
+    percentage: number
+    amount_due: number
+    is_default: boolean
+    is_active: boolean
+}
+
 export async function createQuotationFromEstimation(estimationId: string) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -335,6 +364,139 @@ export async function updateQuotationStatus(quotationId: string, newStatus: stri
 
     revalidatePath('/admin/leads')
     return { success: true }
+}
+
+export async function createQuotationRevision(quotationId: string) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Unauthorized')
+
+    // 1. Fetch original quotation with items and payment terms
+    const { data: qtn, error: qtnError } = await supabase
+        .from('erp_quotations')
+        .select('*, erp_quotation_items(*), erp_payment_terms(*)')
+        .eq('id', quotationId)
+        .single()
+
+    if (qtnError || !qtn) throw new Error('Original quotation not found')
+    
+    // 1.5. Check if contract exists for this quotation
+    const { data: contract } = await supabase
+        .from('erp_contracts')
+        .select('id')
+        .eq('quotation_id', quotationId)
+        .maybeSingle()
+
+    if (contract) {
+        throw new Error('Tidak bisa membuat revisi karena kontrak sudah diterbitkan untuk penawaran ini.')
+    }
+
+    // Only approved quotations can be revised (rule)
+    if (qtn.status !== 'approved') {
+        throw new Error('Hanya penawaran yang sudah disetujui yang dapat direvisi.')
+    }
+
+    // 2. Prepare new version data
+    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
+    const newVersion = (qtn.version || 1) + 1
+    const newQtnNumber = `${qtn.quotation_number.split('-V')[0]}-V${newVersion}-${randomSuffix}`
+
+    // 3. Create new quotation record
+    const { data: revision, error: revisionError } = await supabase
+        .from('erp_quotations')
+        .insert({
+            estimation_id: qtn.estimation_id,
+            lead_id: qtn.lead_id,
+            project_id: qtn.project_id,
+            quotation_number: newQtnNumber,
+            total_amount: qtn.total_amount,
+            status: 'draft', // New version starts as draft
+            created_by: user.id,
+            valid_until: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+            notes: qtn.notes,
+            attachments: qtn.attachments,
+            // Builder metadata
+            panjang: qtn.panjang,
+            lebar: qtn.lebar,
+            unit_qty: qtn.unit_qty,
+            margin_percentage: qtn.margin_percentage,
+            catalog_id: qtn.catalog_id,
+            zone_id: qtn.zone_id,
+            total_hpp: qtn.total_hpp,
+            // Versioning
+            version: newVersion,
+            parent_id: qtn.id
+        })
+        .select()
+        .single()
+
+    if (revisionError || !revision) throw revisionError
+
+    // 4. Copy items to the new quotation
+    const originalItems = (qtn.erp_quotation_items || []) as RevisionItemRow[]
+    if (originalItems.length > 0) {
+        const { error: itemsError } = await supabase.from('erp_quotation_items').insert(
+            originalItems.map((item) => ({
+                quotation_id: revision.id,
+                name: item.name,
+                unit: item.unit,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                subtotal: item.subtotal,
+                type: item.type,
+                builder_costs: item.builder_costs,
+                catalog_id: item.catalog_id,
+                atap_id: item.atap_id,
+                rangka_id: item.rangka_id,
+                finishing_id: item.finishing_id,
+                isian_id: item.isian_id,
+                zone_id: item.zone_id,
+                panjang: item.panjang,
+                lebar: item.lebar,
+                unit_qty: item.unit_qty,
+                markup_percentage: item.markup_percentage,
+                markup_flat_fee: item.markup_flat_fee
+            }))
+        )
+        if (itemsError) throw itemsError
+    }
+
+    // 5. Copy payment terms if applicable
+    // Note: Payment terms in this schema seem to be linked to estimation_id or quotation_id
+    // If they are linked to erp_quotations, we should copy them.
+    // Based on erp_business_flow.sql, erp_payment_terms are linked to quotation_id.
+    const originalTerms = (qtn.erp_payment_terms || []) as RevisionTermRow[]
+    if (originalTerms.length > 0) {
+        const { error: termsError } = await supabase.from('erp_payment_terms').insert(
+            originalTerms.map((term) => ({
+                quotation_id: revision.id,
+                term_name: term.term_name,
+                percentage: term.percentage,
+                amount_due: term.amount_due,
+                is_default: term.is_default,
+                is_active: term.is_active
+            }))
+        )
+        if (termsError) throw termsError
+    }
+
+    // 6. Log Audit Trail
+    await supabase.from('erp_audit_trail').insert({
+        user_id: user.id,
+        entity_type: 'quotation',
+        entity_id: revision.id,
+        action_type: 'create_revision',
+        new_value: { 
+            original_id: qtn.id, 
+            version: newVersion,
+            quotation_number: newQtnNumber
+        }
+    })
+
+    revalidatePath('/admin/erp')
+    revalidatePath(`/admin/quotes/${revision.id}/edit`)
+    
+    return { success: true, quotationId: revision.id }
 }
 
 export async function updateQuotationItems(quotationId: string, items: QuotationItem[], totalAmount: number, paymentTermId?: string, notes?: string, attachments?: AttachmentPayload[]) {

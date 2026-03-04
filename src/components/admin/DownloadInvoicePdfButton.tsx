@@ -21,6 +21,7 @@ const PDFDownloadLink = dynamic(
 
 interface InvoiceData {
   id: string
+  status?: string
   invoice_number?: string
   erp_contracts?: {
     erp_quotations?: {
@@ -61,6 +62,7 @@ export default function DownloadInvoicePdfButton({ invoice: initialInvoice, logo
         <InvoicePDF
           invoice={invoice}
           logoUrl={logoUrl}
+          watermarkText={invoice.status !== 'paid' ? 'UNPAID' : undefined}
         />
       }
       fileName={fileName}

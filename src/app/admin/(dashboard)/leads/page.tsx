@@ -8,7 +8,6 @@ import {
   Plus,
   AlertCircle,
   TrendingUp,
-  ArrowRight,
   Eye,
   X,
   Phone,
@@ -18,8 +17,9 @@ import {
   MessageSquare,
   Tag
 } from 'lucide-react'
-import { createQuotationForLead } from '@/app/actions/quotations'
 import DownloadLeadPdfButton from '@/components/admin/DownloadLeadPdfButton'
+import ConvertLeadToQuoteButton from '@/components/admin/ConvertLeadToQuoteButton'
+import { getBasicSettings } from '@/app/actions/settings'
 
 export default async function AdminLeadsPage({
   searchParams,
@@ -46,6 +46,8 @@ export default async function AdminLeadsPage({
     .eq('key', 'logo_url')
     .maybeSingle()
   const logoUrl = siteSettings?.value || null
+
+  const basicSettings = await getBasicSettings()
 
   // Fetch full details for active lead if selected
   let activeLead = null
@@ -152,6 +154,7 @@ export default async function AdminLeadsPage({
               <tbody className="text-sm">
                 {leads?.map((lead) => {
                   const displayStatus = getStatusLabel(lead.status)
+                  const isAlreadyQuoted = displayStatus === 'Quoted'
                   const originalPrice = Number(lead.original_selling_price || lead.total_selling_price || 0)
                   return (
                     <tr key={lead.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors group">
@@ -181,21 +184,10 @@ export default async function AdminLeadsPage({
                           >
                             <Eye size={14} /> Detail
                           </Link>
-                          <form action={async () => {
-                            'use server'
-                            let success = false
-                            try {
-                              const res = await createQuotationForLead(lead.id)
-                              success = res.success
-                            } catch (e) {
-                              console.error('Failed to convert lead:', e)
-                            }
-                            if (success) redirect('/admin/erp')
-                          }}>
-                            <button className="inline-flex items-center gap-1.5 text-[10px] font-black text-white bg-[#E30613] px-3 py-1.5 rounded-lg hover:bg-red-700 transition-all shadow-md active:scale-95">
-                              <ArrowRight size={14} /> Convert
-                            </button>
-                          </form>
+                          <ConvertLeadToQuoteButton
+                            leadId={lead.id}
+                            initiallyConverted={isAlreadyQuoted}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -261,7 +253,19 @@ export default async function AdminLeadsPage({
                     <div className="p-2 bg-gray-50 rounded-lg text-gray-400"><MapPin size={18} /></div>
                     <div>
                       <p className="text-[9px] font-bold text-gray-400 uppercase">Lokasi Proyek</p>
-                      <p className="font-bold text-gray-900">{activeLead.location || <span className="text-gray-300 font-normal italic text-[10px]">Tidak ada lokasi</span>}</p>
+                      <p className="font-bold text-gray-900">
+                        {activeLead.location || (
+                          <span className="text-gray-300 font-normal italic text-[10px]">
+                            Tidak ada lokasi
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[9px] text-gray-500 mt-1">
+                        Zona:{' '}
+                        <span className="font-bold text-gray-800">
+                          {(activeLead.zone as { name?: string } | null)?.name || '-'}
+                        </span>
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -332,23 +336,17 @@ export default async function AdminLeadsPage({
                   estimation={activeEstimation} 
                   items={estimationItems || []} 
                   logoUrl={logoUrl}
+                  companyName={basicSettings.siteName || null}
+                  companyAddress={basicSettings.contactAddress || null}
+                  companyPhone={basicSettings.supportPhone || null}
+                  companyEmail={basicSettings.supportEmail || null}
+                  catalogTitle={activeLead?.catalog?.title || null}
                 />
               </div>
-              <form action={async () => {
-                'use server'
-                let success = false
-                try {
-                  const res = await createQuotationForLead(activeLead.id)
-                  success = res.success
-                } catch (e) {
-                  console.error('Failed to convert lead:', e)
-                }
-                if (success) redirect('/admin/erp')
-              }}>
-                <button className="px-8 py-2.5 bg-[#E30613] text-white rounded-xl text-sm font-black hover:bg-red-700 transition-all shadow-lg active:scale-95 flex items-center gap-2">
-                  <ArrowRight size={18} /> Convert to Quote
-                </button>
-              </form>
+              <ConvertLeadToQuoteButton
+                leadId={activeLead.id as string}
+                initiallyConverted={getStatusLabel(activeLead.status) === 'Quoted'}
+              />
             </footer>
           </div>
         </div>

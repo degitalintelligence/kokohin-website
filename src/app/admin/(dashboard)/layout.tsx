@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Menu, Camera } from 'lucide-react'
 import Link from 'next/link'
 import Sidebar from '@/components/admin/Sidebar'
+import { LeadConversionProvider } from '@/components/admin/LeadConversionContext'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState<boolean>(() => {
@@ -79,7 +80,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             Kurasi Galeri
           </Link>
         </div>
-        {children}
+        <LeadConversionProvider>
+          {children}
+        </LeadConversionProvider>
       </div>
     </div>
   )

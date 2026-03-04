@@ -1,7 +1,22 @@
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
 import { MessageCircle } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { getLoginBackgroundUrl, getWaNumber } from '@/app/actions/settings'
+
+function unwrapProxy(url: string | null): string | null {
+    if (!url) return null
+    try {
+        const base = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+        const u = new URL(url, base)
+        if (u.pathname.startsWith('/_next/image') && u.searchParams.has('url')) {
+            const inner = u.searchParams.get('url') || ''
+            if (inner) return decodeURIComponent(inner)
+        }
+        return url
+    } catch {
+        return url
+    }
+}
 
 export default async function PublicLayout({
     children,
@@ -12,22 +27,13 @@ export default async function PublicLayout({
     let backgroundUrl: string | null = null
     let waNumber: string | null = null
     try {
-        const res = await fetch('/api/site-settings/login-background-url', { cache: 'no-store' })
-        if (res.ok) {
-            const json = (await res.json()) as { login_background_url?: string | null }
-            backgroundUrl = json.login_background_url ?? null
-        }
+        const rawBg = await getLoginBackgroundUrl()
+        backgroundUrl = unwrapProxy(rawBg)
     } catch {
         backgroundUrl = null
     }
     try {
-        const supabase = await createClient()
-        const { data } = await supabase
-            .from('site_settings')
-            .select('value')
-            .eq('key', 'wa_number')
-            .maybeSingle()
-        waNumber = (data as { value?: string } | null)?.value ?? null
+        waNumber = await getWaNumber()
     } catch {
         waNumber = null
     }

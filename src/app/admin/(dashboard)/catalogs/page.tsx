@@ -157,7 +157,7 @@ export default async function AdminCatalogsPage({ searchParams }: { searchParams
   } else {
     query = query.order('created_at', { ascending: false })
   }
-  const { data: catalogs, error } = await query
+  const { data: catalogs, error } = await query.limit(500)
 
   if (error) {
     return (

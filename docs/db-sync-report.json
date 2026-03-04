@@ -31,7 +31,8 @@
       "custom_notes": "text",
       "status": "text",
       "created_at": "timestamp with time zone",
-      "updated_at": "timestamp with time zone"
+      "updated_at": "timestamp with time zone",
+      "lead_id": "uuid"
     },
     "estimations": {
       "id": "uuid",
@@ -42,7 +43,8 @@
       "total_selling_price": "numeric",
       "status": "text",
       "created_at": "timestamp with time zone",
-      "updated_at": "timestamp with time zone"
+      "updated_at": "timestamp with time zone",
+      "lead_id": "uuid"
     }
   },
   "foreignKeys": {
@@ -54,6 +56,12 @@
         "column_name": "zone_id",
         "foreign_table": "zones",
         "foreign_column": "id"
+      },
+      {
+        "constraint_name": "erp_projects_lead_id_fkey",
+        "column_name": "lead_id",
+        "foreign_table": "leads",
+        "foreign_column": "id"
       }
     ],
     "estimations": [
@@ -61,6 +69,12 @@
         "constraint_name": "estimations_project_id_fkey",
         "column_name": "project_id",
         "foreign_table": "erp_projects",
+        "foreign_column": "id"
+      },
+      {
+        "constraint_name": "estimations_lead_id_fkey",
+        "column_name": "lead_id",
+        "foreign_table": "leads",
         "foreign_column": "id"
       }
     ]

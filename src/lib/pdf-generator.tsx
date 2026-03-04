@@ -41,6 +41,7 @@ Font.register({
     { src: `${fontPath}/Montserrat-Regular.ttf`, fontWeight: 'normal' },
     { src: `${fontPath}/Montserrat-Bold.ttf`, fontWeight: 'bold' },
     { src: `${fontPath}/Montserrat-SemiBold.ttf`, fontWeight: 'semibold' },
+    { src: `${fontPath}/Montserrat-Italic.ttf`, fontStyle: 'italic' },
   ],
 })
 

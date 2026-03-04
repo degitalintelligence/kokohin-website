@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import type { CalculatorResult } from '@/lib/types';
 import { resolveItemSpecs } from '@/lib/pdf-spec-utils';
+import { normalizeAddressForSalutation, normalizeQuotationNumber } from '@/lib/quotation-pdf-helpers';
 
 let fontsRegistered = false
 function ensureFontsRegistered() {
@@ -13,6 +14,7 @@ function ensureFontsRegistered() {
   try {
     Font.register({ family: 'Montserrat', src: `${path}/Montserrat-Regular.ttf` })
     Font.register({ family: 'Montserrat', src: `${path}/Montserrat-Bold.ttf`, fontWeight: 700 })
+    Font.register({ family: 'Montserrat', src: `${path}/Montserrat-Italic.ttf`, fontStyle: 'italic' })
     fontsRegistered = true
   } catch {
   }
@@ -38,10 +40,11 @@ const styles = StyleSheet.create({
   logoInfo: {
     flexDirection: 'column',
     width: '50%',
+    alignItems: 'flex-start',
   },
   logo: {
-    width: 120,
-    height: 'auto',
+    height: 40,
+    alignSelf: 'flex-start',
     marginBottom: 10,
   },
   companyName: {
@@ -241,6 +244,29 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: '#E30613',
   },
+  draftWatermark: {
+    position: 'absolute',
+    top: '45%',
+    left: '10%',
+    right: '10%',
+    textAlign: 'center',
+    fontSize: 72,
+    color: '#E30613',
+    opacity: 0.12,
+    fontWeight: 700,
+    transform: 'rotate(-30deg)',
+    letterSpacing: 8,
+    zIndex: 1,
+  },
+  pageFooter: {
+    position: 'absolute',
+    bottom: 12,
+    left: 40,
+    right: 40,
+    fontSize: 8,
+    color: '#666666',
+    textAlign: 'center',
+  }
 });
 
 // TYPE DEFINITIONS
@@ -252,6 +278,7 @@ interface QuotationPDFProps {
     address?: string;
   };
   projectId: string | null;
+  quotationNumber?: string | null;
   zoneName?: string | null;
   logoUrl?: string | null;
   attachments?: { url: string }[];
@@ -262,6 +289,7 @@ interface QuotationPDFProps {
     unit_price: number
     subtotal: number
     catalog_id?: string
+    image_url?: string | null
     rangka?: { name?: string };
     isian?: { name?: string };
     atap?: { name?: string };
@@ -279,6 +307,7 @@ interface QuotationPDFProps {
       t3_desc?: string;
     };
   } | null;
+  isDraft?: boolean;
 }
 
 // 3. MAIN COMPONENT
@@ -286,15 +315,17 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
   result,
   leadInfo,
   projectId,
+  quotationNumber,
   logoUrl,
   attachments = [],
   items = [],
   paymentTerms,
+  isDraft = false,
 }) => {
   ensureFontsRegistered()
-  const estimationNumber = projectId ? (projectId.startsWith('WEB-') ? projectId : `QTN-${projectId.slice(0, 8).toUpperCase()}`) : 'WEB-PREVIEW';
+  const normalizedQuotationNumber = normalizeQuotationNumber(quotationNumber, projectId);
   const customerName = leadInfo.name || 'Customer';
-  const customerAddress = leadInfo.address || '-';
+  const customerAddress = normalizeAddressForSalutation(leadInfo.address);
 
   const totalPrice = result.estimatedPrice;
   const companyName = 'KOKOHIN';
@@ -311,6 +342,7 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
   return (
     <Document>
       <Page size="A4" style={styles.page}>
+        {isDraft && <Text style={styles.draftWatermark}>DRAFT</Text>}
         
         {/* HEADER: KOP SURAT */}
         <View style={styles.header}>
@@ -322,7 +354,7 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
           </View>
           <View style={styles.docInfo}>
             <Text style={styles.docTitle}>PENAWARAN</Text>
-            <Text style={styles.docMeta}>Nomor: {estimationNumber}</Text>
+            <Text style={styles.docMeta}>Nomor: {normalizedQuotationNumber}</Text>
             <Text style={styles.docMeta}>Tanggal: {currentDate}</Text>
           </View>
         </View>
@@ -369,7 +401,7 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
 
             const unitLabel = item.unit || 'm²';
 
-              const itemImage = item.catalog_id && result.breakdown.find(b => b.name === item.name)?.image_url;
+              const itemImage = item.image_url || null;
 
               return (
                 <View key={idx} style={styles.tableRow} wrap={false}>
@@ -410,10 +442,9 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
         {/* B. PEKERJAAN TAMBAHAN (If any) */}
         {/* Assuming addons are handled as items for now, or we can add a specific filter if they are marked */}
 
-        {/* C. REKAPITULASI BIAYA & KETENTUAN */}
         <View style={{ marginTop: 20 }} wrap={false}>
           <Text style={[styles.sectionTitle, { fontSize: 11, borderBottomWidth: 1, borderBottomColor: '#EEEEEE', paddingBottom: 4, marginBottom: 15 }]}>
-            C. REKAPITULASI BIAYA & KETENTUAN (T&C)
+            B. REKAPITULASI BIAYA
           </Text>
           
           <View style={{ backgroundColor: '#1D1D1B', padding: 15, borderRadius: 8, marginBottom: 20 }}>
@@ -423,6 +454,12 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
               (Catatan: Grand Total di atas merupakan akumulasi dari seluruh item pekerjaan utama beserta Add-on yang tercantum).
             </Text>
           </View>
+        </View>
+
+        <View style={{ marginTop: 20 }} wrap={false}>
+          <Text style={[styles.sectionTitle, { fontSize: 11, borderBottomWidth: 1, borderBottomColor: '#EEEEEE', paddingBottom: 4, marginBottom: 15 }]}>
+            C. KETENTUAN (T&C)
+          </Text>
 
           <View style={{ gap: 8 }}>
             <Text style={{ fontSize: 10, fontWeight: 700 }}>Syarat & Ketentuan Pekerjaan:</Text>
@@ -476,6 +513,12 @@ export const QuotationPDF: React.FC<QuotationPDFProps> = ({
             </View>
           </View>
         )}
+
+        <Text
+          style={styles.pageFooter}
+          fixed
+          render={({ pageNumber, totalPages }) => `No. ${normalizedQuotationNumber} • Halaman ${pageNumber}/${totalPages}`}
+        />
 
       </Page>
     </Document>

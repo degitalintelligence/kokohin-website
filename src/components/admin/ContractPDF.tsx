@@ -96,7 +96,21 @@ const styles = StyleSheet.create({
   },
   bold: {
     fontWeight: 'bold',
-  }
+  },
+  watermark: {
+    position: 'absolute',
+    top: '45%',
+    left: '10%',
+    right: '10%',
+    textAlign: 'center',
+    fontSize: 72,
+    color: '#E30613',
+    opacity: 0.12,
+    fontWeight: 'bold',
+    transform: 'rotate(-30deg)',
+    letterSpacing: 8,
+    zIndex: 1,
+  },
 });
 
 interface PaymentTermsJson {
@@ -121,6 +135,7 @@ interface PaymentTerm {
 interface ContractPDFProps {
   contract: {
     created_at?: string
+    status?: string
     contract_number?: string
     total_value?: number
     payment_terms_json?: PaymentTermsJson | PaymentTerm[] | null
@@ -142,15 +157,22 @@ interface ContractPDFProps {
       name?: string
       job_title?: string
     }
-    quotations?: {
+    erp_quotations?: {
       quotation_number?: string
+      leads?: {
+        name?: string
+        location?: string
+        address?: string
+        phone?: string
+      }
     }
     attachments?: AttachmentPayload[]
   }
   logoUrl?: string | null
+  isDraft?: boolean
 }
 
-export const ContractPDF = ({ contract, logoUrl }: ContractPDFProps) => {
+export const ContractPDF = ({ contract, logoUrl, isDraft = false }: ContractPDFProps) => {
   const date = new Date(contract.created_at || new Date());
   const dayName = date.toLocaleDateString('id-ID', { weekday: 'long' });
   const day = date.getDate();
@@ -201,7 +223,7 @@ export const ContractPDF = ({ contract, logoUrl }: ContractPDFProps) => {
     ];
   }
 
-  const lead = contract.leads || {};
+  const lead = contract.erp_quotations?.leads || {};
   const customerProfile = contract.customer_profile || {};
   
   // Use data from customer profile if available, otherwise fallback to lead
@@ -216,6 +238,7 @@ export const ContractPDF = ({ contract, logoUrl }: ContractPDFProps) => {
   return (
     <Document>
       <Page size="A4" style={styles.page}>
+        {isDraft && <Text style={styles.watermark}>DRAFT</Text>}
         {/* Header with optional Logo */}
         <View style={styles.header}>
           {logoUrl && <PdfImage src={logoUrl} style={{ width: 120, marginBottom: 10, alignSelf: 'center' }} />}
@@ -274,7 +297,7 @@ export const ContractPDF = ({ contract, logoUrl }: ContractPDFProps) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>PASAL 1: RUANG LINGKUP PEKERJAAN</Text>
           <Text style={styles.paragraph}>
-            PIHAK PERTAMA memberikan persetujuan kepada PIHAK KEDUA untuk melaksanakan pekerjaan sesuai dengan Spesifikasi, Material, dan Desain yang tercantum pada Surat Penawaran Final Nomor: <Text style={styles.bold}>{contract.quotations?.quotation_number || '000/Q/II/2026'}</Text> (Terlampir dan menjadi satu kesatuan yang tidak terpisahkan dari SPK ini).
+            PIHAK PERTAMA memberikan persetujuan kepada PIHAK KEDUA untuk melaksanakan pekerjaan sesuai dengan Spesifikasi, Material, dan Desain yang tercantum pada Surat Penawaran Final Nomor: <Text style={styles.bold}>{contract.erp_quotations?.quotation_number || '000/Q/II/2026'}</Text> (Terlampir dan menjadi satu kesatuan yang tidak terpisahkan dari SPK ini).
           </Text>
           {contract.scope_snapshot && (
             <View style={{ marginLeft: 15, marginTop: 5 }}>

@@ -91,7 +91,7 @@ export default function QuoteBuilderClient({
 
   // 2. Constants & Derived Data
   const catalogUnit = activeCatalog?.base_price_unit ?? 'm2'
-  const isCustom = initialData.type === 'manual' || !initialData.catalog_id
+  const isCustom = initialData.type === 'manual' && !initialData.catalog_id
   const productLabel = activeCatalog?.title || initialData.name || 'Katalog tidak ditemukan'
   const unitLabel = catalogUnit === 'm2' ? 'm²' : catalogUnit === 'm1' ? 'm¹' : 'unit'
 
@@ -211,6 +211,7 @@ export default function QuoteBuilderClient({
           panjang: panjang || undefined,
           lebar: lebar || undefined,
           unit_qty: unitQty || undefined,
+          quantity: computedQty, // Sync computed quantity back to the main item
           unit_price: unitPrice,
           subtotal: currentTotalAmount,
           total_hpp: totalHpp,

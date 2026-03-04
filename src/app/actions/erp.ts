@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { ALLOWED_ADMIN_ROLES, isRoleAllowed } from '@/lib/rbac'
 
 interface PaymentTermsJson {
     t1_percent?: number
@@ -17,12 +18,29 @@ interface AttachmentPayload {
     created_at: string
 }
 
-// --- CONTRACT ACTIONS ---
-
-export async function createContractFromQuotation(quotationId: string) {
+async function assertErpAdminRole() {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Unauthorized')
+
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+
+    const role = (profile as { role?: string } | null)?.role ?? null
+    if (!isRoleAllowed(role, ALLOWED_ADMIN_ROLES, user.email)) {
+        throw new Error('Forbidden: Anda tidak memiliki akses untuk aksi ERP ini.')
+    }
+
+    return { supabase, user }
+}
+
+// --- CONTRACT ACTIONS ---
+
+export async function createContractFromQuotation(quotationId: string) {
+    const { supabase, user } = await assertErpAdminRole()
 
     // 1. Fetch quotation data with related info and payment terms
     const { data: qtn, error: qtnError } = await supabase
@@ -110,9 +128,7 @@ export async function createContractFromQuotation(quotationId: string) {
 // --- INVOICE ACTIONS ---
 
 export async function createInvoiceFromContract(contractId: string, options?: { amount?: number, stageName?: string, percentage?: number }) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Unauthorized')
+    const { supabase, user } = await assertErpAdminRole()
 
     const { data: ctr, error: ctrError } = await supabase
         .from('erp_contracts')
@@ -121,6 +137,7 @@ export async function createInvoiceFromContract(contractId: string, options?: { 
         .single()
 
     if (ctrError || !ctr) throw new Error('Contract not found')
+    if (ctr.status !== 'active') throw new Error('Kontrak harus berstatus active sebelum menerbitkan invoice')
 
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase()
@@ -204,9 +221,7 @@ export async function updateContractItems(
         attachments?: AttachmentPayload[] 
     }
 ) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Unauthorized')
+    const { supabase, user } = await assertErpAdminRole()
 
     // Fetch current contract to get lead_id/customer_profile_id
     const { data: currentCtr } = await supabase
@@ -274,9 +289,7 @@ export async function updateContractItems(
 }
 
 export async function updateCustomerProfile(leadId: string, data: { name?: string, ktp_number?: string, address?: string, email?: string }) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Unauthorized')
+    const { supabase } = await assertErpAdminRole()
 
     const { error } = await supabase
         .from('erp_customer_profiles')
@@ -288,9 +301,7 @@ export async function updateCustomerProfile(leadId: string, data: { name?: strin
 }
 
 export async function updateInvoiceItems(invoiceId: string, items: ErpItem[], totalAmount: number, notes?: string, attachments?: AttachmentPayload[]) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Unauthorized')
+    const { supabase, user } = await assertErpAdminRole()
 
     await supabase.from('erp_invoice_items').delete().eq('invoice_id', invoiceId)
     const { error: insertError } = await supabase.from('erp_invoice_items').insert(
@@ -333,9 +344,7 @@ export async function updateInvoiceItems(invoiceId: string, items: ErpItem[], to
 // --- PAYMENT ACTIONS ---
 
 export async function recordPayment(invoiceId: string, data: { amount: number, method: string, ref?: string }) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Unauthorized')
+    const { supabase, user } = await assertErpAdminRole()
 
     const { data: payment, error: payError } = await supabase
         .from('erp_payments')
@@ -371,6 +380,58 @@ export async function recordPayment(invoiceId: string, data: { amount: number, m
         entity_id: payment.id,
         action_type: 'record',
         new_value: payment
+    })
+
+    revalidatePath('/admin/erp')
+    return { success: true }
+}
+
+export async function updateContractStatus(contractId: string, newStatus: 'active' | 'completed' | 'cancelled' | 'disputed', notes?: string) {
+    const { supabase, user } = await assertErpAdminRole()
+
+    const { data: currentContract, error: currentError } = await supabase
+        .from('erp_contracts')
+        .select('id, status, contract_number')
+        .eq('id', contractId)
+        .single()
+
+    if (currentError || !currentContract) throw new Error('Contract not found')
+
+    const currentStatus = currentContract.status as 'draft' | 'active' | 'completed' | 'cancelled' | 'disputed'
+    const allowedTransitions: Record<'draft' | 'active' | 'completed' | 'cancelled' | 'disputed', Array<'active' | 'completed' | 'cancelled' | 'disputed'>> = {
+        draft: ['active', 'cancelled'],
+        active: ['completed', 'cancelled', 'disputed'],
+        completed: [],
+        cancelled: [],
+        disputed: ['active', 'cancelled']
+    }
+
+    if (!allowedTransitions[currentStatus]?.includes(newStatus)) {
+        throw new Error(`Transisi status tidak valid: ${currentStatus} -> ${newStatus}`)
+    }
+
+    const updatePayload: { status: string; updated_at: string; signed_date?: string } = {
+        status: newStatus,
+        updated_at: new Date().toISOString()
+    }
+    if (currentStatus === 'draft' && newStatus === 'active') {
+        updatePayload.signed_date = new Date().toISOString().slice(0, 10)
+    }
+
+    const { error: updateError } = await supabase
+        .from('erp_contracts')
+        .update(updatePayload)
+        .eq('id', contractId)
+
+    if (updateError) throw updateError
+
+    await supabase.from('erp_audit_trail').insert({
+        user_id: user.id,
+        entity_type: 'contract',
+        entity_id: contractId,
+        action_type: 'update_status',
+        old_value: { status: currentStatus },
+        new_value: { status: newStatus, notes, contract_number: currentContract.contract_number }
     })
 
     revalidatePath('/admin/erp')

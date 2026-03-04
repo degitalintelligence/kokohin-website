@@ -17,7 +17,7 @@ export default async function ErpPipelinePage() {
   ] = await Promise.all([
     supabase
       .from('erp_quotations')
-      .select('*, leads(*), erp_quotation_items(*), estimations(id, margin_percentage, total_hpp, erp_estimation_items(*)), catalogs(*), zones(*)')
+      .select('*, leads(*), erp_quotation_items(*, atap:atap_id(name), rangka:rangka_id(name), finishing:finishing_id(name), isian:isian_id(name), catalog:catalog_id(image_url)), estimations(id, margin_percentage, total_hpp, erp_estimation_items(*)), catalogs(*), zones(*)')
       .order('created_at', { ascending: false }),
     supabase
       .from('erp_contracts')

@@ -3,11 +3,11 @@
 import { useTransition } from 'react'
 import { CheckCircle, ArrowRight, Loader2, FileCheck } from 'lucide-react'
 import { updateQuotationStatus } from '@/app/actions/quotations'
-import { createContractFromQuotation } from '@/app/actions/erp'
+import { createContractFromQuotation, updateContractStatus } from '@/app/actions/erp'
 import { toast } from '@/components/ui/toaster'
 
 interface ErpActionButtonProps {
-  type: 'approve_quotation' | 'create_contract'
+  type: 'approve_quotation' | 'create_contract' | 'approve_contract'
   id: string
   label: string
   className?: string
@@ -22,6 +22,9 @@ export default function ErpActionButton({ type, id, label, className }: ErpActio
         if (type === 'approve_quotation') {
           await updateQuotationStatus(id, 'approved')
           toast.success('Penawaran berhasil disetujui')
+        } else if (type === 'approve_contract') {
+          await updateContractStatus(id, 'active')
+          toast.success('Kontrak berhasil diaktifkan')
         } else if (type === 'create_contract') {
           await createContractFromQuotation(id)
           toast.success('Kontrak berhasil diterbitkan')
@@ -37,6 +40,7 @@ export default function ErpActionButton({ type, id, label, className }: ErpActio
   const getIcon = () => {
     if (isPending) return <Loader2 size={12} className="animate-spin" />
     if (type === 'approve_quotation') return <CheckCircle size={12} />
+    if (type === 'approve_contract') return <CheckCircle size={12} />
     if (type === 'create_contract') return <FileCheck size={12} />
     return <ArrowRight size={12} />
   }

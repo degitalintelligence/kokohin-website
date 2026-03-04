@@ -52,7 +52,10 @@ export async function middleware(request: NextRequest) {
         userEmail = user.email ?? null
     }
 
-    const isDevMode = process.env.DEV_MODE === 'true'
+    const isDevMode =
+        process.env.NODE_ENV !== 'production' &&
+        (process.env.DEV_MODE === 'true' ||
+            process.env.NEXT_PUBLIC_DEV_MODE === 'true')
     const hasBypassCookie = request.cookies.get('dev-bypass')?.value === '1'
     const isAuthenticated = !!user || (isDevMode && hasBypassCookie)
 

@@ -25,10 +25,11 @@ interface CreateInvoiceModalProps {
     total_value: number
     payment_terms_json?: PaymentTermsJson | PaymentTerm[] | null
   }
+  existingInvoices?: { payment_stage?: string | null }[] // Added for check
   onClose: () => void
 }
 
-export default function CreateInvoiceModal({ contract, onClose }: CreateInvoiceModalProps) {
+export default function CreateInvoiceModal({ contract, existingInvoices, onClose }: CreateInvoiceModalProps) {
   const [isPending, startTransition] = useTransition()
   
   // Parse payment terms
@@ -48,6 +49,12 @@ export default function CreateInvoiceModal({ contract, onClose }: CreateInvoiceM
   }
 
   const handleCreateInvoice = (term: PaymentTerm) => {
+    // Check if already invoiced (Extra safety)
+    if (existingInvoices?.some(inv => inv.payment_stage === term.label)) {
+      toast.error('Gagal', `Invoice untuk ${term.label} sudah pernah diterbitkan.`)
+      return
+    }
+
     startTransition(async () => {
       try {
         await createInvoiceFromContract(contract.id, {
@@ -93,20 +100,33 @@ export default function CreateInvoiceModal({ contract, onClose }: CreateInvoiceM
             <label className="text-[10px] font-black text-gray-500 uppercase tracking-tight ml-1">Pilih Termin Pembayaran</label>
             {termsArray.map((term: PaymentTerm, idx: number) => {
               const amount = Math.ceil(contract.total_value * (term.percent / 100))
+              const isInvoiced = existingInvoices?.some(inv => inv.payment_stage === term.label)
+
               return (
                 <button
                   key={idx}
-                  onClick={() => handleCreateInvoice(term)}
-                  disabled={isPending}
-                  className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-white border border-gray-100 hover:border-orange-200 hover:shadow-md rounded-2xl transition-all group disabled:opacity-50"
+                  onClick={() => !isInvoiced && handleCreateInvoice(term)}
+                  disabled={isPending || isInvoiced}
+                  className={`w-full flex items-center justify-between p-4 border rounded-2xl transition-all group ${
+                    isInvoiced 
+                      ? 'bg-gray-100 border-gray-200 opacity-60 cursor-not-allowed' 
+                      : 'bg-gray-50 hover:bg-white border-gray-100 hover:border-orange-200 hover:shadow-md'
+                  }`}
                 >
                   <div className="text-left">
-                    <span className="block font-black text-gray-900 text-sm group-hover:text-orange-600">{term.label}</span>
+                    <span className={`block font-black text-sm ${isInvoiced ? 'text-gray-400' : 'text-gray-900 group-hover:text-orange-600'}`}>
+                      {term.label}
+                      {isInvoiced && <span className="ml-2 text-[8px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full uppercase">Sudah Terbit</span>}
+                    </span>
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">{term.percent}% dari total kontrak</span>
                   </div>
                   <div className="text-right flex items-center gap-3">
-                    <span className="font-black text-gray-900">Rp {formatCurrency(amount)}</span>
-                    <CheckCircle2 size={18} className="text-gray-200 group-hover:text-orange-500 transition-colors" />
+                    <span className={`font-black ${isInvoiced ? 'text-gray-400' : 'text-gray-900'}`}>Rp {formatCurrency(amount)}</span>
+                    {isInvoiced ? (
+                      <CheckCircle2 size={18} className="text-green-500" />
+                    ) : (
+                      <CheckCircle2 size={18} className="text-gray-200 group-hover:text-orange-500 transition-colors" />
+                    )}
                   </div>
                 </button>
               )

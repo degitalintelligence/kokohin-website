@@ -344,22 +344,31 @@ const parseCsv = (text: string) => {
   return rows
 }
 
-export default async function AdminMaterialsPage({ searchParams }: { searchParams: Promise<{ category?: string; import?: string; error?: string; notice?: string }> }) {
-  const { category: rawCategory, import: importStatus, error: errorParam, notice } = await searchParams
+export default async function AdminMaterialsPage({ searchParams }: { searchParams: Promise<{ category?: string; import?: string; error?: string; notice?: string; page?: string }> }) {
+  const { category: rawCategory, import: importStatus, error: errorParam, notice, page: rawPage } = await searchParams
   const allowedCategories = new Set(['atap', 'frame', 'aksesoris', 'finishing', 'isian', 'lainnya'])
   const activeCategory = rawCategory && allowedCategories.has(rawCategory) ? rawCategory as 'atap'|'frame'|'aksesoris'|'lainnya' : null
+  const pageSize = 50
+  const currentPage = Math.max(1, Number.isFinite(Number(rawPage)) && Number(rawPage) > 0 ? Number(rawPage) : 1)
+  const from = (currentPage - 1) * pageSize
+  const to = from + pageSize - 1
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
   if (!user && !bypass) redirect('/admin/login')
 
   // Fetch materials from Supabase
-  let query = supabase.from('materials').select('*').order('created_at', { ascending: false })
+  let query = supabase
+    .from('materials')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
   if (activeCategory) {
     query = query.eq('category', activeCategory)
   }
-  const { data: materialsRaw, error } = await query
+  const { data: materialsRaw, error, count } = await query.range(from, to)
   const materials = materialsRaw || []
+  const totalMaterials = count ?? materials.length
+  const totalPages = Math.max(1, Math.ceil(totalMaterials / pageSize))
 
   if (error) {
     console.error('Error fetching materials:', {
@@ -425,7 +434,7 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
           </div>
           <div>
             <p className="text-sm font-bold text-gray-500">Total Material</p>
-            <h3 className="text-2xl font-extrabold text-gray-900">{materials?.length ?? 0}</h3>
+            <h3 className="text-2xl font-extrabold text-gray-900">{totalMaterials}</h3>
           </div>
         </div>
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4 border-l-4 border-l-[#E30613]">
@@ -456,7 +465,7 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
         <div className={styles.section}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>
-              {activeCategory ? `Material — ${activeCategory.toUpperCase()}` : 'Semua Material'} ({materials?.length ?? 0})
+              {activeCategory ? `Material — ${activeCategory.toUpperCase()}` : 'Semua Material'} ({totalMaterials})
             </h2>
             <div className="flex flex-wrap items-center gap-2">
               <ImportCsvForm importMaterials={importMaterials} />
@@ -501,6 +510,47 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
             </div>
           )}
           <MaterialsListClient materials={materials ?? []} />
+          <div className="mt-4 flex items-center justify-between text-xs text-gray-600 px-5">
+            <span>
+              Menampilkan{' '}
+              <span className="font-semibold">
+                {materials.length > 0 ? from + 1 : 0}–{from + materials.length}
+              </span>{' '}
+              dari <span className="font-semibold">{totalMaterials}</span> material
+            </span>
+            <div className="flex items-center gap-2">
+              <Link
+                href={{
+                  pathname: '/admin/materials',
+                  query: {
+                    ...(activeCategory ? { category: activeCategory } : {}),
+                    page: Math.max(1, currentPage - 1),
+                  },
+                }}
+                className="px-2 py-1 rounded-md border border-gray-300 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                aria-disabled={currentPage === 1}
+              >
+                Sebelumnya
+              </Link>
+              <span>
+                Halaman <span className="font-semibold">{currentPage}</span> dari{' '}
+                <span className="font-semibold">{totalPages}</span>
+              </span>
+              <Link
+                href={{
+                  pathname: '/admin/materials',
+                  query: {
+                    ...(activeCategory ? { category: activeCategory } : {}),
+                    page: Math.min(totalPages, currentPage + 1),
+                  },
+                }}
+                className="px-2 py-1 rounded-md border border-gray-300 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                aria-disabled={currentPage === totalPages}
+              >
+                Berikutnya
+              </Link>
+            </div>
+          </div>
         </div>
 
         {/* Info Panel */}

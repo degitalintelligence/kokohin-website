@@ -1,12 +1,25 @@
 import React from 'react';
-import { Page, Text, View, Document, StyleSheet, Image as PdfImage } from '@react-pdf/renderer';
+import { Page, Text, View, Document, StyleSheet, Image as PdfImage, Font } from '@react-pdf/renderer';
 
-// Standard Helvetica or register Montserrat if needed
+let fontsRegistered = false
+
+function ensureFontsRegistered() {
+  if (fontsRegistered) return
+  try {
+    const basePath = '/fonts'
+    Font.register({ family: 'Montserrat', src: `${basePath}/Montserrat-Regular.ttf` })
+    Font.register({ family: 'Montserrat', src: `${basePath}/Montserrat-Bold.ttf`, fontWeight: 'bold' })
+    Font.register({ family: 'Montserrat', src: `${basePath}/Montserrat-Italic.ttf`, fontStyle: 'italic' })
+    fontsRegistered = true
+  } catch {
+  }
+}
+
 const styles = StyleSheet.create({
   page: {
     padding: 50,
     fontSize: 10,
-    fontFamily: 'Helvetica',
+    fontFamily: 'Montserrat',
     lineHeight: 1.5,
     color: '#333',
   },
@@ -178,12 +191,27 @@ const styles = StyleSheet.create({
   },
   bold: {
     fontWeight: 'bold',
-  }
+  },
+  watermark: {
+    position: 'absolute',
+    top: '45%',
+    left: '10%',
+    right: '10%',
+    textAlign: 'center',
+    fontSize: 72,
+    color: '#F97316',
+    opacity: 0.12,
+    fontWeight: 'bold',
+    transform: 'rotate(-30deg)',
+    letterSpacing: 8,
+    zIndex: 1,
+  },
 });
 
 interface InvoicePDFProps {
   invoice: {
     invoice_number?: string
+    status?: string
     created_at?: string
     due_date?: string
     total_amount?: number
@@ -209,9 +237,11 @@ interface InvoicePDFProps {
     }[]
   }
   logoUrl?: string | null
+  watermarkText?: string
 }
 
-export const InvoicePDF = ({ invoice, logoUrl }: InvoicePDFProps) => {
+export const InvoicePDF = ({ invoice, logoUrl, watermarkText }: InvoicePDFProps) => {
+  ensureFontsRegistered()
   const contract = invoice.erp_contracts
   const quotation = contract?.erp_quotations
   const lead = quotation?.leads
@@ -240,6 +270,7 @@ export const InvoicePDF = ({ invoice, logoUrl }: InvoicePDFProps) => {
   return (
     <Document>
       <Page size="A4" style={styles.page}>
+        {watermarkText && <Text style={styles.watermark}>{watermarkText}</Text>}
         {/* Header */}
         <View style={styles.header}>
           <View>
