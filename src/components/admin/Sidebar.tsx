@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { signOut } from '@/app/actions/auth'
-import { LogOut, LayoutDashboard, Users, Box, BookOpen, Map, Briefcase, Settings, ExternalLink, Wrench, Camera, Calendar } from 'lucide-react'
+import { LogOut, LayoutDashboard, Users, Box, BookOpen, Map, Briefcase, Settings, ExternalLink, Wrench, Camera, Calendar, MessageSquare } from 'lucide-react'
 
 type AppRole = 'super_admin' | 'admin_sales' | 'admin_proyek' | null
 
@@ -25,7 +25,7 @@ export default function Sidebar() {
             const { data: profile } = await supabase
                 .from('profiles')
                 .select('role')
-                .eq('id', user.id)
+                .eq( 'id', user.id)
                 .maybeSingle()
             const storedRole = (profile as { role?: string } | null)?.role as AppRole ?? null
             const effectiveRole: AppRole =
@@ -37,18 +37,22 @@ export default function Sidebar() {
     }, [])
 
     const isActive = (href: string) => {
+        if (!pathname) return false
         if (href === '/admin' && pathname === '/admin') return true
         if (href !== '/admin' && pathname.startsWith(href)) return true
         return false
     }
 
-    const navItemClass = (href: string) => `
-        flex items-center gap-3 px-6 py-3 text-sm font-medium transition-all border-l-[3px]
-        ${isActive(href) 
-            ? 'bg-[#E30613]/10 text-[#ff3a47] border-l-[#E30613] font-semibold' 
-            : 'text-white/70 hover:bg-white/5 hover:text-white/90 border-l-transparent hover:border-l-white/15'}
-    `
+    const navItemClass = (href: string) => {
+        const active = isActive(href)
+        return `flex items-center gap-3 px-6 py-3 text-sm font-medium transition-all border-l-[3px] ${
+            active 
+                ? 'bg-[#E30613]/10 text-[#ff3a47] border-l-[#E30613] font-semibold' 
+                : 'text-white/70 hover:bg-white/5 hover:text-white/90 border-l-transparent hover:border-l-white/15'
+        }`
+    }
 
+    // Return a consistent structure for SSR and hydration
     return (
         <aside className="bg-[#1D1D1B] flex flex-col h-screen sticky top-0 overflow-hidden w-[240px] shrink-0 font-sans">
             <div className="flex items-center gap-2.5 text-lg font-extrabold text-white p-7 border-b border-white/5 tracking-tight">
@@ -64,6 +68,10 @@ export default function Sidebar() {
                 <Link href="/admin/leads" className={navItemClass('/admin/leads')}>
                     <Users size={18} />
                     Leads
+                </Link>
+                <Link href="/admin/whatsapp" className={navItemClass('/admin/whatsapp')}>
+                    <MessageSquare size={18} />
+                    WhatsApp Chat
                 </Link>
 
                 <div className="px-6 pt-5 pb-1.5 text-[0.68rem] font-bold text-white/25 uppercase tracking-widest">

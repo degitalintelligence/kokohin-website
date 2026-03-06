@@ -9,16 +9,13 @@ import { LeadConversionProvider } from '@/components/admin/LeadConversionContext
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
-    const saved = localStorage.getItem('adminSidebarOpen')
-    return saved === 'true'
+    return localStorage.getItem('adminSidebarOpen') === 'true'
   })
   const touchStartX = useRef<number | null>(null)
   const touchActive = useRef(false)
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('adminSidebarOpen', open ? 'true' : 'false')
-    }
+    localStorage.setItem('adminSidebarOpen', open ? 'true' : 'false')
   }, [open])
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {

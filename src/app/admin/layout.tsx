@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { ensureCurrentUserProfile } from '@/app/actions/users'
 
 export const metadata: Metadata = {
     title: {
@@ -9,6 +10,7 @@ export const metadata: Metadata = {
     robots: { index: false, follow: false },
 }
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+    await ensureCurrentUserProfile()
     return children
 }

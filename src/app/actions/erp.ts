@@ -3,6 +3,18 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { ALLOWED_ADMIN_ROLES, isRoleAllowed } from '@/lib/rbac'
+import { waha } from '@/lib/waha'
+
+// Helper to send WhatsApp notification
+async function sendWaNotification(phone: string, message: string) {
+    try {
+        const cleanPhone = phone.replace(/\D/g, '')
+        const jid = cleanPhone.includes('@') ? cleanPhone : `${cleanPhone}@c.us`
+        await waha.sendMessage(jid, message)
+    } catch (error) {
+        console.error('Failed to send WA notification:', error)
+    }
+}
 
 interface PaymentTermsJson {
     t1_percent?: number
@@ -121,6 +133,13 @@ export async function createContractFromQuotation(quotationId: string) {
         new_value: { id: contractId, contract_number: ctrNumber }
     })
 
+    // 5. Trigger WhatsApp Notification
+    const { data: lead } = await supabase.from('leads').select('phone, name').eq('id', qtn.lead_id).single()
+    if (lead?.phone) {
+        const msg = `Halo ${lead.name || 'Pelanggan'}, kontrak proyek Kokohin Anda (${ctrNumber}) telah diterbitkan. Silakan hubungi admin untuk langkah selanjutnya. Terima kasih!`
+        await sendWaNotification(lead.phone, msg)
+    }
+
     revalidatePath('/admin/erp')
     return { success: true, contractId }
 }
@@ -187,6 +206,7 @@ export async function createInvoiceFromContract(contractId: string, options?: { 
         type: 'service'
     })
 
+    // Log Audit Trail
     await supabase.from('erp_audit_trail').insert({
         user_id: user.id,
         entity_type: 'invoice',
@@ -194,6 +214,13 @@ export async function createInvoiceFromContract(contractId: string, options?: { 
         action_type: 'create',
         new_value: { ...invoice, stage: options?.stageName }
     })
+
+    // Trigger WhatsApp Notification
+    const { data: lead } = await supabase.from('leads').select('phone, name').eq('id', ctr.lead_id).single()
+    if (lead?.phone) {
+        const msg = `Halo ${lead.name || 'Pelanggan'}, invoice baru Kokohin (${invNumber}) untuk termin "${options?.stageName || 'Tagihan Proyek'}" telah diterbitkan. Silakan cek detailnya di admin. Terima kasih!`
+        await sendWaNotification(lead.phone, msg)
+    }
 
     revalidatePath('/admin/erp')
     return { success: true, invoiceId: invoice.id }
@@ -374,6 +401,7 @@ export async function recordPayment(invoiceId: string, data: { amount: number, m
         updated_at: new Date().toISOString()
     }).eq('id', invoiceId)
 
+    // Log Audit Trail
     await supabase.from('erp_audit_trail').insert({
         user_id: user.id,
         entity_type: 'payment',
@@ -381,6 +409,15 @@ export async function recordPayment(invoiceId: string, data: { amount: number, m
         action_type: 'record',
         new_value: payment
     })
+
+    // Trigger WhatsApp Notification
+    const { data: inv } = await supabase.from('erp_invoices').select('invoice_number, contract_id').eq('id', invoiceId).single()
+    const { data: contract } = await supabase.from('erp_contracts').select('lead_id').eq('id', inv?.contract_id).single()
+    const { data: lead } = await supabase.from('leads').select('phone, name').eq('id', contract?.lead_id).single()
+    if (lead?.phone) {
+        const msg = `Halo ${lead.name || 'Pelanggan'}, pembayaran untuk invoice Kokohin (${inv?.invoice_number}) telah kami terima. Terima kasih!`
+        await sendWaNotification(lead.phone, msg)
+    }
 
     revalidatePath('/admin/erp')
     return { success: true }

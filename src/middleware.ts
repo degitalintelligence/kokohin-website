@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { isRoleAllowed, ALLOWED_MATERIALS_ROLES } from '@/lib/rbac'
+import { isRoleAllowed, ALLOWED_MATERIALS_ROLES, ALLOWED_ADMIN_ROLES } from '@/lib/rbac'
 
 export async function middleware(request: NextRequest) {
     const nodeMajor = Number(process.versions.node.split('.')[0] ?? 0)
@@ -78,6 +78,35 @@ export async function middleware(request: NextRequest) {
                         .maybeSingle()
                     const dbRole = (profile as { role?: string } | null)?.role ?? null
                     if (!isRoleAllowed(dbRole, ALLOWED_MATERIALS_ROLES, userEmail)) {
+                        const leadsUrl = request.nextUrl.clone()
+                        leadsUrl.pathname = '/admin/leads'
+                        return NextResponse.redirect(leadsUrl)
+                    }
+                } catch {
+                    const leadsUrl = request.nextUrl.clone()
+                    leadsUrl.pathname = '/admin/leads'
+                    return NextResponse.redirect(leadsUrl)
+                }
+            } else {
+                const leadsUrl = request.nextUrl.clone()
+                leadsUrl.pathname = '/admin/leads'
+                return NextResponse.redirect(leadsUrl)
+            }
+        }
+    }
+
+    const isWhatsAppAdminRoute = pathname.startsWith('/admin/whatsapp')
+    if (isWhatsAppAdminRoute) {
+        if (!isRoleAllowed(userRole, ALLOWED_ADMIN_ROLES, userEmail)) {
+            if (user) {
+                try {
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('role')
+                        .eq('id', user.id)
+                        .maybeSingle()
+                    const dbRole = (profile as { role?: string } | null)?.role ?? null
+                    if (!isRoleAllowed(dbRole, ALLOWED_ADMIN_ROLES, userEmail)) {
                         const leadsUrl = request.nextUrl.clone()
                         leadsUrl.pathname = '/admin/leads'
                         return NextResponse.redirect(leadsUrl)
