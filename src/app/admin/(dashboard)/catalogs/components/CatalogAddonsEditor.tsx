@@ -232,7 +232,7 @@ export default function CatalogAddonsEditor({
                     <button
                       type="button"
                       onClick={() => removeRow(idx)}
-                      className="absolute -top-1 -right-1 lg:-right-4 lg:top-8 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all opacity-0 group-hover:opacity-100"
+                      className="absolute -top-1 -right-1 lg:-right-4 lg:top-8 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all lg:opacity-0 lg:group-hover:opacity-100"
                       title="Hapus Baris"
                     >
                       <Trash2 className="w-4 h-4" />

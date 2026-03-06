@@ -15,9 +15,9 @@ function SubmitButton() {
       {pending ? (
         <>
           <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-current border-r-transparent"></span>
-          Importing...
+          Mengimpor...
         </>
-      ) : 'Import CSV'}
+      ) : 'Impor CSV'}
     </button>
   )
 }
@@ -50,19 +50,19 @@ export default function ImportCsvForm({ importMaterials }: ImportCsvFormProps) {
     setError(null)
     const file = formData.get('file') as File | null
     if (!file) {
-      setError('Please select a CSV file')
+      setError('Silakan pilih file CSV')
       return
     }
     
     // Validate file type
     if (!file.name.toLowerCase().endsWith('.csv')) {
-      setError('File must be a CSV (.csv)')
+      setError('File harus berformat CSV (.csv)')
       return
     }
 
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      setError('File size must be less than 5MB')
+      setError('Ukuran file maksimal 5MB')
       return
     }
 
@@ -73,7 +73,7 @@ export default function ImportCsvForm({ importMaterials }: ImportCsvFormProps) {
       router.replace('/admin/materials?import=1')
     } catch (err) {
       console.error('Import error:', err)
-      setError(err instanceof Error ? err.message : 'Failed to import CSV')
+      setError(err instanceof Error ? err.message : 'Gagal mengimpor CSV')
     }
   }
 
@@ -85,7 +85,7 @@ export default function ImportCsvForm({ importMaterials }: ImportCsvFormProps) {
         className="btn btn-outline-dark btn-sm"
         onClick={() => setOpen((v) => !v)}
       >
-        Import CSV
+        Impor CSV
       </button>
       {open && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -98,7 +98,11 @@ export default function ImportCsvForm({ importMaterials }: ImportCsvFormProps) {
           >
             <form action={handleSubmit} className="space-y-3">
               <div>
+                <label htmlFor="materials-csv-file" className="block text-sm font-semibold text-gray-700 mb-2">
+                  Pilih file CSV
+                </label>
                 <input
+                  id="materials-csv-file"
                   type="file"
                   name="file"
                   accept=".csv"
@@ -107,7 +111,7 @@ export default function ImportCsvForm({ importMaterials }: ImportCsvFormProps) {
                 />
                 {fileName && (
                   <div className="text-xs text-gray-600 mt-1">
-                    Selected: {fileName}
+                    Dipilih: {fileName}
                   </div>
                 )}
               </div>

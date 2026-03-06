@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { errorResponse } from '@/lib/api-response'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -20,8 +21,8 @@ export async function GET(request: Request) {
       .select('id,name,unit,base_price_per_unit,length_per_unit,is_laser_cut,requires_sealant,is_active')
       .eq('id', id)
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    if (!data || (data as { is_active?: boolean }).is_active === false) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (error) return errorResponse('INTERNAL_ERROR', 'Failed to fetch material', 500, error.message)
+    if (!data || (data as { is_active?: boolean }).is_active === false) return errorResponse('NOT_FOUND', 'Not found', 404)
     const row = data as {
       id: string
       name: string
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
       .ilike('name', `%${search}%`)
       .order('name')
       .limit(1)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return errorResponse('INTERNAL_ERROR', 'Failed to search material', 500, error.message)
     const row = Array.isArray(data) && data.length > 0 ? data[0] : null
     if (!row) return NextResponse.json({ material: null })
     return NextResponse.json({ material: { id: row.id, name: row.name, base_price_per_unit: row.base_price_per_unit } })
@@ -64,9 +65,9 @@ export async function GET(request: Request) {
       .eq('category', category)
       .eq('is_active', true)
       .order('name')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return errorResponse('INTERNAL_ERROR', 'Failed to fetch materials by category', 500, error.message)
     return NextResponse.json({ materials: data ?? [] })
   }
 
-  return NextResponse.json({ error: 'Bad Request' }, { status: 400 })
+  return errorResponse('BAD_REQUEST', 'Bad Request', 400)
 }

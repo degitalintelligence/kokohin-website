@@ -253,9 +253,14 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
     const totalHpp = catalogHppSubtotal + addonCost
     const marginPercentage = row.margin_percentage ?? 0
 
-    let markupPercentage = 0
-    let flatFee = 0
-    if (input.zoneId) {
+    let markupPercentage = typeof input.zoneMarkupPercentage === 'number'
+      ? input.zoneMarkupPercentage
+      : 0
+    let flatFee = typeof input.zoneFlatFee === 'number'
+      ? input.zoneFlatFee
+      : 0
+
+    if ((markupPercentage === 0 && flatFee === 0) && input.zoneId) {
       try {
         const zr = await fetch(`/api/public/zones?id=${encodeURIComponent(input.zoneId)}`, { cache: 'no-store' })
         if (zr.ok) {
@@ -267,6 +272,27 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
     }
     const priceBeforeMarkup = sellingSubtotal + addonCost
     const estimatedPrice = applyZoneMarkup(priceBeforeMarkup, markupPercentage, flatFee)
+
+    try {
+      const auditPayload = {
+        type: 'price_audit',
+        timestamp: new Date().toISOString(),
+        source: 'public_calculator',
+        catalogId: input.catalogId ?? null,
+        zoneId: input.zoneId ?? null,
+        unit,
+        luas,
+        computedQty,
+        basePricePerUnit: row.base_price_per_m2 ?? 0,
+        sellingSubtotal,
+        addonCost,
+        priceBeforeMarkup,
+        markupPercentage,
+        flatFee,
+        estimatedPrice,
+      }
+      console.warn('[PriceAudit]', JSON.stringify(auditPayload))
+    } catch {}
 
     // Validasi auto-upsell constraints
     const warnings: string[] = []

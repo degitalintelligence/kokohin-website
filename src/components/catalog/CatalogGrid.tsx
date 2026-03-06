@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import type { Catalog } from '@/lib/types'
 
 
@@ -15,7 +16,6 @@ interface CatalogWithRelations extends Omit<Catalog, 'atap' | 'rangka' | 'finish
 }
 
 export default function CatalogGrid() {
-  const [selectedCatalog, setSelectedCatalog] = useState<string | null>(null)
   const [catalogs, setCatalogs] = useState<CatalogWithRelations[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -183,144 +183,138 @@ export default function CatalogGrid() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
           {sorted.map((catalog) => {
-          const unit = catalog.base_price_unit ?? 'm2'
-          const sampleQty = unit === 'unit' ? 1 : 10
-          const estimatedPrice = calculatePriceForArea(catalog.base_price_per_m2, sampleQty)
-          const isSelected = selectedCatalog === catalog.id
-          
-          return (
-            <div
-              key={catalog.id}
-              className={`group relative bg-white rounded-2xl shadow-lg overflow-hidden border-2 transition-all duration-300 hover:shadow-xl ${
-                isSelected ? 'border-primary shadow-brand' : 'border-transparent'
-              }`}
-              onClick={() => setSelectedCatalog(catalog.id)}
-            >
-              {catalog.is_popular ? (
-                <div className="absolute top-4 left-4 z-10">
-                  <div className="px-3 py-1 bg-primary text-white text-xs font-bold rounded-full">
-                    POPULER
-                  </div>
-                </div>
-              ) : null}
-              
-              {/* Image */}
-              <div className="relative aspect-[4/3] overflow-hidden bg-gray-100">
-                <Image
-                  src={catalog.image_url || 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop'}
-                  alt={catalog.title}
-                  fill
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                  className="object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-              </div>
-              
-              {/* Content */}
-              <div className="p-6">
-                <h3 className="text-xl font-bold text-primary-dark mb-3 whitespace-normal break-words">
-                  {catalog.title}
-                </h3>
-                <div className="mb-2">
-                  <span
-                    className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-primary text-white"
-                    title={unit === 'm2' ? 'Kalkulasi: m² = panjang × lebar' : unit === 'm1' ? 'Kalkulasi: m¹ = panjang' : 'Kalkulasi: unit = jumlah'}
-                  >
-                    Satuan: {unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : 'unit'}
-                  </span>
-                </div>
-                
-                <div className="space-y-4 mb-6">
-                  <div>
-                    <div className="flex flex-col">
-                      <span className="text-sm text-gray-500 font-medium">Mulai dari</span>
-                      <div className="mt-1">
-                        <span className="text-2xl font-bold text-primary">
-                          {formatRupiah(catalog.base_price_per_m2)}
-                        </span>
-                        <span className="text-gray-500">
-                          {`/${unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : 'unit'}`}
-                        </span>
-                      </div>
+            const unit = catalog.base_price_unit ?? 'm2'
+            const sampleQty = unit === 'unit' ? 1 : 10
+            const estimatedPrice = calculatePriceForArea(catalog.base_price_per_m2, sampleQty)
+            
+            return (
+              <div
+                key={catalog.id}
+                className="group relative bg-white rounded-2xl shadow-lg overflow-hidden border-2 transition-all duration-300 hover:shadow-xl border-transparent flex flex-col"
+              >
+                {catalog.is_popular ? (
+                  <div className="absolute top-4 left-4 z-10">
+                    <div className="px-3 py-1 bg-primary text-white text-xs font-bold rounded-full">
+                      POPULER
                     </div>
-                    <p className="text-sm text-gray-600">
-                      Estimasi {sampleQty}{unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : ' unit'}: <span className="font-semibold">{formatRupiah(estimatedPrice)}</span>
-                    </p>
+                  </div>
+                ) : null}
+                
+                {/* Image */}
+                <Link href={`/katalog/${catalog.id}`} className="relative aspect-[4/3] overflow-hidden bg-gray-100 block">
+                  <Image
+                    src={catalog.image_url || 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop'}
+                    alt={catalog.title}
+                    fill
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    className="object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                </Link>
+                
+                {/* Content */}
+                <div className="p-6 flex-1 flex flex-col">
+                  <Link href={`/katalog/${catalog.id}`}>
+                    <h3 className="text-xl font-bold text-primary-dark mb-3 whitespace-normal break-words hover:text-primary transition-colors">
+                      {catalog.title}
+                    </h3>
+                  </Link>
+                  <div className="mb-2">
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-primary text-white"
+                      title={unit === 'm2' ? 'Kalkulasi: m² = panjang × lebar' : unit === 'm1' ? 'Kalkulasi: m¹ = panjang' : 'Kalkulasi: unit = jumlah'}
+                    >
+                      Satuan: {unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : 'unit'}
+                    </span>
                   </div>
                   
-                  {catalog.atap?.name || catalog.rangka?.name || catalog.isian?.name || catalog.finishing?.name ? (
-                    <div className="pb-4">
-                      <h4 className="text-sm font-semibold text-gray-700 mb-2">Material yang digunakan:</h4>
+                  <div className="space-y-4 mb-6">
+                    <div>
+                      <div className="flex flex-col">
+                        <span className="text-sm text-gray-500 font-medium">Mulai dari</span>
+                        <div className="mt-1">
+                          <span className="text-2xl font-bold text-primary">
+                            {formatRupiah(catalog.base_price_per_m2)}
+                          </span>
+                          <span className="text-gray-500">
+                            {`/${unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : 'unit'}`}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-600">
+                        Estimasi {sampleQty}{unit === 'm2' ? 'm²' : unit === 'm1' ? 'm¹' : ' unit'}: <span className="font-semibold">{formatRupiah(estimatedPrice)}</span>
+                      </p>
+                    </div>
+                    
+                    {catalog.atap?.name || catalog.rangka?.name || catalog.isian?.name || catalog.finishing?.name ? (
+                      <div className="pb-4">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Material yang digunakan:</h4>
+                        <ul className="space-y-2">
+                          {catalog.atap?.name && (
+                            <li className="flex items-start gap-2 text-sm">
+                              <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
+                              <span>Atap: {catalog.atap.name}</span>
+                            </li>
+                          )}
+                          {catalog.rangka?.name && (
+                            <li className="flex items-start gap-2 text-sm">
+                              <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
+                              <span>Rangka: {catalog.rangka.name}</span>
+                            </li>
+                          )}
+                          {catalog.isian?.name && (
+                            <li className="flex items-start gap-2 text-sm">
+                              <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
+                              <span>Isian: {catalog.isian.name}</span>
+                            </li>
+                          )}
+                          {catalog.finishing?.name && (
+                            <li className="flex items-start gap-2 text-sm">
+                              <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
+                              <span>Finishing: {catalog.finishing.name}</span>
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    ) : null}
+                    
+                    <div className="pt-4 border-t border-gray-100">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">Termasuk:</h4>
                       <ul className="space-y-2">
-                        {catalog.atap?.name && (
-                          <li className="flex items-start gap-2 text-sm">
-                            <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
-                            <span>Atap: {catalog.atap.name}</span>
-                          </li>
-                        )}
-                        {catalog.rangka?.name && (
-                          <li className="flex items-start gap-2 text-sm">
-                            <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
-                            <span>Rangka: {catalog.rangka.name}</span>
-                          </li>
-                        )}
-                        {catalog.isian?.name && (
-                          <li className="flex items-start gap-2 text-sm">
-                            <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
-                            <span>Isian: {catalog.isian.name}</span>
-                          </li>
-                        )}
-                        {catalog.finishing?.name && (
-                          <li className="flex items-start gap-2 text-sm">
-                            <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
-                            <span>Finishing: {catalog.finishing.name}</span>
-                          </li>
-                        )}
+                        <li className="flex items-start gap-2 text-sm">
+                          <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
+                          <span>Material berkualitas</span>
+                        </li>
+                        <li className="flex items-start gap-2 text-sm">
+                          <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
+                          <span>Pemasangan profesional</span>
+                        </li>
+                        <li className="flex items-start gap-2 text-sm">
+                          <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
+                          <span>Garansi instalasi</span>
+                        </li>
                       </ul>
                     </div>
-                  ) : null}
+                  </div>
                   
-                  <div className="pt-4 border-t border-gray-100">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-2">Termasuk:</h4>
-                    <ul className="space-y-2">
-                      <li className="flex items-start gap-2 text-sm">
-                        <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
-                        <span>Material berkualitas</span>
-                      </li>
-                      <li className="flex items-start gap-2 text-sm">
-                        <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
-                        <span>Pemasangan profesional</span>
-                      </li>
-                      <li className="flex items-start gap-2 text-sm">
-                        <div className="w-1.5 h-1.5 bg-primary rounded-full mt-1"></div>
-                        <span>Garansi instalasi</span>
-                      </li>
-                    </ul>
+                  <div className="space-y-3 mt-auto">
+                    <Link
+                      href={`/katalog/${catalog.id}`}
+                      className="w-full btn btn-primary flex items-center justify-center gap-2"
+                    >
+                      Lihat Detail Paket
+                    </Link>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        window.location.href = `/kontak`
+                      }}
+                      className="w-full btn btn-outline"
+                    >
+                      Konsultasi Gratis
+                    </button>
                   </div>
                 </div>
-                
-                <div className="space-y-3">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      window.location.href = `/kalkulator?catalog=${catalog.id}`
-                    }}
-                    className="w-full btn btn-primary"
-                  >
-                    Hitung Harga
-                  </button>
-                  
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      window.location.href = `/kontak`
-                    }}
-                    className="w-full btn btn-outline"
-                  >
-                    Konsultasi Gratis
-                  </button>
-                </div>
               </div>
-            </div>
             )
           })}
         </div>

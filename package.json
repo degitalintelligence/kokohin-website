@@ -19,7 +19,8 @@
     "migrate:bootstrap": "node scripts/migrate-bootstrap-history.js",
     "db:sync-report": "node scripts/db-sync-report.js",
     "verify:materials": "node scripts/verify-materials.js",
-    "seed:catalogs": "node scripts/seed-catalogs-from-list.js"
+    "seed:catalogs": "node scripts/seed-catalogs-from-list.js",
+    "test:survey-recurring": "node scripts/test-recurring-slots.js"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.2",

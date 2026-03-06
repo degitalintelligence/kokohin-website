@@ -5,6 +5,7 @@ import { AlertTriangle } from 'lucide-react'
 import CatalogEstimatePreview from '../components/CatalogEstimatePreview'
 import CatalogBaseFields from '../components/CatalogBaseFields'
 import CatalogAddonsEditor from '../components/CatalogAddonsEditor'
+import ImageUpload from '../components/ImageUpload'
 import styles from '../../page.module.css'
 import { createCatalog } from '@/app/actions/catalogs'
 import CatalogSaveButton from '../components/CatalogSaveButton'
@@ -70,6 +71,15 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                   className="input"
                   placeholder="Contoh: Paket Minimalis Atap Alderon"
                   required
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="label">Deskripsi Katalog</label>
+                <textarea
+                  name="description"
+                  className="input min-h-[100px] py-3"
+                  placeholder="Jelaskan keunggulan paket ini kepada pelanggan..."
                 />
               </div>
 
@@ -146,14 +156,10 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
               </div>
 
               <div className="md:col-span-2">
-                <label className="label">Upload Gambar (Opsional)</label>
-                <input
-                  type="file"
-                  name="image_file"
-                  accept="image/*"
-                  className="input"
-                />
-                <p className="text-xs text-gray-500 mt-1">Format: JPG, PNG, WEBP (Max 2MB)</p>
+                <ImageUpload name="image_file" />
+                <p className="text-[10px] text-gray-400 mt-2 italic font-medium">
+                  * Gambar akan otomatis dioptimalkan ukurannya sebelum disimpan.
+                </p>
               </div>
 
               <div className="md:col-span-2 flex items-center pt-4 border-t">

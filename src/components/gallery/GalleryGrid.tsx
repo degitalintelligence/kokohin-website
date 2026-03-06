@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Image from 'next/image'
 import { Construction, Sparkles, Blinds, Wrench, Tent, Home, MapPin, Calendar } from 'lucide-react'
 import type { GalleryProject } from '@/lib/types'
 
@@ -56,9 +57,19 @@ export default function GalleryGrid({ projects, categories }: GalleryGridProps) 
                             <div
                                 className={`relative aspect-[4/3] flex items-center justify-center overflow-hidden ${BG_CLASSES[i % BG_CLASSES.length]}`}
                             >
-                                <div className="text-white/20 z-0 transform scale-150 transition-transform duration-500 group-hover:scale-125">
-                                    <Icon size={80} strokeWidth={1} />
-                                </div>
+                                {p.images && p.images.length > 0 ? (
+                                    <Image
+                                        src={p.images[0]}
+                                        alt={p.title}
+                                        fill
+                                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                                        className="object-cover transition-transform duration-500 group-hover:scale-105"
+                                    />
+                                ) : (
+                                    <div className="text-white/20 z-0 transform scale-150 transition-transform duration-500 group-hover:scale-125">
+                                        <Icon size={80} strokeWidth={1} />
+                                    </div>
+                                )}
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-6 z-10 opacity-0 flex flex-col justify-end transition-opacity duration-300 group-hover:opacity-100">
                                     <span className="text-xs uppercase tracking-wider font-bold text-orange-300 mb-1">{p.service?.name ?? 'Lainnya'}</span>
                                     <h3 className="text-xl font-bold text-white mb-2 leading-tight">{p.title}</h3>

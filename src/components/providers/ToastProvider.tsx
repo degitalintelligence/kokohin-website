@@ -1,7 +1,7 @@
 'use client'
 
-import { Toaster } from 'react-hot-toast'
+import { Toaster } from '@/components/ui/toaster'
 
 export default function ToastProvider() {
-  return <Toaster position="bottom-right" />
+  return <Toaster />
 }

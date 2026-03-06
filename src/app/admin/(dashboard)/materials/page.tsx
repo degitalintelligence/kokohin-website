@@ -432,7 +432,7 @@ const parseCsv = (text: string) => {
 export default async function AdminMaterialsPage({ searchParams }: { searchParams: Promise<{ category?: string; import?: string; error?: string; notice?: string; page?: string }> }) {
   const { category: rawCategory, import: importStatus, error: errorParam, notice, page: rawPage } = await searchParams
   const allowedCategories = new Set(['atap', 'frame', 'aksesoris', 'finishing', 'isian', 'lainnya'])
-  const activeCategory = rawCategory && allowedCategories.has(rawCategory) ? rawCategory as 'atap'|'frame'|'aksesoris'|'lainnya' : null
+  const activeCategory = rawCategory && allowedCategories.has(rawCategory) ? rawCategory as 'atap' | 'frame' | 'aksesoris' | 'finishing' | 'isian' | 'lainnya' : null
   const pageSize = 50
   const currentPage = Math.max(1, Number.isFinite(Number(rawPage)) && Number(rawPage) > 0 ? Number(rawPage) : 1)
   const from = (currentPage - 1) * pageSize
@@ -578,6 +578,18 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
                 className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'aksesoris' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
               >
                 Aksesoris
+              </Link>
+              <Link
+                href="/admin/materials?category=finishing"
+                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'finishing' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+              >
+                Finishing
+              </Link>
+              <Link
+                href="/admin/materials?category=isian"
+                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'isian' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+              >
+                Isian
               </Link>
               <Link
                 href="/admin/materials?category=lainnya"

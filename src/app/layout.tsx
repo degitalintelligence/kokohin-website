@@ -34,7 +34,7 @@ export default async function RootLayout({
 }) {
   const logoUrl = await getLogoUrl()
   return (
-    <html lang="id" className={montserrat.variable}>
+    <html lang="id" className={montserrat.variable} data-scroll-behavior="smooth">
       <body className="font-sans" data-logo-url={logoUrl ?? ''}>
         <RouteProgress />
         {children}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { errorResponse } from '@/lib/api-response'
 
 type RelName = { name: string | null } | null
 type RawRel = { name: string | null } | { name: string | null }[] | null
@@ -46,8 +47,8 @@ export async function GET(request: Request) {
       .select('id, title, image_url, category, atap_id, rangka_id, finishing_id, isian_id, base_price_per_m2, base_price_unit, hpp_per_unit, std_calculation, use_std_calculation, atap:atap_id(name), rangka:rangka_id(name), finishing:finishing_id(name), isian:isian_id(name), is_active, is_popular')
       .eq('id', id)
       .maybeSingle()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    if (!data || (data as CatalogRow).is_active === false) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (error) return errorResponse('INTERNAL_ERROR', 'Failed to fetch catalog', 500, error.message)
+    if (!data || (data as CatalogRow).is_active === false) return errorResponse('NOT_FOUND', 'Not found', 404)
     const row = data as CatalogRow
     
     // Calculate total cost for the API response
@@ -100,7 +101,7 @@ export async function GET(request: Request) {
     query = query.limit(limitNum)
   }
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return errorResponse('INTERNAL_ERROR', 'Failed to fetch catalogs', 500, error.message)
 
   const items = (data as CatalogRow[] ?? []).map((row) => ({
     id: row.id,

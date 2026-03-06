@@ -1,131 +1,322 @@
-🤖 TRAE AI / CURSOR AI DEVELOPMENT RULES
+# 🤖 Kokohin Engineering Rules
 
-Project: Kokohin Web & Mini-ERP
-Context: Next.js (App Router), Tailwind CSS, Supabase (Self-hosted).
+Dokumen ini adalah **standar wajib** untuk AI agent dan developer manusia pada project **Kokohin Web & Mini-ERP**.
 
-🛑 STRICT DIRECTIVES (MANDATORY)
+- **Stack utama:** Next.js (App Router), Tailwind CSS, Supabase (self-hosted)
+- **Tujuan:** menjaga stabilitas sistem, konsistensi kualitas, dan keamanan perubahan
+- **Status aturan:** seluruh poin di bawah ini bersifat **mandatory** kecuali ditandai sebagai rekomendasi
 
-BACA ATURAN INI SEBELUM MENULIS SATU BARIS KODE PUN. PELANGGARAN ATURAN INI AKAN MENYEBABKAN KODE DITOLAK.
+---
 
-1. BRAND GUIDELINES & UI
+## 0. Prinsip Eksekusi Wajib
 
-FONT: WAJIB menggunakan font Montserrat secara eksklusif. Jangan pernah menggunakan font standar lain seperti Inter, Roboto, atau Arial.
+1. Jangan refactor besar pada modul yang sudah stabil tanpa instruksi eksplisit.
+2. Setiap perubahan harus bisa dijelaskan, diuji, dan ditelusuri.
+3. Utamakan perubahan kecil, terukur, dan aman terhadap data produksi.
+4. Jangan pernah mengekspos secret, token, atau credential ke client/log/repository.
 
-COLORS: - Primary Red: #E30613 (Untuk CTA utama, highlight, aksen).
+---
 
-Primary Black: #1D1D1B (Untuk teks utama, bg gelap, elemen solid).
+## 1. Brand Guidelines & UI
 
-AESTHETICS: Gunakan padding/margin yang lega (banyak whitespace). Jangan membuat UI yang terlalu padat atau saling menempel (no cramped UI).
+### 1.1 Font
 
-2. CODE REVISION STANDARDS (SANGAT KRITIKAL)
+- Wajib gunakan **Montserrat** secara eksklusif.
+- Dilarang mengganti ke Inter, Roboto, Arial, atau font lain untuk UI utama.
 
-Jangan pernah berasumsi atau melakukan refactoring massal pada kode yang sudah berjalan (works) tanpa diminta.
+### 1.2 Warna Brand
 
-Revisi Minor (1-2 baris): Berikan HANYA baris kode yang diubah disertai dengan petunjuk lokasi yang sangat spesifik (contoh: "Ganti baris 45 di dalam function X menjadi...").
+- **Primary Red:** `#E30613` untuk CTA, highlight, aksen utama.
+- **Primary Black:** `#1D1D1B` untuk teks utama, background gelap, elemen solid.
 
-Revisi Major (di dalam sebuah Function): Jika perubahan lebih dari 3 baris di dalam sebuah function, WAJIB berikan FULL FUNCTION tersebut agar developer manusia tinggal melakukan copy-paste-replace pada function-nya saja, tanpa membingungkan.
+### 1.3 Tata Letak
 
-Revisi File: - Jika file berukuran < 500 lines: Diperbolehkan mencetak ulang seluruh isi file (full rewrite).
+- Gunakan whitespace yang lega.
+- Hindari UI padat, rapat, dan saling menempel.
 
-Jika file berukuran > 500 lines: DILARANG KERAS mencetak ulang seluruh file. Hanya cetak bagian function atau component yang mengalami perubahan.
+### 1.4 Contoh Implementasi
 
-3. BACKEND & LOGIC CONSTRAINTS
+```tsx
+<button className="btn btn-primary font-sans px-6 py-3">
+  Simpan Perubahan
+</button>
+```
 
-Waste Calculation (Sisa Material): Dalam menghitung kebutuhan material batangan atau lembaran utuh, WAJIB menggunakan Ceiling Math (Math.ceil()). Sisa potongan dibebankan ke customer. (Contoh: Butuh 14m besi, panjang per batang 6m. Maka: Math.ceil(14/6) = 3 batang).
+---
 
-Laser Cut Calculation: Material Plat Laser Cut dihitung berdasarkan Lembar Standar, BUKAN per meter lari/persegi.
+## 2. Standar Revisi Kode
 
-Escape Hatch (Custom Request): Jika input user memiliki bendera jenis == 'custom', BYPASS (LEWATI) semua fungsi auto-kalkulasi harga. Flag project ini di Supabase dengan status Need Manual Quote. Jangan pernah me-return Rp NaN atau harga dummy ke UI.
+### 2.1 Larangan Utama
 
-4. WORKFLOW INJECTIONS
+- Dilarang berasumsi lalu mengubah alur bisnis yang sudah berjalan.
 
-Saat membuat UI/Komponen baru, pastikan warna #E30613 dan font Montserrat diaplikasikan via Tailwind classes. Gunakan whitespace yang lega dan elemen aksesibel.
+### 2.2 Format Penyajian Revisi
 
-Jangan meng-install library/package eksternal baru tanpa meminta persetujuan user terlebih dahulu (Kecuali standar esensial Next.js seperti lucide-react untuk icon).
+- **Revisi minor (1–2 baris):** tampilkan hanya baris yang berubah + lokasi spesifik.
+- **Revisi mayor dalam function (>3 baris):** tampilkan full function.
+- **Revisi file:**
+  - Jika file `< 500` baris: boleh full rewrite.
+  - Jika file `> 500` baris: tampilkan hanya section/function/component yang berubah.
 
-5. BUILD & QUALITY GATES
+---
 
-- Wajib menjalankan: `npm run typecheck` dan `npm run lint` sebelum PR/merge.
-- Dilarang push code dengan error TypeScript atau linting.
-- Ikuti pola Next.js App Router; hindari side effect yang mengganggu SSR/ISR.
+## 3. Backend & Business Logic Constraints
 
-6. DATABASE MIGRATIONS
+### 3.1 Waste Calculation (Wajib Math.ceil)
 
-- Semua perubahan skema database HARUS melalui file SQL di `supabase/migrations/`.
-- Tulis migrasi yang idempoten: gunakan `IF NOT EXISTS` untuk kolom, index, constraint.
-- Terapkan migrasi menggunakan:
-  - Umum: `npm run migrate:apply` (mengelola `public.migration_history`).
-  - Terarah (jika diperlukan): skrip `scripts/run-migration-*.js`.
-- Prasyarat env: `.env.local` berisi `NEXT_PUBLIC_SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY`.
-- DILARANG menjalankan DDL ad‑hoc di produksi tanpa file migrasi.
+- Semua material batangan/lembaran utuh wajib dibulatkan ke atas.
+- Sisa potongan dibebankan ke customer.
 
-7. API, RLS & RBAC
+```ts
+const batang = Math.ceil(kebutuhanMeter / panjangPerBatang)
+```
 
-- Gunakan Supabase server client dari `@/lib/supabase/server` pada route server.
-- Endpoint publik hanya mengembalikan data aktif (misal `is_active = true`).
-- Endpoint admin WAJIB cek role via tabel `profiles` dan `isRoleAllowed`:
-  - Material/Zones sensitif: `ALLOWED_MATERIALS_ROLES = ['super_admin']`.
-  - Admin umum: `ALLOWED_ADMIN_ROLES = ['super_admin','admin_sales','admin_proyek']`.
-- Hormati RLS; jangan mem-bypass kecuali via service role di proses yang memang server‑side terkontrol.
-- Jangan pernah melog atau mengekspos secret/key. DILARANG commit credential ke repository.
+### 3.2 Laser Cut Calculation
 
-8. FRONTEND PATTERNS & A11Y
+- Material plat laser cut dihitung berdasarkan **lembar standar**, bukan per meter lari/persegi.
 
-- Komponen harus aksesibel: gunakan `aria-label`, `aria-expanded`, `aria-controls`, caption tabel, dan manajemen fokus yang benar.
-- Hindari `window.alert/confirm/prompt` untuk UX; gunakan modal konfirmasi yang konsisten (warna #E30613, Montserrat).
-- List bullet: gunakan bullet kecil dan `items-start` agar sejajar atas dengan teks.
-- Gambar: gunakan `next/image` dan domain yang terdaftar di `remotePatterns`. Tambah domain baru via `next.config.js` jika diperlukan.
+```ts
+const sheetArea = 1.22 * 2.44
+const sheetNeeded = Math.ceil(areaNeeded / sheetArea)
+```
 
-9. KEAMANAN & PRAKTIK BAIK
+### 3.3 Escape Hatch untuk Custom Request
 
-- Jangan pernah menampilkan atau menyimpan key di client. Gunakan environment variables dan akses via server.
-- Validasi input pada server; sanitasi body JSON; tangani error dengan aman (hindari bocor stack trace).
-- Logging sensitif dimatikan di produksi.
+- Jika `jenis === 'custom'`, bypass seluruh auto-pricing.
+- Simpan status project: `Need Manual Quote`.
+- Jangan return harga dummy atau `NaN` ke UI.
 
-10. CATATAN KHUSUS BISNIS (REF)
+```ts
+if (input.jenis === 'custom') {
+  return { estimatedPrice: 0, totalSellingPrice: 0, breakdown: [] }
+}
+```
 
-- Perhitungan biaya dan waste mengikuti poin di bagian 3.
-- Untuk permintaan custom: set status project menjadi `Need Manual Quote` dan lewati seluruh auto‑pricing.
+---
 
-11. GOOD PRACTICES (GLOBAL)
+## 4. Workflow Injections
 
-- Commit & Versioning:
-  - Ikuti Conventional Commits 1.0.0 (feat, fix, chore, refactor, docs, test).
-  - Gunakan Semantic Versioning 2.0.0 untuk penomoran rilis internal.
-- Kualitas Kode:
-  - Kode modular, DRY, satu fungsi = satu tanggung jawab. Hindari fungsi > 60 baris.
-  - Penamaan eksplisit dan konsisten; hindari singkatan tidak umum.
-  - TypeScript: hindari `any`, gunakan tipe eksplisit untuk response/data publik.
-- Penanganan Error:
-  - Gunakan HTTP status tepat (4xx untuk client error, 5xx untuk server error).
-  - Jangan bocorkan detail stack trace ke client; log aman di server.
-- Logging & Observability:
-  - Gunakan level log (error, warn, info, debug); matikan debug di produksi.
-  - Jangan pernah menulis secret/token ke log.
-- Testing:
-  - Terapkan testing pyramid: unit > integration > e2e.
-  - Target minimal coverage 80% untuk unit test pada modul kritikal bisnis.
-  - Uji skenario akses (RBAC/RLS) dan error utama.
-- Performance & UX:
-  - Optimalkan Core Web Vitals (LCP, INP, CLS). Gunakan lazy-load & image optimization.
-  - Terapkan cache yang tepat di API (etag/last-modified) dan aset statis.
-- Dokumentasi:
-  - Gunakan TSDoc/JSDoc pada fungsi/komponen publik.
-  - Cantumkan asumsi, batasan, dan keputusan penting pada PR description.
+- Saat membuat komponen baru, pastikan Montserrat + warna brand sudah diterapkan.
+- Dilarang install package eksternal baru tanpa persetujuan user.
+- Pengecualian: library esensial ekosistem Next.js seperti `lucide-react`.
 
-12. INTERNATIONAL STANDARDS REFERENCES
+---
 
-- Aksesibilitas: Penuhi WCAG 2.1 AA untuk komponen dan alur utama.
-- Keamanan:
-  - Rujuk OWASP Top 10 (2021) dan ASVS Level 1 untuk kontrol minimum.
-  - Gunakan header keamanan (CSP, HSTS, X-Content-Type-Options, Referrer-Policy).
-  - Cookie sensitif harus `HttpOnly`, `Secure`, `SameSite=Lax/Strict`.
-- API:
-  - Skema API terdokumentasi dengan OpenAPI 3.1. Versi endpoint (mis. /v1).
-  - Gunakan pola error konsisten (code, message, details), idempoten untuk metode yang sesuai.
-- Waktu & Format:
-  - Base timezone: Asia/Jakarta (WIB, UTC+7) untuk interpretasi bisnis, cut‑off, SLA, dan laporan.
-  - Simpan waktu dalam UTC, format ISO 8601/RFC 3339 pada wire protocol.
-  - Konversi ke Asia/Jakarta di UI dan reporting secara default.
-- Kualitas Perangkat Lunak:
-  - Mengacu ISO/IEC 25010 untuk karakteristik kualitas (functional suitability, reliability, security, maintainability, usability, performance efficiency, compatibility, portability).
+## 5. Build & Quality Gates
+
+Sebelum merge/publish, wajib jalankan:
+
+```bash
+npm run typecheck
+npm run lint
+```
+
+Aturan:
+
+- Dilarang merge jika ada error TypeScript.
+- Dilarang merge jika lint error.
+- Ikuti pola Next.js App Router dan hindari side effect yang mengganggu SSR/ISR.
+
+---
+
+## 6. Database Migrations
+
+### 6.1 Aturan Inti
+
+- Semua perubahan schema harus melalui `supabase/migrations/`.
+- Migration wajib idempoten (`IF NOT EXISTS`, `ON CONFLICT`, atau guard `information_schema`).
+- Dilarang DDL ad-hoc di produksi tanpa file migration.
+
+### 6.2 Perintah Eksekusi
+
+```bash
+npm run migrate:apply
+```
+
+Jika perlu eksekusi terarah, gunakan skrip `scripts/run-migration-*.js`.
+
+### 6.3 Prasyarat Environment
+
+- `.env.local` wajib memiliki:
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+
+### 6.4 Contoh Migration Idempoten
+
+```sql
+ALTER TABLE public.catalogs
+ADD COLUMN IF NOT EXISTS base_price_unit text;
+```
+
+---
+
+## 7. API, RLS & RBAC
+
+### 7.1 Client Supabase
+
+- Route server wajib menggunakan `@/lib/supabase/server`.
+
+### 7.2 Aturan Endpoint
+
+- Endpoint publik hanya boleh return data aktif (`is_active = true`).
+- Endpoint admin wajib cek role via `profiles` + `isRoleAllowed`.
+
+Role yang wajib dipakai:
+
+- `ALLOWED_MATERIALS_ROLES = ['super_admin']`
+- `ALLOWED_ADMIN_ROLES = ['super_admin','admin_sales','admin_proyek']`
+
+### 7.3 Error Response API
+
+- Gunakan pola konsisten: `code`, `message`, `details`.
+
+```json
+{
+  "code": "FORBIDDEN",
+  "message": "Forbidden",
+  "details": null
+}
+```
+
+### 7.4 Keamanan Data
+
+- Hormati RLS.
+- Bypass hanya melalui service role di proses server-side yang terkontrol.
+- Dilarang mengekspos secret/key pada response, log, atau client bundle.
+
+---
+
+## 8. Frontend Patterns & A11Y
+
+- Gunakan atribut aksesibilitas (`aria-label`, `aria-expanded`, `aria-controls`, `aria-describedby`) sesuai konteks.
+- Gunakan modal konfirmasi, bukan `window.alert/confirm/prompt`.
+- Bullet list gunakan style yang menjaga alignment atas (`items-start`).
+- Semua gambar gunakan `next/image` dan domain valid di `remotePatterns` (`next.config.ts`).
+
+---
+
+## 9. Keamanan & Praktik Baik
+
+- Jangan simpan key di client.
+- Validasi input di server.
+- Sanitasi body JSON.
+- Tangani error tanpa membocorkan stack trace internal.
+- Logging sensitif harus nonaktif di production.
+- Terapkan security headers minimal:
+  - `Content-Security-Policy`
+  - `Strict-Transport-Security`
+  - `X-Content-Type-Options`
+  - `Referrer-Policy`
+
+---
+
+## 10. Catatan Khusus Bisnis
+
+- Formula costing dan waste mengikuti bagian 3.
+- Untuk request custom:
+  - bypass auto pricing
+  - status project: `Need Manual Quote`
+
+---
+
+## 11. Good Practices (Global)
+
+### 11.1 Commit & Versioning
+
+- Gunakan Conventional Commits 1.0.0 (`feat`, `fix`, `chore`, `refactor`, `docs`, `test`).
+- Gunakan Semantic Versioning 2.0.0 untuk penomoran rilis internal.
+
+### 11.2 Kualitas Kode
+
+- Kode modular, DRY, satu fungsi satu tanggung jawab.
+- Hindari fungsi melebihi 60 baris bila memungkinkan.
+- Gunakan penamaan eksplisit dan konsisten.
+- Hindari `any`; gunakan tipe eksplisit untuk data publik.
+
+### 11.3 Error Handling
+
+- Gunakan HTTP status tepat (4xx/5xx).
+- Jangan bocorkan detail internal ke client.
+
+### 11.4 Testing
+
+- Terapkan testing pyramid: unit > integration > e2e.
+- Target minimal 80% unit coverage untuk modul bisnis kritikal.
+- Uji skenario RBAC/RLS dan skenario gagal utama.
+
+### 11.5 Performance & UX
+
+- Optimalkan Core Web Vitals (LCP, INP, CLS).
+- Terapkan lazy loading dan optimasi image.
+- Gunakan cache API/aset secara tepat.
+
+### 11.6 Dokumentasi
+
+- Gunakan TSDoc/JSDoc untuk fungsi/komponen publik.
+- Cantumkan asumsi, batasan, dan keputusan penting pada deskripsi PR.
+
+---
+
+## 12. International Standards References
+
+- **Aksesibilitas:** WCAG 2.1 AA.
+- **Keamanan:** OWASP Top 10 (2021), OWASP ASVS Level 1.
+- **API:** OpenAPI 3.1, versi endpoint (misal `/v1`), error schema konsisten.
+- **Waktu & Format:**
+  - timezone bisnis default: Asia/Jakarta (WIB, UTC+7)
+  - simpan waktu dalam UTC (ISO 8601 / RFC 3339)
+  - tampilkan default UI/reporting dalam Asia/Jakarta
+- **Kualitas perangkat lunak:** ISO/IEC 25010.
+
+---
+
+## 13. Checklist Wajib Per Tahap
+
+### 13.1 Planning
+
+- Scope perubahan jelas dan tidak refactor massal tanpa kebutuhan.
+- Dampak ke RLS/RBAC dan migration teridentifikasi.
+- Rule bisnis yang terdampak sudah dipetakan.
+
+### 13.2 Implementation
+
+- Brand guideline dipatuhi.
+- Endpoint admin memiliki auth + role guard.
+- Endpoint publik hanya mengembalikan data aktif dan aman.
+- Logic custom request mengikuti escape hatch.
+
+### 13.3 Verification
+
+- `npm run typecheck` lulus.
+- `npm run lint` lulus.
+- Test bisnis relevan lulus.
+- Tidak ada secret pada response/log.
+
+### 13.4 Pre-Release
+
+- Security headers aktif.
+- Error response konsisten.
+- Timezone UTC/Jakarta konsisten.
+- Tidak ada logging sensitif pada jalur production.
+
+---
+
+## 14. Definition of Done untuk Perubahan
+
+Perubahan dianggap selesai hanya jika:
+
+1. Mematuhi seluruh aturan mandatory di dokumen ini.
+2. Lolos quality gates.
+3. Tidak menurunkan keamanan, stabilitas, dan integritas data.
+4. Dapat direview dengan jelas oleh tim.
+
+---
+
+## 15. Riwayat Perubahan Dokumen
+
+- **2026-03-05**
+  - Restrukturisasi total dokumen agar lebih terorganisasi.
+  - Normalisasi format markdown, heading, dan checklist.
+  - Penambahan contoh implementasi untuk waste, laser cut, custom bypass, migration, dan error response API.
+  - Penajaman aturan keamanan (security headers, sanitasi error, perlindungan secret).
+  - Penambahan checklist eksekusi lintas tahap untuk konsistensi tim.

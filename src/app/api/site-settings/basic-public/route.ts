@@ -2,6 +2,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { errorResponse } from '@/lib/api-response'
 
 export async function GET() {
   const supabase = await createClient()
@@ -11,7 +12,7 @@ export async function GET() {
     .in('key', ['site_name', 'contact_address', 'support_phone', 'support_email'])
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return errorResponse('INTERNAL_ERROR', 'Failed to fetch basic site settings', 500, error.message)
   }
 
   const rows = (data as Array<{ key?: string; value?: string }> | null) ?? []
@@ -27,4 +28,3 @@ export async function GET() {
     support_email: map['support_email'] ?? '',
   })
 }
-

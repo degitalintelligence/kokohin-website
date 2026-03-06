@@ -1,7 +1,7 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useDeferredValue, useMemo, useState } from 'react'
 import styles from '../../page.module.css'
-import { Search } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import Link from 'next/link'
 import MaterialRow from './MaterialRow'
 
@@ -23,17 +23,19 @@ type Props = {
 export default function MaterialsListClient({ materials }: Props) {
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<'name_asc' | 'name_desc' | 'price_asc' | 'price_desc'>('name_asc')
+  const deferredQuery = useDeferredValue(query)
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = deferredQuery.trim().toLowerCase()
     if (!q) return materials
     return materials.filter((m) => {
+      const code = m.code?.toLowerCase() ?? ''
       const name = m.name?.toLowerCase() ?? ''
       const cat = m.category?.toLowerCase() ?? ''
       const unit = m.unit?.toLowerCase() ?? ''
-      return name.includes(q) || cat.includes(q) || unit.includes(q)
+      return code.includes(q) || name.includes(q) || cat.includes(q) || unit.includes(q)
     })
-  }, [materials, query])
+  }, [deferredQuery, materials])
 
   const sorted = useMemo(() => {
     const arr = [...filtered]
@@ -55,24 +57,47 @@ export default function MaterialsListClient({ materials }: Props) {
     return arr
   }, [filtered, sortKey])
 
+  const totalActive = useMemo(() => materials.filter((m) => m.is_active).length, [materials])
+  const totalInactive = materials.length - totalActive
+
   return (
     <div>
       <div className="px-5 pb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="w-full md:max-w-sm relative">
+          <label htmlFor="materials-search" className="sr-only">
+            Cari material
+          </label>
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
+            id="materials-search"
             type="text"
-            placeholder="Cari material (nama/kategori/satuan)..."
+            placeholder="Cari material (kode/nama/kategori/satuan)..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613] focus-visible:ring-2 focus-visible:ring-[#E30613]"
+            className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613] focus-visible:ring-2 focus-visible:ring-[#E30613]"
+            aria-controls="materials-table"
           />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Bersihkan pencarian"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap gap-2 justify-between md:justify-end">
+          <label htmlFor="materials-sort" className="sr-only">
+            Urutkan material
+          </label>
           <select
+            id="materials-sort"
             value={sortKey}
             onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
             className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613] focus-visible:ring-2 focus-visible:ring-[#E30613]"
+            aria-label="Urutkan daftar material"
           >
             <option value="name_asc">Nama A-Z</option>
             <option value="name_desc">Nama Z-A</option>
@@ -81,8 +106,25 @@ export default function MaterialsListClient({ materials }: Props) {
           </select>
         </div>
       </div>
+      <div className="px-5 pb-3 flex flex-wrap items-center gap-2 text-xs">
+        <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-gray-700 font-semibold">
+          Hasil: {sorted.length}
+        </span>
+        <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-1 text-green-700 font-semibold">
+          Aktif: {totalActive}
+        </span>
+        <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-1 text-red-700 font-semibold">
+          Nonaktif: {totalInactive}
+        </span>
+      </div>
+      <p className="sr-only" role="status" aria-live="polite">
+        Menampilkan {sorted.length} material
+      </p>
       <div className={styles.tableWrap}>
-        <table className={styles.table}>
+        <table id="materials-table" className={styles.table}>
+          <caption className="sr-only">
+            Tabel daftar material beserta harga, kategori, status, dan aksi
+          </caption>
           <thead>
             <tr>
               <th className="w-10"></th>

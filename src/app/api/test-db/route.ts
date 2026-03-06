@@ -20,14 +20,11 @@ export async function GET() {
         .select('*', { count: 'exact', head: true })
       if (error) {
         materialsError = `materials query error: ${error.message} (code: ${error.code || 'no-code'}, details: ${error.details || 'no-details'})`
-        console.log('Materials query error object:', error)
       } else {
         materialsCount = count
-        console.log('Materials count:', count)
       }
     } catch (err) {
       materialsError = `materials catch error: ${err instanceof Error ? err.message : 'Unknown error'}`
-      console.log('Materials catch error:', err)
     }
     
     // Try zones table
@@ -82,10 +79,8 @@ export async function GET() {
         
         if (authErr) {
           authUsersError = `auth.users query error: ${authErr.message} (code: ${authErr.code})`
-          console.log('Auth users query error:', authErr)
         } else {
           authUsersCount = authCount
-          console.log('Auth users count:', authCount)
         }
 
         // Try to query profiles table
@@ -95,10 +90,8 @@ export async function GET() {
         
         if (profilesErr) {
           profilesError = `profiles query error: ${profilesErr.message} (code: ${profilesErr.code})`
-          console.log('Profiles query error:', profilesErr)
         } else {
           profilesCount = profilesCountResult
-          console.log('Profiles count:', profilesCountResult)
         }
       } catch (serviceErr) {
         authUsersError = serviceErr instanceof Error ? serviceErr.message : 'Unknown service client error'

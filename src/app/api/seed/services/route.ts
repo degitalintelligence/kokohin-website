@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
+import { errorResponse } from '@/lib/api-response'
 
 export async function POST() {
   if (process.env.NODE_ENV === 'production') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    return errorResponse('FORBIDDEN', 'Forbidden', 403)
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -62,6 +63,6 @@ export async function POST() {
   ]
 
   const { error } = await supabase.from('services').upsert(items, { onConflict: 'slug' })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return errorResponse('INTERNAL_ERROR', 'Failed to seed services', 500, error.message)
   return NextResponse.json({ success: true, count: items.length })
 }

@@ -44,6 +44,7 @@ export type GalleryProject = {
     year: number | null
     featured: boolean | null
     service?: { name: string | null } | null
+    images: string[] // Tambahkan properti images
 }
 
 export interface Testimonial {
@@ -195,6 +196,11 @@ export interface PaymentTerm {
 // CALCULATOR TYPES
 // ============================================
 
+export interface LeadInfo {
+    name: string
+    whatsapp: string
+}
+
 export interface CalculatorInput {
     panjang: number
     lebar: number
@@ -203,9 +209,12 @@ export interface CalculatorInput {
     materialId?: string
     catalogId?: string
     zoneId?: string
+    zoneMarkupPercentage?: number
+    zoneFlatFee?: number
     jenis: 'standard' | 'custom'
     customNotes?: string
     selectedAddonIds?: string[]
+    notes?: string | null
 }
 
 export interface CalculatorResult {

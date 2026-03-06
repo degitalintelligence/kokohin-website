@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 
 
@@ -248,9 +249,9 @@ export default function HomePricelist({ onSelectType }: Props) {
           </>
         )}
         <div className="mt-10 text-center">
-          <a href="/katalog" className="inline-flex items-center justify-center rounded-lg border-2 border-primary-dark text-primary-dark px-6 py-3 font-bold hover:bg-primary-dark hover:text-white transition-colors">
+          <Link href="/katalog" className="inline-flex items-center justify-center rounded-lg border-2 border-primary-dark text-primary-dark px-6 py-3 font-bold hover:bg-primary-dark hover:text-white transition-colors">
             Lihat Semua Produk
-          </a>
+          </Link>
         </div>
       </div>
     </section>

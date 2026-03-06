@@ -6,10 +6,6 @@ import { isRoleAllowed, ALLOWED_MATERIALS_ROLES } from '@/lib/rbac'
 export async function middleware(request: NextRequest) {
     const nodeMajor = Number(process.versions.node.split('.')[0] ?? 0)
     
-    if (process.env.NODE_ENV === 'development') {
-        console.log(`[Proxy] Node version: ${process.versions.node} (Major: ${nodeMajor})`)
-    }
-
     const pathname = request.nextUrl.pathname
     const isAdminRoute = pathname.startsWith('/admin')
     const isLoginPage = pathname === '/admin/login'

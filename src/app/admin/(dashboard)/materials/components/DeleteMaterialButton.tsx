@@ -8,9 +8,10 @@ import ConfirmModal from '@/components/ui/ConfirmModal'
 
 interface DeleteMaterialButtonProps {
   id: string
+  className?: string
 }
 
-export default function DeleteMaterialButton({ id }: DeleteMaterialButtonProps) {
+export default function DeleteMaterialButton({ id, className }: DeleteMaterialButtonProps) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -50,7 +51,8 @@ export default function DeleteMaterialButton({ id }: DeleteMaterialButtonProps) 
         type="button"
         onClick={() => setOpen(true)}
         disabled={isDeleting}
-        className="btn btn-outline-danger"
+        className={className || 'btn btn-outline-danger'}
+        aria-busy={isDeleting}
       >
         {isDeleting ? '...' : 'Hapus'}
       </button>

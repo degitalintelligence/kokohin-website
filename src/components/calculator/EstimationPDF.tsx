@@ -186,6 +186,7 @@ interface EstimationPDFProps {
   companyPhone: string | null
   companyEmail: string | null
   catalogTitle?: string | null
+  customNotes?: string | null
 }
 
 const EstimationPDF: React.FC<EstimationPDFProps> = ({

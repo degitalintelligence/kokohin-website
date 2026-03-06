@@ -1,9 +1,7 @@
 import type { Metadata } from 'next'
-import { Suspense } from 'react'
-import dynamic from 'next/dynamic'
+import Link from 'next/link'
 import { Calculator, MapPin, AlertTriangle, CheckCircle } from 'lucide-react'
-
-const CanopyCalculator = dynamic(() => import('@/components/calculator/Calculator'))
+import EnhancedCalculator from '@/components/calculator/EnhancedCalculator'
 
 export const metadata: Metadata = {
   title: 'Kalkulator Harga Kanopi | Kokohin',
@@ -12,7 +10,9 @@ export const metadata: Metadata = {
 }
 export const revalidate = 3600
 
-export default function KalkulatorPage() {
+export default async function KalkulatorPage({ searchParams }: { searchParams: { catalog?: string } }) {
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const catalogParam = resolvedSearchParams?.catalog
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
       {/* Hero Section */}
@@ -51,9 +51,7 @@ export default function KalkulatorPage() {
       
       {/* Calculator Section */}
       <div className="section">
-        <Suspense fallback={<div className="text-center py-12">Loading calculator...</div>}>
-          <CanopyCalculator hideTitle={true} />
-        </Suspense>
+        <EnhancedCalculator hideTitle={true} catalogParam={catalogParam} />
       </div>
       
       {/* CTA Section */}
@@ -68,18 +66,18 @@ export default function KalkulatorPage() {
               dengan pertimbangan kondisi lokasi dan kebutuhan spesifik.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a
+              <Link
                 href="/kontak"
                 className="btn btn-primary px-8 py-4 text-lg"
               >
                 Jadwalkan Survey Gratis
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/katalog"
                 className="btn btn-outline px-8 py-4 text-lg"
               >
                 Lihat Katalog Paket
-              </a>
+              </Link>
             </div>
           </div>
         </div>

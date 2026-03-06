@@ -34,18 +34,18 @@ export default function CatalogTabs({
     React.isValidElement(child),
   ) as React.ReactElement[]
 
-  const activeChild =
-    childArray.find((child) => (child.props as { id?: string }).id === activeTab) ??
-    childArray[0] ??
-    null
-
   return (
     <div>
       <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-6" aria-label="Tabs">
+        <nav className="-mb-px flex space-x-6" aria-label="Tabs" role="tablist">
           {tabs.map((tab) => (
             <button
               key={tab.id}
+              id={`tab-${tab.id}`}
+              type="button"
+              role="tab"
+              aria-controls={`panel-${tab.id}`}
+              aria-selected={activeTab === tab.id}
               onClick={() => {
                 setActiveTab(tab.id as TabId)
               }}
@@ -54,7 +54,6 @@ export default function CatalogTabs({
                   ? 'border-[#E30613] text-[#E30613]'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
-              aria-current={activeTab === tab.id ? 'page' : undefined}
             >
               <tab.icon className="w-4 h-4" />
               {tab.label}
@@ -68,7 +67,20 @@ export default function CatalogTabs({
         </div>
       )}
       <div className="mt-6">
-        {activeChild}
+        {childArray.map((child) => {
+          const childId = (child.props as { id?: string }).id
+          return (
+            <div
+              key={childId || 'default'}
+              id={`panel-${childId}`}
+              role="tabpanel"
+              aria-labelledby={`tab-${childId}`}
+              className={activeTab === childId ? 'block' : 'hidden'}
+            >
+              {child}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

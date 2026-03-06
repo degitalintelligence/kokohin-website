@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronUp, Copy } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, Loader2 } from 'lucide-react'
 import styles from '../../page.module.css'
 import { useState, Fragment, useTransition } from 'react'
 import { copyMaterial } from '../actions'
 import { useToast } from '@/components/ui/use-toast'
+import DeleteMaterialButton from './DeleteMaterialButton'
 
 type Material = {
   id: string
@@ -79,6 +80,7 @@ export default function MaterialRow({ material }: { material: Material }) {
               type="button"
               className="btn btn-outline-dark btn-sm inline-flex items-center gap-1 disabled:opacity-60"
               disabled={isCopying}
+              aria-busy={isCopying}
               onClick={() => {
                 startCopy(async () => {
                   try {
@@ -102,12 +104,10 @@ export default function MaterialRow({ material }: { material: Material }) {
                 })
               }}
             >
-              <Copy className="w-3 h-3" />
-              <span>Copy</span>
+              {isCopying ? <Loader2 className="w-3 h-3 animate-spin" /> : <Copy className="w-3 h-3" />}
+              <span>{isCopying ? 'Menyalin...' : 'Copy'}</span>
             </button>
-            <button className="btn btn-outline-danger btn-sm">
-              Hapus
-            </button>
+            <DeleteMaterialButton id={material.id} className="btn btn-outline-danger btn-sm" />
           </div>
         </td>
       </tr>

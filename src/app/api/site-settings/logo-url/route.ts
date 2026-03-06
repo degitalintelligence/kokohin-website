@@ -2,6 +2,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { errorResponse } from '@/lib/api-response'
 
 function normalizeLogoUrl(raw: string | null): string | null {
   if (!raw) return null
@@ -35,7 +36,7 @@ export async function GET() {
     .maybeSingle()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return errorResponse('INTERNAL_ERROR', 'Failed to fetch logo url', 500, error.message)
   }
 
   const value = (data as { value?: string } | null)?.value ?? null

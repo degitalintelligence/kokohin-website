@@ -1,8 +1,7 @@
 import type { Metadata } from 'next'
-import { Suspense } from 'react'
-import dynamic from 'next/dynamic'
 import { ShieldCheck, Ruler, Tag } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import CatalogGrid from '@/components/catalog/CatalogGrid'
 
 export const metadata: Metadata = {
   title: 'Katalog Paket Kanopi | Kokohin',
@@ -10,8 +9,6 @@ export const metadata: Metadata = {
   keywords: ['katalog kanopi', 'paket kanopi', 'harga kanopi', 'kanopi baja ringan', 'kanopi polycarbonate', 'carport', 'pergola'],
 }
 export const revalidate = 600
-
-const CatalogGrid = dynamic(() => import('@/components/catalog/CatalogGrid'))
 
 export default async function KatalogPage() {
   const supabase = await createClient()
@@ -53,30 +50,7 @@ export default async function KatalogPage() {
       
       {/* Catalog Section */}
       <div className="py-16">
-        <Suspense fallback={
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
-                <div className="h-48 bg-gray-200 animate-pulse" />
-                <div className="p-6 space-y-4">
-                  <div className="h-4 bg-gray-200 rounded w-3/4 animate-pulse" />
-                  <div className="h-3 bg-gray-200 rounded w-1/2 animate-pulse" />
-                  <div className="pt-4 border-t border-gray-100 space-y-2">
-                    <div className="h-3 bg-gray-200 rounded w-full animate-pulse" />
-                    <div className="h-3 bg-gray-200 rounded w-5/6 animate-pulse" />
-                    <div className="h-3 bg-gray-200 rounded w-4/6 animate-pulse" />
-                  </div>
-                  <div className="space-y-2 pt-2">
-                    <div className="h-10 bg-gray-200 rounded-md animate-pulse" />
-                    <div className="h-10 bg-gray-200 rounded-md animate-pulse" />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        }>
-          <CatalogGrid />
-        </Suspense>
+        <CatalogGrid />
       </div>
       
       
