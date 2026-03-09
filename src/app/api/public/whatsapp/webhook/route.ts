@@ -139,7 +139,7 @@ export async function POST(req: Request) {
             .maybeSingle();
         const webhookLogId = webhookLogResult.data?.id ?? null;
 
-        if (event === 'message') {
+        if (event === 'message' || event === 'message.any') {
             const messageRecord = toRecord(data.message);
             const from = toSerializedId(data.from) || toSerializedId(messageRecord.from) || '';
             const to = toSerializedId(data.to) || toSerializedId(messageRecord.to) || '';
