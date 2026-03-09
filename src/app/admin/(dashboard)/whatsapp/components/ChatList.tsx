@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Contact } from './OptimizedWhatsAppClient';
 import { Search, Filter, User, Users, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -42,62 +42,6 @@ export default function ChatList({
 }: ChatListProps) {
     const [localSearch, setLocalSearch] = useState(searchQuery || '');
     const scrollContainerRef = useRef<HTMLDivElement>(null);
-    const [scrollTop, setScrollTop] = useState(0);
-    const [viewportHeight, setViewportHeight] = useState(600);
-
-    // Sync local search with parent search query
-    useEffect(() => {
-        if (searchQuery !== undefined && searchQuery !== localSearch) {
-            setLocalSearch(searchQuery);
-        }
-    }, [searchQuery, localSearch]);
-
-    // Update viewport height on mount and resize
-    useEffect(() => {
-        const updateHeight = () => {
-            if (scrollContainerRef.current) {
-                const height = scrollContainerRef.current.clientHeight;
-                if (height > 0) {
-                    setViewportHeight(height);
-                }
-            }
-        };
-
-        updateHeight();
-        
-        // Use a small timeout to ensure layout is complete
-        const timer = setTimeout(updateHeight, 100);
-
-        window.addEventListener('resize', updateHeight);
-        return () => {
-            window.removeEventListener('resize', updateHeight);
-            clearTimeout(timer);
-        };
-    }, []);
-
-    const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-        setScrollTop(e.currentTarget.scrollTop);
-    }, []);
-
-    // Virtual scrolling calculations
-    const { startIndex, endIndex, translateY } = useMemo(() => {
-        const vHeight = viewportHeight > 0 ? viewportHeight : 1000;
-        const start = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - VIEWPORT_BUFFER);
-        const visibleCount = Math.ceil(vHeight / ITEM_HEIGHT);
-        const end = Math.min(contacts.length, start + visibleCount + 2 * VIEWPORT_BUFFER);
-        
-        return {
-            startIndex: start,
-            endIndex: Math.max(start + 1, end), // Ensure at least one item
-            translateY: start * ITEM_HEIGHT
-        };
-    }, [scrollTop, viewportHeight, contacts.length]);
-
-    const visibleContacts = useMemo(() => {
-        return contacts.slice(startIndex, endIndex);
-    }, [contacts, startIndex, endIndex]);
-
-    const totalHeight = contacts.length * ITEM_HEIGHT;
 
     // Debounce search input
     useEffect(() => {
@@ -157,7 +101,6 @@ export default function ChatList({
             {/* List with Virtual Scrolling */}
             <div 
                 ref={scrollContainerRef}
-                onScroll={handleScroll}
                 className="flex-1 overflow-y-auto"
             >
                 {contacts.length > 0 ? (
@@ -257,7 +200,7 @@ export default function ChatList({
                                     Pastikan WhatsApp Anda sudah terhubung di menu Pengaturan.
                                 </p>
                                 <div className="pt-2">
-                                    <p className="text-[10px] text-gray-300">Debug: {contacts.length} total, {visibleContacts.length} visible</p>
+                                    <p className="text-[10px] text-gray-300">Debug: {contacts.length} total</p>
                                 </div>
                             </>
                         )}
