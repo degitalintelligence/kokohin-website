@@ -77,15 +77,19 @@ async function createWebhookClient() {
     return createClient();
 }
 
+const ALLOW_UNAUTH =
+    process.env.WAHA_WEBHOOK_ALLOW_UNAUTH === 'true' ||
+    process.env.NODE_ENV === 'development';
+
 export async function GET(req: Request) {
     const secret = process.env.WAHA_WEBHOOK_SECRET || '';
     const url = new URL(req.url);
     const token = url.searchParams.get('token');
     const challenge = url.searchParams.get('challenge');
-    if (!secret) {
+    if (!secret && !ALLOW_UNAUTH) {
         return errorResponse('INTERNAL_ERROR', 'Webhook secret is not configured', 500);
     }
-    if (token !== secret) {
+    if (!ALLOW_UNAUTH && token !== secret) {
         return errorResponse('UNAUTHORIZED', 'Unauthorized', 401);
     }
     return NextResponse.json({ success: true, verified: true, challenge: challenge ?? null });
@@ -93,7 +97,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
     const secret = process.env.WAHA_WEBHOOK_SECRET || '';
-    if (!secret) {
+    if (!secret && !ALLOW_UNAUTH) {
         return errorResponse('INTERNAL_ERROR', 'Webhook secret is not configured', 500);
     }
     try {
@@ -102,9 +106,9 @@ export async function POST(req: Request) {
         const headerSecret = req.headers.get('X-Webhook-Secret') || req.headers.get('x-webhook-secret') || '';
         const authHeader = req.headers.get('authorization') || '';
         const bearerToken = authHeader.replace(/^Bearer\s+/i, '').trim();
-        const authorized = token === secret || headerSecret === secret || bearerToken === secret;
+        const authorized = ALLOW_UNAUTH || token === secret || headerSecret === secret || bearerToken === secret;
 
-        if (!authorized) {
+        if (!authorized && !ALLOW_UNAUTH) {
             const headerNames = Array.from(req.headers.keys());
             console.error('WAHA webhook unauthorized request', {
                 hasToken: Boolean(token),
