@@ -97,10 +97,21 @@ export async function POST(req: Request) {
         return errorResponse('INTERNAL_ERROR', 'Webhook secret is not configured', 500);
     }
     try {
+        const url = new URL(req.url);
+        const token = url.searchParams.get('token');
         const headerSecret = req.headers.get('X-Webhook-Secret') || req.headers.get('x-webhook-secret') || '';
         const authHeader = req.headers.get('authorization') || '';
         const bearerToken = authHeader.replace(/^Bearer\s+/i, '').trim();
-        if (headerSecret !== secret && bearerToken !== secret) {
+        const authorized = token === secret || headerSecret === secret || bearerToken === secret;
+
+        if (!authorized) {
+            const headerNames = Array.from(req.headers.keys());
+            console.error('WAHA webhook unauthorized request', {
+                hasToken: Boolean(token),
+                headerNames,
+                hasXWebhookSecret: Boolean(headerSecret),
+                hasAuthorization: Boolean(authHeader),
+            });
             return errorResponse('UNAUTHORIZED', 'Unauthorized', 401);
         }
 
