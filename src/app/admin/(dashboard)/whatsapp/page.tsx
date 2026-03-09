@@ -1,4 +1,5 @@
 import { Metadata } from 'next';
+import { Suspense } from 'react';
 import HybridWhatsAppClient from './components/HybridWhatsAppClient';
 
 export const metadata: Metadata = {
@@ -8,7 +9,13 @@ export const metadata: Metadata = {
 export default function WhatsAppPage() {
     return (
         <div className="flex flex-col h-[calc(100vh-3.5rem)] md:h-screen overflow-hidden bg-gray-50">
-            <HybridWhatsAppClient />
+            <Suspense fallback={
+                <div className="flex items-center justify-center h-full">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#E30613]"></div>
+                </div>
+            }>
+                <HybridWhatsAppClient />
+            </Suspense>
         </div>
     );
 }

@@ -390,3 +390,45 @@ Dokumen ini menjadi acuan resmi pengembangan sistem WhatsApp CRM terintegrasi un
 - Semua integrasi ERP wajib event-driven, hindari coupling sinkron yang rapuh.
 - Semua fitur baru harus lolos lint, typecheck, test, dan observability checklist sebelum release.
 
+## 18. API Integration Reference (Operasional)
+
+- Endpoint WAHA untuk list chat harus kompatibel lintas versi:
+  - `GET /api/{sessionId}/chats`
+  - `GET /api/chats?session={sessionId}`
+  - `GET /api/sessions/{sessionId}/chats`
+- Endpoint WAHA untuk list pesan harus kompatibel lintas versi:
+  - `GET /api/messages?session={sessionId}&chatId={chatId}&limit={limit}`
+  - `GET /api/{sessionId}/messages?chatId={chatId}&limit={limit}`
+  - `GET /api/chats/{chatId}/messages?session={sessionId}&limit={limit}`
+- Endpoint WAHA untuk kirim pesan text:
+  - `POST /api/sendText`
+  - `POST /api/messages/send-text`
+  - `POST /api/messages/text`
+- Endpoint WAHA untuk kirim media:
+  - `POST /api/sendFile`
+  - `POST /api/messages/send-media`
+  - `POST /api/messages/media`
+- Header autentikasi WAHA yang diterima:
+  - `X-Api-Key: <WAHA_API_KEY>`
+  - `Authorization: Bearer <WAHA_API_KEY>`
+- Header webhook inbound yang diterima:
+  - `X-Webhook-Secret: <WAHA_WEBHOOK_SECRET>`
+  - `Authorization: Bearer <WAHA_WEBHOOK_SECRET>`
+
+## 19. Troubleshooting Playbook (Chat Tidak Muncul)
+
+- Langkah 1: verifikasi sesi WAHA
+  - `getSessionStatus` harus `WORKING` sebelum sinkronisasi chat.
+- Langkah 2: verifikasi webhook request
+  - Pastikan endpoint menerima bentuk payload `event/payload`, `event/data`, dan nested `payload.payload`.
+  - Pastikan `event_name` dan `external_event_id` tercatat di `wa_webhook_events`.
+- Langkah 3: verifikasi data masuk DB
+  - Inbound/outbound harus membuat/menyentuh tabel: `wa_contacts`, `wa_chats`, `wa_messages`, `wa_message_status_log`.
+  - Event media harus mengisi `wa_message_media`.
+- Langkah 4: verifikasi fallback sinkronisasi
+  - Saat `wa_chats` kosong, server action harus bootstrap dari WAHA kemudian retry query.
+- Langkah 5: verifikasi status pesan
+  - Event `message.ack` harus memperbarui `wa_messages.status`, `delivered_at`, `read_at`.
+- Langkah 6: verifikasi gejala UI
+  - Jika state kosong muncul, cek error DB/RLS dulu.
+  - Jika tidak ada error tapi data kosong, cek webhook ingestion atau jalankan bootstrap chat dari WAHA.

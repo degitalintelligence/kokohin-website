@@ -108,6 +108,31 @@ export class WahaClient {
         }
     }
 
+    private async requestWithCandidates<T>(paths: string[], options: RequestInit = {}, retries = 1): Promise<T> {
+        const errors: string[] = [];
+        for (const path of paths) {
+            try {
+                return await this.request<T>(path, options, retries);
+            } catch (error: unknown) {
+                const message = this.getErrorText(error) || 'unknown error';
+                errors.push(`${path}: ${message}`);
+            }
+        }
+        throw new Error(errors.join(' | ') || 'No WAHA endpoint candidates succeeded');
+    }
+
+    private normalizeArrayPayload<T>(payload: unknown): T[] {
+        if (Array.isArray(payload)) return payload as T[];
+        if (payload && typeof payload === 'object') {
+            const record = payload as Record<string, unknown>;
+            if (Array.isArray(record.data)) return record.data as T[];
+            if (Array.isArray(record.chats)) return record.chats as T[];
+            if (Array.isArray(record.messages)) return record.messages as T[];
+            if (Array.isArray(record.results)) return record.results as T[];
+        }
+        return [];
+    }
+
     private getErrorText(error: unknown): string {
         if (error instanceof Error) return error.message || '';
         return '';
@@ -278,25 +303,31 @@ export class WahaClient {
     // --- Messaging ---
 
     async sendMessage(chatId: string, text: string) {
-        return this.request<{ id?: string; message?: string }>('/api/sendText', {
-            method: 'POST',
-            body: JSON.stringify({
-                chatId,
-                text,
-                session: this.sessionId
-            })
-        });
+        return this.requestWithCandidates<{ id?: string; message?: string }>(
+            ['/api/sendText', '/api/messages/send-text', '/api/messages/text'],
+            {
+                method: 'POST',
+                body: JSON.stringify({
+                    chatId,
+                    text,
+                    session: this.sessionId
+                })
+            }
+        );
     }
 
     async sendMedia(chatId: string, file: { url: string; caption?: string; filename?: string }) {
-        return this.request<Record<string, unknown>>('/api/sendFile', {
-            method: 'POST',
-            body: JSON.stringify({
-                chatId,
-                file,
-                session: this.sessionId
-            })
-        });
+        return this.requestWithCandidates<Record<string, unknown>>(
+            ['/api/sendFile', '/api/messages/send-media', '/api/messages/media'],
+            {
+                method: 'POST',
+                body: JSON.stringify({
+                    chatId,
+                    file,
+                    session: this.sessionId
+                })
+            }
+        );
     }
 
     async sendTemplate(chatId: string, templateName: string, variables: string[] = []) {
@@ -363,7 +394,16 @@ export class WahaClient {
     // --- Contacts & Chats ---
 
     async getChats() {
-        return this.request<unknown[]>(`/api/${this.sessionId}/chats`);
+        const response = await this.requestWithCandidates<unknown>(
+            [
+                `/api/${this.sessionId}/chats`,
+                `/api/chats?session=${this.sessionId}`,
+                `/api/sessions/${this.sessionId}/chats`,
+            ],
+            {},
+            1
+        );
+        return this.normalizeArrayPayload<unknown>(response);
     }
 
     async getContact(contactId: string) {
@@ -372,7 +412,16 @@ export class WahaClient {
 
     async getMessages(chatId: string, limit = 20) {
         const encodedChatId = encodeURIComponent(chatId);
-        return this.request<unknown[]>(`/api/messages?session=${this.sessionId}&chatId=${encodedChatId}&limit=${limit}`);
+        const response = await this.requestWithCandidates<unknown>(
+            [
+                `/api/messages?session=${this.sessionId}&chatId=${encodedChatId}&limit=${limit}`,
+                `/api/${this.sessionId}/messages?chatId=${encodedChatId}&limit=${limit}`,
+                `/api/chats/${encodedChatId}/messages?session=${this.sessionId}&limit=${limit}`,
+            ],
+            {},
+            1
+        );
+        return this.normalizeArrayPayload<unknown>(response);
     }
 
     // --- Presence & Seen ---
@@ -408,18 +457,26 @@ export class WahaClient {
 
     // --- Webhooks ---
     async getWebhooks() {
-        return this.request<Array<{ id?: string; url?: string }>>('/api/webhooks');
+        const response = await this.requestWithCandidates<unknown>(
+            ['/api/webhooks', '/api/webhook'],
+            {},
+            1
+        );
+        return this.normalizeArrayPayload<{ id?: string; url?: string }>(response);
     }
 
     async registerWebhook(url: string, secret: string, events: string[] = ['message', 'message.ack', 'session.status']) {
-        return this.request<Record<string, unknown>>('/api/webhooks', {
-            method: 'POST',
-            body: JSON.stringify({
-                url,
-                events,
-                hmac: secret
-            })
-        });
+        return this.requestWithCandidates<Record<string, unknown>>(
+            ['/api/webhooks', '/api/webhook'],
+            {
+                method: 'POST',
+                body: JSON.stringify({
+                    url,
+                    events,
+                    hmac: secret
+                })
+            }
+        );
     }
 
     async deleteWebhook(id: string) {

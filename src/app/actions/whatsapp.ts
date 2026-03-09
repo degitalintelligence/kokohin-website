@@ -53,6 +53,11 @@ function getErrorMessage(error: unknown, fallback = 'Unknown error'): string {
     return fallback;
 }
 
+function isWahaUnavailableError(error: unknown): boolean {
+    const message = getErrorMessage(error, '').toLowerCase();
+    return message.includes('waha') && (message.includes('503') || message.includes('temporarily unavailable') || message.includes('service unavailable'));
+}
+
 function toRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
@@ -525,12 +530,10 @@ export async function startSessionAction() {
  */
 export async function registerWebhookAction() {
     try {
-        let baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://kokohin.com';
-        // Clean baseUrl from potential backticks, quotes or trailing slashes
-        baseUrl = baseUrl.replace(/[`"']/g, '').trim();
+        const explicitWebhookUrl = (process.env.WAHA_WEBHOOK_URL || '').replace(/[`"']/g, '').trim();
+        let baseUrl = (process.env.NEXT_PUBLIC_BASE_URL || 'https://kokohin.com').replace(/[`"']/g, '').trim();
         if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
-        
-        const webhookUrl = `${baseUrl}/api/public/whatsapp/webhook`;
+        const webhookUrl = explicitWebhookUrl || `${baseUrl}/api/public/whatsapp/webhook`;
         const secret = process.env.WAHA_WEBHOOK_SECRET || '';
 
         if (!secret) {
@@ -539,7 +542,14 @@ export async function registerWebhookAction() {
 
         // 1. Get existing webhooks to avoid duplicates
         const existing = await waha.getWebhooks();
-        const alreadyRegistered = (existing as { url?: string }[]).find((w) => w.url === webhookUrl);
+        const normalizedPrimary = webhookUrl.replace(/\/$/, '');
+        const legacyAlias = normalizedPrimary.endsWith('/api/public/whatsapp/webhook')
+            ? normalizedPrimary.replace('/api/public/whatsapp/webhook', '/api/whatsapp/webhook')
+            : normalizedPrimary;
+        const alreadyRegistered = (existing as { url?: string }[]).find((w) => {
+            const current = (w.url || '').replace(/\/$/, '');
+            return current === normalizedPrimary || current === legacyAlias;
+        });
 
         if (alreadyRegistered) {
             return { success: true, message: 'Webhook sudah terdaftar di ' + webhookUrl };
@@ -771,13 +781,95 @@ type ContactJoinRow = {
     }[] | null;
 };
 
+type NormalizedWahaChat = {
+    waJid: string;
+    displayName: string | null;
+    timestamp: string | null;
+};
+
+function normalizeWahaChatRow(input: unknown): NormalizedWahaChat | null {
+    const row = toRecord(input);
+    const id = toSerializedId(row.id) || (typeof row.id === 'string' ? row.id : null) || (typeof row.chatId === 'string' ? row.chatId : null);
+    if (!id || !id.includes('@')) return null;
+    const displayName =
+        (typeof row.name === 'string' && row.name.trim() ? row.name.trim() : null) ||
+        (typeof row.pushname === 'string' && row.pushname.trim() ? row.pushname.trim() : null) ||
+        null;
+    const timestamp = toIsoTimestamp(row.timestamp ?? row.lastMessageTimestamp ?? toRecord(row.lastMessage).timestamp);
+    return { waJid: id, displayName, timestamp };
+}
+
+async function bootstrapChatsFromWaha(
+    supabase: Awaited<ReturnType<typeof createClient>>,
+    limit: number
+): Promise<number> {
+    const chats = await waha.getChats();
+    const normalized = (Array.isArray(chats) ? chats : [])
+        .map((chat) => normalizeWahaChatRow(chat))
+        .filter((chat): chat is NormalizedWahaChat => Boolean(chat))
+        .slice(0, limit);
+
+    if (normalized.length === 0) return 0;
+
+    let synced = 0;
+    for (const item of normalized) {
+        const nowIso = item.timestamp ?? new Date().toISOString();
+        const { data: contact, error: contactError } = await supabase
+            .from('wa_contacts')
+            .upsert(
+                {
+                    wa_jid: item.waJid,
+                    phone: item.waJid.split('@')[0]?.replace(/\D/g, '') || null,
+                    display_name: item.displayName,
+                    last_message_at: nowIso,
+                },
+                { onConflict: 'wa_jid' }
+            )
+            .select('id')
+            .single();
+        if (contactError || !contact?.id) {
+            continue;
+        }
+
+        const { error: chatError } = await supabase
+            .from('wa_chats')
+            .upsert(
+                {
+                    contact_id: contact.id,
+                    last_message_at: nowIso,
+                },
+                { onConflict: 'contact_id' }
+            );
+        if (!chatError) {
+            synced += 1;
+        }
+    }
+
+    return synced;
+}
+
+export async function syncChatsFromWahaAction(limit = 200) {
+    const supabase = await createClient();
+    try {
+        const synced = await bootstrapChatsFromWaha(supabase, limit);
+        revalidatePath('/admin/whatsapp');
+        return { success: true, synced };
+    } catch (error: unknown) {
+        if (isWahaUnavailableError(error)) {
+            return { success: false, error: 'Layanan WAHA sementara tidak tersedia. Coba lagi beberapa saat lagi.' };
+        }
+        return { success: false, error: getErrorMessage(error, 'Gagal sinkronisasi chat dari WAHA') };
+    }
+}
+
 export async function getPaginatedContactsAction(page = 1, limit = 20, search = '') {
     const supabase = await createClient();
     try {
         const offset = (page - 1) * limit;
-        
-        // Build query for chats with contact details
-        let query = supabase
+        let warning: string | null = null;
+
+        const baseQuery = () =>
+            supabase
             .from('wa_chats')
             .select(`
                 id, 
@@ -795,18 +887,67 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
             .order('last_message_at', { ascending: false })
             .range(offset, offset + limit - 1);
 
-        if (search.trim()) {
-            query = query.or(`wa_contacts.display_name.ilike.%${search}%,wa_contacts.wa_jid.ilike.%${search}%,wa_contacts.phone.ilike.%${search}%`);
+        let filteredContactIds: string[] | null = null;
+        const normalizedSearch = search.trim();
+        if (normalizedSearch) {
+            const { data: matchedContacts, error: contactSearchError } = await supabase
+                .from('wa_contacts')
+                .select('id')
+                .or(`display_name.ilike.%${normalizedSearch}%,wa_jid.ilike.%${normalizedSearch}%,phone.ilike.%${normalizedSearch}%`)
+                .limit(300);
+            if (contactSearchError) {
+                throw contactSearchError;
+            }
+            filteredContactIds = (matchedContacts ?? []).map((item) => item.id).filter(Boolean);
+            if (filteredContactIds.length === 0) {
+                return {
+                    success: true,
+                    contacts: [],
+                    pagination: {
+                        page,
+                        limit,
+                        total: 0,
+                        totalPages: 0,
+                    },
+                };
+            }
         }
 
-        const { data, count, error } = await query;
+        const query = filteredContactIds && filteredContactIds.length > 0
+            ? baseQuery().in('contact_id', filteredContactIds)
+            : baseQuery();
+
+        let { data, count, error } = await query;
 
         if (error) {
             console.error('Error fetching chats:', error);
             throw error;
         }
 
-        // Map ERP project data
+        const shouldBootstrap = (!data || data.length === 0) && !normalizedSearch && page === 1;
+        if (shouldBootstrap) {
+            try {
+                const synced = await bootstrapChatsFromWaha(supabase, Math.max(limit, 50));
+                if (synced > 0) {
+                    const refreshed = filteredContactIds && filteredContactIds.length > 0
+                        ? await baseQuery().in('contact_id', filteredContactIds)
+                        : await baseQuery();
+                    data = refreshed.data;
+                    count = refreshed.count;
+                    error = refreshed.error;
+                    if (error) {
+                        throw error;
+                    }
+                }
+            } catch (bootstrapError: unknown) {
+                if (isWahaUnavailableError(bootstrapError)) {
+                    warning = 'Layanan WAHA sedang tidak tersedia (503). Menampilkan data lokal terakhir.';
+                } else {
+                    throw bootstrapError;
+                }
+            }
+        }
+
         const rows = ((data ?? []) as unknown[]).map((entry) => entry as ContactJoinRow);
         const waJids = rows
             .map((chat) => {
@@ -859,6 +1000,7 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
                 total: count || 0,
                 totalPages: Math.ceil((count || 0) / limit),
             },
+            warning,
         };
     } catch (error: unknown) {
         return { success: false, error: getErrorMessage(error, 'Gagal memuat kontak WhatsApp') };

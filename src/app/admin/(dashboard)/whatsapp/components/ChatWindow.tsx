@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import { Contact, Message } from './OptimizedWhatsAppClient';
 import { 
     Send, 
@@ -59,6 +59,126 @@ const SkeletonChat = () => (
     </div>
 );
 
+// Memoized message item to prevent re-renders of the entire list
+const MessageItem = memo(({ msg, quoted, isOutbound, onQuote, onDelete }: { 
+    msg: Message, 
+    quoted: Message | null, 
+    isOutbound: boolean,
+    onQuote: (id: string) => void,
+    onDelete: (id: string) => void
+}) => {
+    return (
+        <div className={`flex ${isOutbound ? 'justify-end' : 'justify-start'} group animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+            <div className={`max-w-[75%] rounded-2xl p-3.5 shadow-sm relative transition-all group-hover:shadow-md
+                ${isOutbound 
+                    ? 'bg-[#E30613] text-white rounded-tr-none' 
+                    : 'bg-white text-[#1D1D1B] rounded-tl-none border border-gray-100'}`}
+            >
+                {msg.is_forwarded && (
+                    <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isOutbound ? 'text-white/70' : 'text-gray-400'}`}>
+                        Forwarded
+                    </p>
+                )}
+                {quoted && (
+                    <div className={`mb-2 px-2 py-1 rounded-lg border-l-2 ${isOutbound ? 'bg-black/10 border-white/70' : 'bg-gray-50 border-[#E30613]'}`}>
+                        <p className={`text-[10px] font-black uppercase tracking-widest ${isOutbound ? 'text-white/70' : 'text-[#E30613]'}`}>Quote</p>
+                        <p className="text-xs line-clamp-2">{quoted.body || 'Lampiran media'}</p>
+                    </div>
+                )}
+                {msg.type === 'chat' ? (
+                    <p className={`text-[13px] leading-relaxed font-medium whitespace-pre-wrap ${msg.is_deleted ? 'italic opacity-80' : ''}`}>
+                        {msg.is_deleted ? 'message deleted' : msg.body}
+                    </p>
+                ) : (
+                    <div className="flex flex-col gap-2">
+                        {msg.mediaUrl ? (
+                            <div className="rounded-xl overflow-hidden bg-black/5 border border-black/5">
+                                {msg.type === 'image' ? (
+                                    <img 
+                                        src={msg.mediaUrl} 
+                                        alt={msg.mediaCaption || 'Media'} 
+                                        className="max-w-full h-auto object-contain max-h-64"
+                                        loading="lazy"
+                                    />
+                                ) : (
+                                    <div className="p-3 flex items-center gap-3">
+                                        <FileText size={20} className={isOutbound ? 'text-white/70' : 'text-gray-400'} />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[11px] font-bold truncate">Lampiran Media ({msg.type})</p>
+                                            <a 
+                                                href={msg.mediaUrl} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className={`text-[10px] underline ${isOutbound ? 'text-white/70' : 'text-blue-500'}`}
+                                            >
+                                                Download
+                                            </a>
+                                        </div>
+                                    </div>
+                                )}
+                                {msg.mediaCaption && (
+                                    <p className="p-2 text-[11px] border-t border-black/5">{msg.mediaCaption}</p>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-3 p-2 bg-black/5 rounded-xl border border-black/5">
+                                <FileText size={20} className={isOutbound ? 'text-white/70' : 'text-gray-400'} />
+                                <span className="text-[11px] font-bold">Lampiran Media ({msg.type})</span>
+                            </div>
+                        )}
+                    </div>
+                )}
+                <div className={`flex items-center gap-1.5 mt-2 justify-end
+                    ${isOutbound ? 'text-white/60' : 'text-gray-400'}`}>
+                    <span className="text-[9px] font-black uppercase tracking-widest">
+                        {format(new Date(msg.sent_at), 'HH:mm', { locale: id })}
+                    </span>
+                    {isOutbound && (
+                        <div className="flex">
+                            {msg.status === 'read' ? (
+                                <CheckCheck size={14} className="text-blue-300" />
+                            ) : msg.status === 'delivered' ? (
+                                <CheckCheck size={14} />
+                            ) : msg.status === 'sent' ? (
+                                <Check size={14} />
+                            ) : (
+                                <Clock size={12} />
+                            )}
+                        </div>
+                    )}
+                </div>
+                <div className="mt-2 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                        type="button"
+                        onClick={() => onQuote(msg.id)}
+                        className={`p-1.5 rounded-lg ${isOutbound ? 'bg-white/20 hover:bg-white/30' : 'bg-gray-100 hover:bg-gray-200'}`}
+                        aria-label="Quote pesan"
+                    >
+                        <MessageSquareReply size={13} />
+                    </button>
+                    {isOutbound && !msg.is_deleted && (
+                        <button
+                            type="button"
+                            onClick={() => onDelete(msg.id)}
+                            className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30"
+                            aria-label="Hapus untuk pengirim"
+                        >
+                            <Trash2 size={13} />
+                        </button>
+                    )}
+                </div>
+                <div className={`absolute top-0 w-2 h-2 
+                    ${isOutbound 
+                        ? 'left-full -ml-1 border-l-[10px] border-l-[#E30613] border-b-[10px] border-b-transparent' 
+                        : 'right-full -mr-1 border-r-[10px] border-r-white border-b-[10px] border-b-transparent'}`} 
+                />
+            </div>
+        </div>
+    );
+});
+
+MessageItem.displayName = 'MessageItem';
+
 export default function ChatWindow({ contact, messages, onSendMessage, onLoadMore, hasMore, isLoading }: ChatWindowProps) {
     const [newMessage, setNewMessage] = useState('');
     const [sending, setSending] = useState(false);
@@ -100,7 +220,7 @@ export default function ChatWindow({ contact, messages, onSendMessage, onLoadMor
         });
     }, [contact.id]);
 
-    const handleLoadMore = async () => {
+    const handleLoadMore = useCallback(async () => {
         if (loadingMore || !hasMore) return;
         setLoadingMore(true);
         // Store current scroll position to maintain it after loading
@@ -117,7 +237,7 @@ export default function ChatWindow({ contact, messages, onSendMessage, onLoadMor
             }
             setLoadingMore(false);
         }, 50);
-    };
+    }, [loadingMore, hasMore, onLoadMore]);
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -232,15 +352,35 @@ export default function ChatWindow({ contact, messages, onSendMessage, onLoadMor
 
     const quotedMessage = quotedMessageId ? messages.find((item) => item.id === quotedMessageId) : null;
 
-    const mappedMessages = messages.map((message) => {
+    const mappedMessages = useMemo(() => messages.map((message) => {
         const quoted = message.quoted_message_id ? messages.find((item) => item.id === message.quoted_message_id) : null;
         return { message, quoted };
-    });
+    }), [messages]);
 
     const insertQuickReply = (body: string) => {
         setNewMessage(body);
         setErrorMessage(null);
     };
+
+    const topObserverRef = useRef<HTMLDivElement>(null);
+
+    // Intersection Observer for auto-loading more messages
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && hasMore && !loadingMore && !isLoading) {
+                    handleLoadMore();
+                }
+            },
+            { threshold: 0.5 }
+        );
+
+        if (topObserverRef.current) {
+            observer.observe(topObserverRef.current);
+        }
+
+        return () => observer.disconnect();
+    }, [hasMore, loadingMore, isLoading, handleLoadMore]);
 
     return (
         <div className="flex-1 flex bg-[#f0f2f5] overflow-hidden relative font-sans">
@@ -291,15 +431,14 @@ export default function ChatWindow({ contact, messages, onSendMessage, onLoadMor
                         ref={scrollRef}
                         className="flex-1 overflow-y-auto p-6 space-y-3"
                     >
+                        {/* Sentinel element for auto-loading more messages */}
+                        <div ref={topObserverRef} className="h-4 w-full" />
+                        
                         {hasMore && (
                             <div className="flex justify-center mb-4">
-                                <button
-                                    onClick={handleLoadMore}
-                                    disabled={loadingMore}
-                                    className="px-4 py-2 bg-white border border-gray-100 rounded-full text-xs font-bold text-gray-500 hover:text-[#E30613] hover:shadow-sm transition-all disabled:opacity-50"
-                                >
-                                    {loadingMore ? 'Memuat...' : 'Muat Pesan Lama'}
-                                </button>
+                                <div className="px-4 py-2 bg-white/50 border border-gray-100 rounded-full text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                    {loadingMore ? 'Memuat pesan lama...' : 'Scroll ke atas untuk muat lebih banyak'}
+                                </div>
                             </div>
                         )}
                         <div className="flex justify-center mb-6">

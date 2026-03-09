@@ -11,10 +11,10 @@ function mapAckToStatus(ack: number): 'sent' | 'delivered' | 'read' | 'failed' {
 }
 
 function toEventId(data: Record<string, unknown>): string | null {
-    const directId = typeof data.id === 'string' ? data.id : null;
+    const directId = toSerializedId(data.id);
     if (directId) return directId;
     const message = data.message && typeof data.message === 'object' ? (data.message as Record<string, unknown>) : null;
-    return message && typeof message.id === 'string' ? message.id : null;
+    return message ? toSerializedId(message.id) : null;
 }
 
 function toEpochMilliseconds(value: unknown): number {
@@ -26,6 +26,46 @@ function toEpochMilliseconds(value: unknown): number {
         if (!Number.isNaN(parsed)) return parsed > 1_000_000_000_000 ? parsed : parsed * 1000;
     }
     return Date.now();
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function toSerializedId(value: unknown): string | null {
+    if (typeof value === 'string' && value.trim()) return value;
+    const record = toRecord(value);
+    const serialized = record._serialized;
+    if (typeof serialized === 'string' && serialized.trim()) return serialized;
+    const nestedId = record.id;
+    if (nestedId && nestedId !== value) return toSerializedId(nestedId);
+    return null;
+}
+
+function toWebhookEnvelope(body: unknown): { event: string; data: Record<string, unknown> } {
+    const rawBody = toRecord(body);
+    const bodyPayload = toRecord(rawBody.payload);
+    const nestedPayload = toRecord(bodyPayload.payload);
+    const bodyData = toRecord(rawBody.data);
+    const bodyMessage = toRecord(rawBody.message);
+    const event =
+        (typeof rawBody.event === 'string' ? rawBody.event : null) ||
+        (typeof rawBody.eventName === 'string' ? rawBody.eventName : null) ||
+        (typeof rawBody.type === 'string' ? rawBody.type : null) ||
+        (typeof bodyPayload.event === 'string' ? bodyPayload.event : null) ||
+        '';
+
+    const data = Object.keys(nestedPayload).length > 0
+        ? nestedPayload
+        : Object.keys(bodyPayload).length > 0 && !('event' in bodyPayload)
+            ? bodyPayload
+            : Object.keys(bodyData).length > 0
+                ? bodyData
+                : Object.keys(bodyMessage).length > 0
+                    ? bodyMessage
+                    : rawBody;
+
+    return { event, data };
 }
 
 async function createWebhookClient() {
@@ -58,13 +98,14 @@ export async function POST(req: Request) {
     }
     try {
         const headerSecret = req.headers.get('X-Webhook-Secret') || req.headers.get('x-webhook-secret') || '';
-        if (headerSecret !== secret) {
+        const authHeader = req.headers.get('authorization') || '';
+        const bearerToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+        if (headerSecret !== secret && bearerToken !== secret) {
             return errorResponse('UNAUTHORIZED', 'Unauthorized', 401);
         }
 
-        const body = (await req.json()) as { event?: unknown; payload?: unknown };
-        const event = typeof body.event === 'string' ? body.event : '';
-        const data = body.payload && typeof body.payload === 'object' ? (body.payload as Record<string, unknown>) : {};
+        const body = await req.json();
+        const { event, data } = toWebhookEnvelope(body);
         const eventId = toEventId(data);
         const supabase = await createWebhookClient();
 
@@ -84,15 +125,29 @@ export async function POST(req: Request) {
         const webhookLogId = webhookLogResult.data?.id ?? null;
 
         if (event === 'message') {
-            const from = typeof data.from === 'string' ? data.from : '';
-            const to = typeof data.to === 'string' ? data.to : '';
-            const bodyText = typeof data.body === 'string' ? data.body : null;
-            const type = typeof data.type === 'string' ? data.type : 'chat';
-            const fromMe = Boolean(data.fromMe);
-            const ack = typeof data.ack === 'number' ? data.ack : 0;
-            const timestampMs = toEpochMilliseconds(data.timestamp);
+            const messageRecord = toRecord(data.message);
+            const from = toSerializedId(data.from) || toSerializedId(messageRecord.from) || '';
+            const to = toSerializedId(data.to) || toSerializedId(messageRecord.to) || '';
+            const bodyText =
+                (typeof data.body === 'string' ? data.body : null) ||
+                (typeof messageRecord.body === 'string' ? messageRecord.body : null);
+            const type =
+                (typeof data.type === 'string' ? data.type : null) ||
+                (typeof messageRecord.type === 'string' ? messageRecord.type : null) ||
+                'chat';
+            const fromMe =
+                typeof data.fromMe === 'boolean'
+                    ? data.fromMe
+                    : typeof messageRecord.fromMe === 'boolean'
+                        ? messageRecord.fromMe
+                        : false;
+            const ack = typeof data.ack === 'number' ? data.ack : typeof data.ack === 'string' ? Number(data.ack) : 0;
+            const timestampMs = toEpochMilliseconds(data.timestamp ?? messageRecord.timestamp);
             const sentAtIso = new Date(timestampMs).toISOString();
             const waJid = fromMe ? to : from;
+            if (!waJid) {
+                throw new Error('WAHA webhook payload missing wa_jid');
+            }
 
             const { data: contact, error: contactError } = await supabase
                 .from('wa_contacts')
@@ -107,21 +162,37 @@ export async function POST(req: Request) {
                 )
                 .select('id')
                 .single();
-            if (contactError) throw contactError;
+            if (contactError) {
+                console.error('WA Webhook contact upsert error:', contactError, { waJid });
+                throw contactError;
+            }
 
             const { data: chat, error: chatError } = await supabase
                 .from('wa_chats')
                 .upsert(
                     {
                         contact_id: contact.id,
-                        unread_count: fromMe ? 0 : 1,
                         last_message_at: sentAtIso,
                     },
                     { onConflict: 'contact_id' }
                 )
                 .select('id')
                 .single();
-            if (chatError) throw chatError;
+            if (chatError) {
+                console.error('WA Webhook chat upsert error:', chatError, { contactId: contact.id, waJid });
+                throw chatError;
+            }
+            if (fromMe) {
+                await supabase.from('wa_chats').update({ unread_count: 0 }).eq('id', chat.id);
+            } else {
+                const { data: currentChat } = await supabase
+                    .from('wa_chats')
+                    .select('unread_count')
+                    .eq('id', chat.id)
+                    .maybeSingle();
+                const currentUnread = typeof currentChat?.unread_count === 'number' ? currentChat.unread_count : 0;
+                await supabase.from('wa_chats').update({ unread_count: currentUnread + 1 }).eq('id', chat.id);
+            }
 
             const messageStatus = mapAckToStatus(ack);
             const messageUpsert = await supabase
@@ -144,7 +215,10 @@ export async function POST(req: Request) {
                 )
                 .select('id, created_at, sent_at')
                 .single();
-            if (messageUpsert.error) throw messageUpsert.error;
+            if (messageUpsert.error) {
+                console.error('WA Webhook message upsert error:', messageUpsert.error, { chatId: chat.id, waJid, eventId });
+                throw messageUpsert.error;
+            }
 
             await supabase.from('wa_message_status_log').insert({
                 message_id: messageUpsert.data.id,
@@ -153,7 +227,9 @@ export async function POST(req: Request) {
                 source: 'waha',
             });
 
-            const media = data.media && typeof data.media === 'object' ? (data.media as Record<string, unknown>) : null;
+            const mediaData = toRecord(data.media);
+            const messageMedia = toRecord(messageRecord.media);
+            const media = Object.keys(mediaData).length > 0 ? mediaData : Object.keys(messageMedia).length > 0 ? messageMedia : null;
             if (media) {
                 await supabase.from('wa_message_media').upsert({
                     message_id: messageUpsert.data.id,
@@ -182,7 +258,7 @@ export async function POST(req: Request) {
         if (event === 'message.ack') {
             const id = toEventId(data);
             if (id) {
-                const ack = typeof data.ack === 'number' ? data.ack : -1;
+                const ack = typeof data.ack === 'number' ? data.ack : typeof data.ack === 'string' ? Number(data.ack) : -1;
                 const status = mapAckToStatus(ack);
                 const timestampIso = new Date(toEpochMilliseconds(data.timestamp)).toISOString();
                 const updateResult = await supabase

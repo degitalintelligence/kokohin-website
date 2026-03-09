@@ -7,12 +7,13 @@ import {
     getPaginatedMessagesAction,
     getChatMetricsAction,
     getWhatsAppMonitoringMetricsAction,
+    syncChatsFromWahaAction,
 } from '@/app/actions/whatsapp';
 import ChatList from './ChatList';
 import ChatWindow from './ChatWindow';
 import SessionControl from './SessionControl';
 import BroadcastModal from './BroadcastModal';
-import { MessageSquare, Settings, Users, MessagesSquare, TrendingUp, BarChart3, Activity, AlertTriangle } from 'lucide-react';
+import { MessageSquare, Settings, Users, MessagesSquare, TrendingUp, BarChart3, Activity, AlertTriangle, RefreshCcw } from 'lucide-react';
 
 export type Contact = {
     id: string;
@@ -38,6 +39,8 @@ export type Message = {
     quoted_message_id?: string | null;
     is_forwarded?: boolean | null;
     is_deleted?: boolean | null;
+    mediaUrl?: string | null;
+    mediaCaption?: string | null;
 };
 
 const CONTACTS_PER_PAGE = 20;
@@ -61,7 +64,9 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
     const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
     const [contacts, setContacts] = useState<Contact[]>([]);
     const [messages, setMessages] = useState<Message[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false); // Default to false, let useEffect handle it
+    const [isInitialLoading, setIsInitialLoading] = useState(true); // Track initial load separately
+    const [syncingFromWaha, setSyncingFromWaha] = useState(false);
     const [loadingMessages, setLoadingMessages] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showBroadcast, setShowBroadcast] = useState(false);
@@ -99,13 +104,13 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
     }, [contacts, searchQuery]);
 
     // Fetch contacts with pagination
-    const fetchContacts = useCallback(async (page = 1, search = '') => {
-        setLoading(true);
+    const fetchContacts = useCallback(async (page = 1, search = '', showLoading = false) => {
+        if (showLoading) setLoading(true);
         try {
             const result = await getPaginatedContactsAction(page, CONTACTS_PER_PAGE, search);
             
             if (result.success && result.contacts) {
-                setContactsError(null);
+                setContactsError(result.warning || null);
                 setContacts(result.contacts);
                 if (result.pagination) {
                     setContactsPagination({
@@ -117,12 +122,6 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
             } else {
                 console.error('Failed to fetch contacts:', result.error);
                 const errorMessage = result.error || 'Terjadi kesalahan saat memuat daftar chat.';
-                // Show user-friendly error message
-                if (result.error?.includes('permission') || result.error?.includes('RLS')) {
-                    console.error('Database permission error - check RLS policies');
-                } else if (result.error?.includes('connection') || result.error?.includes('network')) {
-                    console.error('Network connection error');
-                }
                 setContactsError(errorMessage);
                 onContactsFetchFailure?.(errorMessage);
                 setContacts([]);
@@ -134,7 +133,8 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
             onContactsFetchFailure?.(errorMessage);
             setContacts([]);
         } finally {
-            setLoading(false);
+            if (showLoading) setLoading(false);
+            setIsInitialLoading(false);
         }
     }, [onContactsFetchFailure]);
 
@@ -169,7 +169,7 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
 
     // Initial data fetch
     useEffect(() => {
-        fetchContacts(1, searchQuery);
+        fetchContacts(1, searchQuery, true); // Use initial loading
         getChatMetricsAction().then((result) => {
             if (result.success && result.metrics) {
                 setMetrics(result.metrics);
@@ -180,7 +180,7 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
                 setMonitoring(result.monitoring);
             }
         });
-    }, [fetchContacts, searchQuery]);
+    }, [fetchContacts]);
 
     useEffect(() => {
         const interval = window.setInterval(() => {
@@ -204,9 +204,17 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
                     schema: 'public',
                     table: 'wa_chats',
                 },
-                () => {
-                    // Refresh current page when data changes
-                    fetchContacts(contactsPage, searchQuery);
+                (payload) => {
+                    if (payload.eventType === 'UPDATE') {
+                        setContacts((prev) => 
+                            prev.map(c => c.id === payload.new.id ? { ...c, ...payload.new } : c)
+                        );
+                    } else if (payload.eventType === 'INSERT') {
+                        // For simplicity, re-fetch page 1 on new chat to maintain order
+                        fetchContacts(1, searchQuery, false);
+                    } else if (payload.eventType === 'DELETE') {
+                        setContacts((prev) => prev.filter(c => c.id !== payload.old.id));
+                    }
                 }
             )
             .subscribe((status, err) => {
@@ -218,7 +226,7 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [supabase, fetchContacts, contactsPage, searchQuery]);
+    }, [supabase, fetchContacts, searchQuery]);
 
     // Fetch messages when contact is selected
     useEffect(() => {
@@ -279,9 +287,11 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
 
     // Handle search with debouncing
     useEffect(() => {
+        if (!searchQuery.trim() && contacts.length > 0) return; // Skip if empty search and already have contacts
+
         const timeoutId = setTimeout(() => {
-            fetchContacts(1, searchQuery);
-        }, 300);
+            fetchContacts(1, searchQuery, false);
+        }, 400);
 
         return () => clearTimeout(timeoutId);
     }, [searchQuery, fetchContacts]);
@@ -293,7 +303,26 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
         }
     }, [fetchMessages, selectedContactId, selectedWaId]);
 
-    if (loading) {
+    const handleSyncFromWaha = useCallback(async () => {
+        if (syncingFromWaha) return;
+        setSyncingFromWaha(true);
+        try {
+            const result = await syncChatsFromWahaAction(200);
+            if (result.success) {
+                await fetchContacts(1, searchQuery, true);
+            } else {
+                const message = result.error || 'Gagal sinkronisasi chat dari WAHA.';
+                setContactsError(message);
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Gagal sinkronisasi chat dari WAHA.';
+            setContactsError(message);
+        } finally {
+            setSyncingFromWaha(false);
+        }
+    }, [syncingFromWaha, fetchContacts, searchQuery]);
+
+    if (isInitialLoading) {
         return (
             <div className="flex items-center justify-center h-full">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#E30613]"></div>
@@ -311,6 +340,14 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
                         WhatsApp
                     </h2>
                     <div className="flex items-center gap-1">
+                        <button
+                            onClick={handleSyncFromWaha}
+                            disabled={syncingFromWaha}
+                            className="p-2 hover:bg-gray-100 rounded-full text-gray-500 hover:text-[#E30613] transition-all disabled:opacity-50"
+                            title="Sync ulang dari WAHA"
+                        >
+                            <RefreshCcw size={18} className={syncingFromWaha ? 'animate-spin' : ''} />
+                        </button>
                         <button 
                             onClick={() => setShowBroadcast(true)}
                             className="p-2 hover:bg-[#E30613]/5 rounded-full text-gray-500 hover:text-[#E30613] transition-all"
@@ -338,7 +375,8 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
                     currentPage={contactsPage}
                     onPageChange={fetchContacts}
                     errorMessage={contactsError}
-                    onRetry={() => fetchContacts(contactsPage, searchQuery)}
+                    onRetry={() => fetchContacts(contactsPage, searchQuery, true)}
+                    isLoading={loading}
                 />
             </div>
 
