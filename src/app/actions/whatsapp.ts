@@ -803,11 +803,16 @@ async function bootstrapChatsFromWaha(
     supabase: Awaited<ReturnType<typeof createClient>>,
     limit: number
 ): Promise<number> {
+    console.log('[WhatsApp] Bootstrapping chats from WAHA...');
     const chats = await waha.getChats();
+    console.log('[WhatsApp] WAHA raw chats count:', Array.isArray(chats) ? chats.length : 'Not array');
+    
     const normalized = (Array.isArray(chats) ? chats : [])
         .map((chat) => normalizeWahaChatRow(chat))
         .filter((chat): chat is NormalizedWahaChat => Boolean(chat))
         .slice(0, limit);
+
+    console.log('[WhatsApp] Normalized chats to sync:', normalized.length);
 
     if (normalized.length === 0) return 0;
 
@@ -827,6 +832,11 @@ async function bootstrapChatsFromWaha(
             )
             .select('id')
             .single();
+        
+        if (contactError) {
+            console.error('[WhatsApp] Contact upsert error:', contactError, item);
+        }
+
         if (contactError || !contact?.id) {
             continue;
         }
@@ -840,11 +850,17 @@ async function bootstrapChatsFromWaha(
                 },
                 { onConflict: 'contact_id' }
             );
+            
+        if (chatError) {
+             console.error('[WhatsApp] Chat upsert error:', chatError, item);
+        }
+
         if (!chatError) {
             synced += 1;
         }
     }
-
+    
+    console.log(`[WhatsApp] Successfully synced ${synced} chats`);
     return synced;
 }
 

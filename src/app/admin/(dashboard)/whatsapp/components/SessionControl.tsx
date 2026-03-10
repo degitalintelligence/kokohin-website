@@ -7,7 +7,8 @@ import {
     startSessionAction, 
     stopSessionAction, 
     logoutSessionAction,
-    registerWebhookAction
+    registerWebhookAction,
+    syncChatsFromWahaAction
 } from '@/app/actions/whatsapp';
 import { 
     RefreshCcw, 
@@ -215,14 +216,24 @@ export default function SessionControl() {
                                     Keluar (Logout)
                                 </button>
                                 {session?.status === 'WORKING' && (
-                                    <button 
-                                        onClick={() => handleAction(registerWebhookAction)}
-                                        disabled={loading}
-                                        className="w-full py-3 bg-[#E30613]/10 text-[#E30613] border border-[#E30613]/20 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-[#E30613]/20 transition-all disabled:opacity-50"
-                                    >
-                                        <Webhook size={18} />
-                                        Sinkronisasi Webhook
-                                    </button>
+                                    <>
+                                        <button 
+                                            onClick={() => handleAction(registerWebhookAction)}
+                                            disabled={loading}
+                                            className="w-full py-3 bg-[#E30613]/10 text-[#E30613] border border-[#E30613]/20 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-[#E30613]/20 transition-all disabled:opacity-50"
+                                        >
+                                            <Webhook size={18} />
+                                            Sinkronisasi Webhook
+                                        </button>
+                                        <button 
+                                            onClick={() => handleAction(() => syncChatsFromWahaAction(200))}
+                                            disabled={loading}
+                                            className="w-full py-3 bg-blue-50 text-blue-600 border border-blue-100 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-blue-100 transition-all disabled:opacity-50 mt-2"
+                                        >
+                                            <RefreshCcw size={18} />
+                                            Sinkronisasi Chat (200)
+                                        </button>
+                                    </>
                                 )}
                             </>
                         )}
