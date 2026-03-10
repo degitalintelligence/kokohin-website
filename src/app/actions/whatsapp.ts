@@ -282,6 +282,81 @@ export async function sendMessageAction(chatId: string, text: string, options?: 
     }
 }
 
+export async function sendTypingAction(chatId: string) {
+    try {
+        await waha.sendTyping(chatId);
+        return { success: true };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error, 'Gagal mengirim status typing') };
+    }
+}
+
+export async function sendSeenAction(chatId: string) {
+    try {
+        await waha.sendSeen(chatId);
+        return { success: true };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error, 'Gagal mengirim status seen') };
+    }
+}
+
+export async function forwardMessageAction(targetChatId: string, sourceMessageId: string) {
+    const supabase = await createClient();
+    try {
+        const { data: source, error: sourceError } = await supabase
+            .from('wa_messages')
+            .select('id, external_message_id, body, type')
+            .eq('id', sourceMessageId)
+            .maybeSingle();
+
+        if (sourceError || !source) {
+            throw new Error('Pesan sumber tidak ditemukan');
+        }
+        if (!source.external_message_id) {
+            throw new Error('Pesan ini tidak dapat di-forward');
+        }
+
+        const result = await sendWithRetry(
+            () => waha.forwardMessage(targetChatId, source.external_message_id),
+            2
+        );
+
+        const externalId = typeof result?.id === 'string' ? result.id : crypto.randomUUID();
+        const { chat } = await upsertChatContext(supabase, targetChatId);
+        const nowIso = new Date().toISOString();
+
+        const { data: inserted, error: messageError } = await supabase
+            .from('wa_messages')
+            .insert({
+                external_message_id: externalId,
+                chat_id: chat.id,
+                body: source.body,
+                type: source.type,
+                direction: 'outbound',
+                sender_type: 'agent',
+                status: 'sent',
+                is_forwarded: true,
+                is_deleted: false,
+                idempotency_key: crypto.randomUUID(),
+                sent_at: nowIso,
+            })
+            .select('id')
+            .maybeSingle();
+        if (messageError || !inserted) throw messageError || new Error('Gagal menyimpan pesan forward');
+
+        await insertStatusLog(supabase, inserted.id, 'sent', 'crm_api');
+        await insertAuditLog(supabase, 'forward', 'message', inserted.id, {
+            source_message_id: sourceMessageId,
+            target_chat_id: chat.id,
+        });
+
+        revalidatePath('/admin/whatsapp');
+        return { success: true, messageId: externalId };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error, 'Gagal meneruskan pesan') };
+    }
+}
+
 export async function sendMediaMessageAction(chatId: string, payload: SendMediaInput) {
     const supabase = await createClient();
     const idempotencyKey = payload.idempotencyKey ?? crypto.randomUUID();
@@ -1167,7 +1242,164 @@ export async function getWhatsAppMonitoringMetricsAction() {
     }
 }
 
-export async function createBroadcastCampaignAction(name: string, template: string, segmentFilter: Record<string, unknown> = {}) {
+export interface SegmentFilter {
+    labelIds?: string[];
+    region?: string;
+    projectStatus?: string;
+}
+
+export async function countBroadcastRecipientsAction(filters: SegmentFilter) {
+    const supabase = await createClient();
+    try {
+        let query = supabase
+            .from('wa_contacts')
+            .select('id', { count: 'exact', head: true });
+
+        // Filter by Region
+        if (filters.region) {
+            query = query.eq('region', filters.region);
+        }
+
+        // Filter by Labels (requires join with wa_chats -> wa_chat_labels)
+        if (filters.labelIds && filters.labelIds.length > 0) {
+            // We use !inner to ensure we only get contacts that have the matching labels
+            // Note: This logic assumes "OR" for labels (any of the selected labels)
+            query = query.not('wa_chats', 'is', null); // Ensure they have a chat
+            
+            // Complex filtering on many-to-many is hard with simple query builder
+            // We'll use a subquery approach for labels:
+            // Get chat_ids that have these labels first
+            const { data: chatsWithLabels } = await supabase
+                .from('wa_chat_labels')
+                .select('chat_id')
+                .in('label_id', filters.labelIds);
+            
+            if (chatsWithLabels && chatsWithLabels.length > 0) {
+                const chatIds = chatsWithLabels.map(c => c.chat_id);
+                // Now find contacts associated with these chats
+                const { data: contactsWithChats } = await supabase
+                    .from('wa_chats')
+                    .select('contact_id')
+                    .in('id', chatIds);
+                
+                if (contactsWithChats && contactsWithChats.length > 0) {
+                    const contactIds = contactsWithChats.map(c => c.contact_id);
+                    query = query.in('id', contactIds);
+                } else {
+                    return { count: 0 };
+                }
+            } else {
+                return { count: 0 };
+            }
+        }
+
+        const { count, error } = await query;
+        
+        if (error) throw error;
+        return { count: count || 0 };
+    } catch (error: unknown) {
+        return { count: 0, error: getErrorMessage(error) };
+    }
+}
+
+export async function getQuickRepliesAction() {
+    const supabase = await createClient();
+    try {
+        const { data: replies, error } = await supabase
+            .from('wa_quick_replies')
+            .select('*')
+            .eq('is_active', true)
+            .order('title');
+            
+        if (error) throw error;
+        return { success: true, replies };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error) };
+    }
+}
+
+export type AutoReplyTemplate = {
+    id?: string;
+    code: string;
+    title: string;
+    body_template: string;
+    is_active?: boolean;
+};
+
+export async function getAutoReplyTemplatesAction() {
+    const supabase = await createClient();
+    try {
+        const { data, error } = await supabase
+            .from('wa_quick_replies')
+            .select('*')
+            .ilike('code', 'AUTO_%')
+            .order('code', { ascending: true });
+
+        if (error) throw error;
+        return { success: true, templates: data as AutoReplyTemplate[] };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error, 'Gagal memuat auto-reply templates') };
+    }
+}
+
+export async function upsertAutoReplyTemplateAction(payload: AutoReplyTemplate) {
+    const supabase = await createClient();
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Unauthorized');
+
+        const code = payload.code.trim().toUpperCase();
+        if (!code.startsWith('AUTO_')) {
+            throw new Error('Kode auto-reply harus diawali dengan "AUTO_"');
+        }
+
+        const data = {
+            code,
+            title: payload.title.trim() || code,
+            body_template: payload.body_template,
+            is_active: payload.is_active ?? true,
+        };
+
+        if (payload.id) {
+            const { error } = await supabase
+                .from('wa_quick_replies')
+                .update(data)
+                .eq('id', payload.id);
+            if (error) throw error;
+        } else {
+            const { error } = await supabase
+                .from('wa_quick_replies')
+                .insert(data);
+            if (error) throw error;
+        }
+
+        revalidatePath('/admin/settings/whatsapp-auto-replies');
+        return { success: true };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error, 'Gagal menyimpan auto-reply template') };
+    }
+}
+
+export async function deleteAutoReplyTemplateAction(id: string) {
+    const supabase = await createClient();
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Unauthorized');
+
+        const { error } = await supabase
+            .from('wa_quick_replies')
+            .delete()
+            .eq('id', id);
+        if (error) throw error;
+
+        revalidatePath('/admin/settings/whatsapp-auto-replies');
+        return { success: true };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error, 'Gagal menghapus auto-reply template') };
+    }
+}
+
+export async function createBroadcastCampaignAction(name: string, template: string, segmentFilter: SegmentFilter = {}, scheduleAt?: string) {
     const supabase = await createClient();
     try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -1178,7 +1410,8 @@ export async function createBroadcastCampaignAction(name: string, template: stri
             .insert({
                 name,
                 segment_filter_json: segmentFilter,
-                status: 'draft',
+                schedule_at: scheduleAt || null,
+                status: scheduleAt ? 'scheduled' : 'draft',
                 created_by: user.id,
             })
             .select()
@@ -1195,69 +1428,85 @@ export async function createBroadcastCampaignAction(name: string, template: stri
 export async function sendBroadcastAction(campaignId: string, template: string) {
     const supabase = await createClient();
     try {
-        const { error: campaignError } = await supabase
+        // 1. Get campaign to read filters
+        const { data: campaign, error: fetchError } = await supabase
             .from('wa_broadcast_campaigns')
             .select('*')
             .eq('id', campaignId)
             .single();
+            
+        if (fetchError || !campaign) throw new Error('Kampanye tidak ditemukan');
+
+        const filters = campaign.segment_filter_json as SegmentFilter;
+
+        const { error: campaignError } = await supabase
+            .from('wa_broadcast_campaigns')
+            .update({ status: 'processing', updated_at: new Date().toISOString() })
+            .eq('id', campaignId);
 
         if (campaignError) throw campaignError;
 
-        // 2. Update status to processing
-        await supabase
-            .from('wa_broadcast_campaigns')
-            .update({ status: 'processing' })
-            .eq('id', campaignId);
+        // 2. Fetch recipients based on filters
+        let query = supabase
+            .from('wa_contacts')
+            .select('wa_jid, display_name, id');
 
-        // 3. Get all active chats for broadcast (simplified for now)
-        const { data: chats } = await supabase
-            .from('wa_chats')
-            .select('id, wa_contacts(wa_jid, display_name)');
-
-        if (!chats || chats.length === 0) {
-            throw new Error('Tidak ada target chat untuk broadcast');
+        // Apply filters (duplicate logic from count - refactor if possible but keeping simple for now)
+        if (filters?.region) {
+            query = query.eq('region', filters.region);
         }
 
+        if (filters?.labelIds && filters.labelIds.length > 0) {
+             const { data: chatsWithLabels } = await supabase
+                .from('wa_chat_labels')
+                .select('chat_id')
+                .in('label_id', filters.labelIds);
+            
+            if (chatsWithLabels && chatsWithLabels.length > 0) {
+                const chatIds = chatsWithLabels.map(c => c.chat_id);
+                const { data: contacts } = await supabase
+                    .from('wa_chats')
+                    .select('contact_id')
+                    .in('id', chatIds);
+                
+                if (contacts && contacts.length > 0) {
+                    const contactIds = contacts.map(c => c.contact_id);
+                    query = query.in('id', contactIds);
+                } else {
+                    query = query.in('id', []); // No matches
+                }
+            } else {
+                query = query.in('id', []); // No matches
+            }
+        }
+
+        const { data: contacts } = await query;
+
+
+        const recipients = contacts || [];
         let successCount = 0;
         let failedCount = 0;
 
-        // 4. Send messages (in a real production app, this should be done by a background worker)
-        for (const chat of chats) {
+        // Send messages
+        for (const contact of recipients) {
             try {
-                const contact = (chat.wa_contacts as { wa_jid?: string; display_name?: string } | null) ?? {};
-                const personalizedBody = template.replace('{{name}}', contact.display_name || 'Pelanggan');
-                
-                if (!contact.wa_jid) {
-                    failedCount++;
-                    continue;
-                }
-
-                const result = await waha.sendMessage(contact.wa_jid, personalizedBody);
-                
-                if (result && result.id) {
-                    // Record recipient status
-                    await supabase
-                        .from('wa_broadcast_recipients')
-                        .insert({
-                            campaign_id: campaignId,
-                            chat_id: chat.id,
-                            status: 'sent',
-                            sent_at: new Date().toISOString(),
-                        });
+                const message = template.replace('{{name}}', contact.display_name || 'Pelanggan');
+                const result = await waha.sendMessage(contact.wa_jid, message);
+                if (result?.id) {
                     successCount++;
                 } else {
                     failedCount++;
                 }
-            } catch (err) {
-                console.error('Failed to send broadcast message:', err);
+                // Rate limiting
+                await new Promise(resolve => setTimeout(resolve, 500));
+            } catch {
                 failedCount++;
             }
         }
 
-        // 5. Update campaign status
         await supabase
             .from('wa_broadcast_campaigns')
-            .update({ status: 'completed' })
+            .update({ status: 'completed', updated_at: new Date().toISOString() })
             .eq('id', campaignId);
 
         return { success: true, successCount, failedCount };
@@ -1266,79 +1515,84 @@ export async function sendBroadcastAction(campaignId: string, template: string) 
     }
 }
 
-export async function assignAgentToChatAction(chatId: string, agentId: string) {
+export async function getLabelsAction() {
     const supabase = await createClient();
     try {
-        const { error } = await supabase
-            .from('wa_chats')
-            .update({ assigned_agent_id: agentId })
-            .eq('id', chatId);
-
+        const { data, error } = await supabase
+            .from('wa_labels')
+            .select('*')
+            .order('name');
         if (error) throw error;
-
-        // Record audit log
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-            await supabase.from('wa_audit_logs').insert({
-                actor_id: user.id,
-                action: 'assign_agent',
-                entity_type: 'chat',
-                entity_id: chatId,
-                after_json: { agent_id: agentId }
-            });
-        }
-
-        revalidatePath('/admin/whatsapp');
-        return { success: true };
+        return { success: true, labels: data };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal menugaskan agen') };
+        return { success: false, error: getErrorMessage(error, 'Gagal memuat label') };
     }
 }
 
-export async function autoAssignChatAction(chatId: string) {
+export async function createLabelAction(name: string, color: string) {
     const supabase = await createClient();
     try {
-        // 1. Get active assignment rules
-        const { data: rule } = await supabase
-            .from('wa_assignment_rules')
-            .select('*')
-            .eq('is_active', true)
+        const code = name.toLowerCase().replace(/\s+/g, '_');
+        const { data, error } = await supabase
+            .from('wa_labels')
+            .insert({ name, color, code })
+            .select()
             .single();
-
-        if (!rule) return { success: false, error: 'Tidak ada aturan penugasan aktif' };
-
-        // 2. Implement Round-Robin
-        if (rule.mode === 'round_robin') {
-            const { data: agents } = await supabase
-                .from('profiles')
-                .select('id')
-                .in('role', ['admin_sales', 'agent']);
-
-            if (!agents || agents.length === 0) throw new Error('Tidak ada agen tersedia');
-
-            // Find last assigned agent from audit logs or just pick next in list
-            const { data: lastAssignment } = await supabase
-                .from('wa_audit_logs')
-                .select('after_json')
-                .eq('action', 'assign_agent')
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-
-            let nextAgentId = agents[0].id;
-            if (lastAssignment) {
-                const lastAgentId = toRecord(lastAssignment.after_json).agent_id;
-                const lastIndex = agents.findIndex(a => a.id === lastAgentId);
-                if (lastIndex !== -1 && lastIndex < agents.length - 1) {
-                    nextAgentId = agents[lastIndex + 1].id;
-                }
-            }
-
-            return assignAgentToChatAction(chatId, nextAgentId);
-        }
-
-        return { success: false, error: 'Mode penugasan tidak didukung' };
+        if (error) throw error;
+        revalidatePath('/admin/whatsapp');
+        return { success: true, label: data };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal penugasan otomatis') };
+        return { success: false, error: getErrorMessage(error, 'Gagal membuat label') };
+    }
+}
+
+export async function getChatLabelsAction(chatId: string) {
+    const supabase = await createClient();
+    try {
+        const { data, error } = await supabase
+            .from('wa_chat_labels')
+            .select('*, label:wa_labels(*)')
+            .eq('chat_id', chatId);
+        if (error) throw error;
+        return { success: true, chatLabels: data };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error, 'Gagal memuat label chat') };
+    }
+}
+
+export async function assignLabelAction(chatId: string, labelId: string) {
+    const supabase = await createClient();
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('User tidak terautentikasi');
+
+        const { error } = await supabase
+            .from('wa_chat_labels')
+            .insert({
+                chat_id: chatId,
+                label_id: labelId,
+                created_by: user.id
+            });
+        if (error) throw error;
+        revalidatePath('/admin/whatsapp');
+        return { success: true };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error, 'Gagal menambahkan label') };
+    }
+}
+
+export async function removeLabelAction(chatId: string, labelId: string) {
+    const supabase = await createClient();
+    try {
+        const { error } = await supabase
+            .from('wa_chat_labels')
+            .delete()
+            .eq('chat_id', chatId)
+            .eq('label_id', labelId);
+        if (error) throw error;
+        revalidatePath('/admin/whatsapp');
+        return { success: true };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error, 'Gagal menghapus label') };
     }
 }

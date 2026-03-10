@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js';
 import { errorResponse } from '@/lib/api-response';
+import { sendMessageAction } from '@/app/actions/whatsapp';
 
 function mapAckToStatus(ack: number): 'sent' | 'delivered' | 'read' | 'failed' {
     if (ack >= 3) return 'read';
@@ -66,6 +67,21 @@ function toWebhookEnvelope(body: unknown): { event: string; data: Record<string,
                     : rawBody;
 
     return { event, data };
+}
+
+function resolveAutoReplyKeyword(body: string | null): string | null {
+    if (!body) return null;
+    const text = body.toLowerCase();
+    if (text.includes('harga')) {
+        return 'Untuk info harga dan penawaran resmi, silakan kirim detail kebutuhan (ukuran area, lokasi, dan tipe kanopi) agar tim Kokohin dapat menghitung estimasi yang paling tepat.';
+    }
+    if (text.includes('proyek')) {
+        return 'Terkait status proyek Anda, mohon kirimkan nama atau ID proyek. Tim Kokohin akan cek progres terbaru dan menginformasikannya kembali.';
+    }
+    if (text.includes('kontak')) {
+        return 'Anda dapat menghubungi tim Kokohin di jam kerja (09.00–17.00 WIB). Jika perlu respon cepat, kirimkan nama dan lokasi, kami akan segera follow up.';
+    }
+    return null;
 }
 
 async function createWebhookClient() {
@@ -267,6 +283,28 @@ export async function POST(req: Request) {
                         threshold_ms: 3000,
                     },
                 });
+            }
+
+            if (!fromMe && type === 'chat' && typeof bodyText === 'string') {
+                const replyText = resolveAutoReplyKeyword(bodyText);
+                if (replyText) {
+                    const { data: recentOutbound } = await supabase
+                        .from('wa_messages')
+                        .select('id,sent_at')
+                        .eq('chat_id', chat.id)
+                        .eq('direction', 'outbound')
+                        .order('sent_at', { ascending: false })
+                        .limit(1);
+
+                    const lastSentAt = recentOutbound?.[0]?.sent_at as string | undefined;
+                    const lastSentTime = lastSentAt ? new Date(lastSentAt).getTime() : 0;
+                    const nowMs = Date.now();
+                    const recentlyReplied = lastSentTime && nowMs - lastSentTime < 60_000;
+
+                    if (!recentlyReplied) {
+                        await sendMessageAction(waJid, replyText);
+                    }
+                }
             }
         }
 

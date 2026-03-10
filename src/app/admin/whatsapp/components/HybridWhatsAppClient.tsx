@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import OptimizedWhatsAppClient from './OptimizedWhatsAppClient';
+import WhatsAppWebClient from './WhatsAppWebClient';
 import SimpleWhatsAppClient from './SimpleWhatsAppClient';
 import { trackOptimizedFallbackAction } from '@/app/actions/whatsapp';
 
@@ -30,6 +30,6 @@ export default function HybridWhatsAppClient() {
         );
     }
 
-    // Otherwise, try the optimized version
-    return <OptimizedWhatsAppClient onContactsFetchFailure={switchToFallback} />;
+    // Otherwise, try the optimized version (WhatsApp Web UI)
+    return <WhatsAppWebClient onContactsFetchFailure={switchToFallback} />;
 }
