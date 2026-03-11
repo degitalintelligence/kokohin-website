@@ -463,11 +463,36 @@ export class WahaClient {
             return record;
         })();
 
-        const rawParticipants = Array.isArray((metadataSource as Record<string, unknown>).participants)
+        let rawParticipants: unknown[] = Array.isArray((metadataSource as Record<string, unknown>).participants)
             ? ((metadataSource as Record<string, unknown>).participants as unknown[])
             : Array.isArray(record.participants)
                 ? (record.participants as unknown[])
                 : [];
+
+        if (rawParticipants.length === 0) {
+            try {
+                const participantsResponse = await this.requestWithCandidates<unknown>(
+                    [
+                        `/api/${this.sessionId}/groups/${encodedChatId}/participants`,
+                        `/api/groups/${encodedChatId}/participants?session=${this.sessionId}`,
+                    ],
+                    {},
+                    1
+                );
+                if (Array.isArray(participantsResponse)) {
+                    rawParticipants = participantsResponse as unknown[];
+                } else if (
+                    participantsResponse &&
+                    typeof participantsResponse === 'object' &&
+                    Array.isArray((participantsResponse as Record<string, unknown>).participants)
+                ) {
+                    rawParticipants = (participantsResponse as Record<string, unknown>)
+                        .participants as unknown[];
+                }
+            } catch {
+                rawParticipants = [];
+            }
+        }
 
         const participants: WahaGroupParticipant[] = rawParticipants
             .map((p) => (p && typeof p === 'object' ? (p as Record<string, unknown>) : null))

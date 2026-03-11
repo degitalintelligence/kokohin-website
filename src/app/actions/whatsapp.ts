@@ -793,20 +793,45 @@ export async function registerWebhookAction() {
         }
 
         // 2. Register new webhook
-        await waha.registerWebhook(webhookUrl, secret, [
-            'message',
-            'message.ack',
-            'session.status',
-            'message.reaction',
-            'group.v2.join',
-            'group.v2.leave',
-            'group.v2.participants',
-            'group.v2.update',
-            'group.join',
-            'group.leave',
-        ]);
-        
-        return { success: true, message: 'Webhook berhasil didaftarkan ke ' + webhookUrl };
+        try {
+            await waha.registerWebhook(webhookUrl, secret, [
+                'message',
+                'message.ack',
+                'session.status',
+                'message.reaction',
+                'group.v2.join',
+                'group.v2.leave',
+                'group.v2.participants',
+                'group.v2.update',
+                'group.join',
+                'group.leave',
+            ]);
+            
+            return { success: true, message: 'Webhook berhasil didaftarkan ke ' + webhookUrl };
+        } catch (error: unknown) {
+            const message =
+                error instanceof Error ? error.message.toLowerCase() : String(error ?? '').toLowerCase();
+            const unsupportedWebhookApi =
+                message.includes('cannot post /api/webhooks') ||
+                message.includes('cannot post /api/webhook') ||
+                message.includes('404') ||
+                message.includes('not found');
+
+            if (unsupportedWebhookApi) {
+                console.warn(
+                    'WAHA instance does not support /api/webhooks register API. Please configure webhook URL manually in WAHA dashboard if needed.'
+                );
+                return {
+                    success: true,
+                    message:
+                        'WAHA instance tidak menyediakan API /api/webhooks. Jika webhook sudah dikonfigurasi manual di WAHA dashboard ke ' +
+                        webhookUrl +
+                        ', Anda bisa mengabaikan tombol ini.',
+                };
+            }
+
+            throw error;
+        }
     } catch (error: unknown) {
         console.error('Error in registerWebhookAction:', error);
         return { success: false, error: getErrorMessage(error, 'Gagal mendaftarkan webhook') };
