@@ -269,13 +269,16 @@ export async function POST(req: Request) {
             const messageMedia = toRecord(messageRecord.media);
             const media = Object.keys(mediaData).length > 0 ? mediaData : Object.keys(messageMedia).length > 0 ? messageMedia : null;
             if (media) {
-                await supabase.from('wa_message_media').upsert({
-                    message_id: messageUpsert.data.id,
-                    media_type: type,
-                    mime_type: typeof media.mimetype === 'string' ? media.mimetype : null,
-                    storage_key: typeof media.url === 'string' ? media.url : null,
-                    size_bytes: typeof media.filesize === 'number' ? media.filesize : null,
-                });
+                await supabase.from('wa_message_media').upsert(
+                    {
+                        message_id: messageUpsert.data.id,
+                        media_type: type,
+                        mime_type: typeof media.mimetype === 'string' ? media.mimetype : null,
+                        storage_key: typeof media.url === 'string' ? media.url : null,
+                        size_bytes: typeof media.filesize === 'number' ? media.filesize : null,
+                    },
+                    { onConflict: 'message_id' }
+                );
             }
 
             const createdAt = new Date(messageUpsert.data.created_at as string).getTime();

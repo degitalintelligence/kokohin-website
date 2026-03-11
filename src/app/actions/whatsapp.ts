@@ -795,16 +795,35 @@ export async function registerWebhookAction() {
         // 2. Register new webhook
         try {
             await waha.registerWebhook(webhookUrl, secret, [
-                'message',
-                'message.ack',
                 'session.status',
+                'message',
+                'message.any',
                 'message.reaction',
+                'message.ack',
+                'message.ack.group',
+                'message.waiting',
+                'message.revoked',
+                'message.edited',
+                'chat.archive',
                 'group.v2.join',
                 'group.v2.leave',
-                'group.v2.participants',
                 'group.v2.update',
+                'group.v2.participants',
                 'group.join',
                 'group.leave',
+                'presence.update',
+                'poll.vote',
+                'poll.vote.failed',
+                'call.received',
+                'call.accepted',
+                'call.rejected',
+                'label.upsert',
+                'label.deleted',
+                'label.chat.added',
+                'label.chat.deleted',
+                'event.response',
+                'event.response.failed',
+                'engine.event',
             ]);
             
             return { success: true, message: 'Webhook berhasil didaftarkan ke ' + webhookUrl };
