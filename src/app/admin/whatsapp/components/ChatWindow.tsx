@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 import { id } from 'date-fns/locale';
+import { getGroupSenderLabel } from '../utils/message';
 import {
     deleteMessageForSenderAction,
     quoteReplyAction,
@@ -459,53 +460,6 @@ export default function ChatWindow({
         const waId = contact.wa_id || '';
         return waId.includes('@g.us');
     }, [contact]);
-
-    const getGroupSenderLabel = useCallback((msg: Message) => {
-        const raw = (msg as unknown as { raw_payload?: unknown }).raw_payload;
-        if (!raw || typeof raw !== 'object') return null;
-
-        const payload = raw as Record<string, unknown>;
-
-        const notifyName = typeof payload.notifyName === 'string' ? payload.notifyName : null;
-        const senderName = typeof payload.senderName === 'string' ? payload.senderName : null;
-
-        const contacts = Array.isArray((payload as { contacts?: unknown }).contacts)
-            ? ((payload as { contacts?: unknown }).contacts as unknown[])
-            : null;
-
-        const firstContact = contacts && contacts.length > 0 ? (contacts[0] as Record<string, unknown>) : null;
-        const contactProfileName =
-            firstContact && firstContact.profile && typeof (firstContact.profile as { name?: unknown }).name === 'string'
-                ? ((firstContact.profile as { name?: string }).name ?? null)
-                : null;
-        const contactWaId =
-            firstContact && typeof firstContact.wa_id === 'string' ? (firstContact.wa_id as string) : null;
-
-        const author = typeof payload.author === 'string' ? payload.author : null;
-        const from = typeof payload.from === 'string' ? payload.from : null;
-
-        const primaryName = notifyName || senderName || contactProfileName || null;
-        const jidSource = author || from || contactWaId || null;
-
-        if (primaryName && primaryName.trim()) {
-            return primaryName.trim();
-        }
-
-        if (jidSource) {
-            const localPart = String(jidSource).split('@')[0];
-            const digitsOnly = localPart.replace(/\D/g, '');
-
-            if (
-                digitsOnly.length >= 8 &&
-                digitsOnly.length <= 15 &&
-                digitsOnly.startsWith('62')
-            ) {
-                return digitsOnly;
-            }
-        }
-
-        return null;
-    }, []);
 
     const handleDeleteMessage = async (id: string) => {
         setDeletingMessageIds((prev) => {

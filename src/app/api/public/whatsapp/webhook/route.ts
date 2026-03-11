@@ -84,6 +84,43 @@ function resolveAutoReplyKeyword(body: string | null): string | null {
     return null;
 }
 
+// Helper to safely upsert contact without overwriting critical fields like manually corrected phone numbers
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function upsertContact(supabase: any, waJid: string, notifyName: string | null, sentAtIso: string) {
+    // Check if contact exists to preserve manual fixes (like LID phone mapping)
+    const { data: existing } = await supabase
+        .from('wa_contacts')
+        .select('id, display_name, phone')
+        .eq('wa_jid', waJid)
+        .maybeSingle();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload: any = {
+        wa_jid: waJid,
+        last_message_at: sentAtIso,
+        // Preserve existing display_name (Saved Name), otherwise use notifyName
+        display_name: existing?.display_name || notifyName,
+    };
+
+    if (!existing) {
+        // New contact: default phone from JID
+        payload.phone = waJid.split('@')[0].replace(/\D/g, '');
+    }
+    // If existing, do NOT include phone in payload, so it is not overwritten.
+
+    const { data: contact, error } = await supabase
+        .from('wa_contacts')
+        .upsert(payload, { onConflict: 'wa_jid' })
+        .select('id')
+        .single();
+    
+    if (error) {
+        console.error('WA Webhook contact upsert error:', error, { waJid });
+        throw error;
+    }
+    return contact;
+}
+
 async function createWebhookClient() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -187,22 +224,18 @@ export async function POST(req: Request) {
                 throw new Error('WAHA webhook payload missing wa_jid');
             }
 
-            const { data: contact, error: contactError } = await supabase
-                .from('wa_contacts')
-                .upsert(
-                    {
-                        wa_jid: waJid,
-                        phone: waJid.split('@')[0]?.replace(/\D/g, '') || null,
-                        display_name: typeof data.notifyName === 'string' ? data.notifyName : null,
-                        last_message_at: sentAtIso,
-                    },
-                    { onConflict: 'wa_jid' }
-                )
-                .select('id')
-                .single();
-            if (contactError) {
-                console.error('WA Webhook contact upsert error:', contactError, { waJid });
-                throw contactError;
+            const isGroup = waJid.endsWith('@g.us');
+            const participantJid = typeof data.participant === 'string' ? data.participant : null;
+            const notifyName = typeof data.notifyName === 'string' ? data.notifyName : null;
+
+            // 1. Upsert Main Contact (Chat/Group)
+            // If group, notifyName from sender should NOT be applied to group name
+            const contact = await upsertContact(supabase, waJid, isGroup ? null : notifyName, sentAtIso);
+
+            // 2. Upsert Participant Contact (if group and participant exists)
+            // This ensures sender info (LID/Phone) is captured correctly
+            if (isGroup && participantJid) {
+                await upsertContact(supabase, participantJid, notifyName, sentAtIso);
             }
 
             const { data: chat, error: chatError } = await supabase

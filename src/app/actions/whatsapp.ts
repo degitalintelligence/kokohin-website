@@ -1415,10 +1415,48 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
             wa_message_media?: { storage_key?: string | null; media_type?: string | null }[] | { storage_key?: string | null; media_type?: string | null } | null;
         }>;
 
+        // Collect author IDs for group messages
+        const authorIds = new Set<string>();
+        rows.forEach(row => {
+            // Check if message has author info in payload (typical for groups)
+            if (row.raw_payload) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const payload = row.raw_payload as Record<string, any>;
+                const author = payload.author || payload._data?.author || payload.participant;
+                if (typeof author === 'string') {
+                    authorIds.add(author);
+                }
+            }
+        });
+
+        // Fetch contacts if any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const contactMap = new Map<string, any>();
+        if (authorIds.size > 0) {
+            const { data: contacts } = await supabase
+                .from('wa_contacts')
+                .select('id, wa_id:wa_jid, name:display_name, phone, avatar_url, last_message_at')
+                .in('wa_jid', Array.from(authorIds));
+            
+            if (contacts) {
+                contacts.forEach(c => contactMap.set(c.wa_id, c));
+            }
+        }
+
         const messages = rows.map((row) => {
             const mediaRelation = row.wa_message_media;
             const media =
                 Array.isArray(mediaRelation) ? mediaRelation[0] : mediaRelation || null;
+
+            let senderContact = null;
+            if (row.raw_payload) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const payload = row.raw_payload as Record<string, any>;
+                const author = payload.author || payload._data?.author || payload.participant;
+                if (typeof author === 'string') {
+                    senderContact = contactMap.get(author) || null;
+                }
+            }
 
             return {
                 id: row.id,
@@ -1436,6 +1474,7 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
                 mediaUrl: media?.storage_key ?? null,
                 mediaCaption: row.type === 'document' ? row.body : null,
                 raw_payload: row.raw_payload ?? null,
+                sender_contact: senderContact,
             };
         });
 
@@ -1456,6 +1495,101 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
         return result;
     } catch (error: unknown) {
         return { success: false, error: getErrorMessage(error, 'Gagal memuat pesan WhatsApp') };
+    }
+}
+
+export async function getMessageAction(messageId: string) {
+    const supabase = await createClient();
+    try {
+        const { data, error } = await supabase
+            .from('wa_messages')
+            .select(
+                `
+                id,
+                chat_id,
+                external_message_id,
+                body,
+                type,
+                direction,
+                sender_type,
+                status,
+                sent_at,
+                quoted_message_id,
+                is_forwarded,
+                is_deleted,
+                raw_payload,
+                wa_message_media (
+                    storage_key,
+                    media_type
+                )
+                `
+            )
+            .eq('id', messageId)
+            .single();
+
+        if (error) throw error;
+
+        const row = data as unknown as {
+            id: string;
+            chat_id: string;
+            external_message_id: string;
+            body: string | null;
+            type: string;
+            direction: string;
+            sender_type: string;
+            status: string;
+            sent_at: string;
+            quoted_message_id?: string | null;
+            is_forwarded?: boolean | null;
+            is_deleted?: boolean | null;
+            raw_payload?: unknown;
+            wa_message_media?: { storage_key?: string | null; media_type?: string | null }[] | { storage_key?: string | null; media_type?: string | null } | null;
+        };
+
+        let senderContact = null;
+        if (row.chat_id.endsWith('@g.us') && row.raw_payload) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const payload = row.raw_payload as Record<string, any>;
+            const author = payload.author || payload._data?.author || payload.participant;
+            if (typeof author === 'string') {
+                const { data: contact } = await supabase
+                    .from('wa_contacts')
+                    .select('id, wa_id:wa_jid, name:display_name, phone, avatar_url, last_message_at')
+                    .eq('wa_jid', author)
+                    .single();
+                
+                if (contact) {
+                    senderContact = contact;
+                }
+            }
+        }
+
+        const mediaRelation = row.wa_message_media;
+        const media =
+            Array.isArray(mediaRelation) ? mediaRelation[0] : mediaRelation || null;
+
+        const message = {
+            id: row.id,
+            external_message_id: row.external_message_id,
+            chat_id: row.chat_id,
+            body: row.body,
+            type: row.type,
+            direction: row.direction as 'inbound' | 'outbound',
+            sender_type: row.sender_type as 'customer' | 'agent' | 'system',
+            status: row.status,
+            sent_at: row.sent_at,
+            quoted_message_id: row.quoted_message_id ?? null,
+            is_forwarded: row.is_forwarded ?? false,
+            is_deleted: row.is_deleted ?? false,
+            mediaUrl: media?.storage_key ?? null,
+            mediaCaption: row.type === 'document' ? row.body : null,
+            raw_payload: row.raw_payload ?? null,
+            sender_contact: senderContact,
+        };
+
+        return { success: true, message };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error, 'Gagal memuat pesan') };
     }
 }
 

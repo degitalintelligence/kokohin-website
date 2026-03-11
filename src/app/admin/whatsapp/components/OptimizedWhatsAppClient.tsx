@@ -9,6 +9,7 @@ import {
     getPaginatedContactsAction,
     getPaginatedMessagesAction,
     syncChatsFromWahaAction,
+    getMessageAction,
 } from '@/app/actions/whatsapp';
 import ChatList from './ChatList';
 import ChatWindow from './ChatWindow';
@@ -66,6 +67,7 @@ export type Message = {
     mediaUrl?: string | null;
     mediaCaption?: string | null;
     raw_payload?: unknown;
+    sender_contact?: Contact | null;
 };
 
 const CONTACTS_PER_PAGE = 20;
@@ -227,11 +229,18 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
                     if (!selectedContactId || !selectedWaId) return;
 
                     if (payload.eventType === 'INSERT') {
-                        const newMessage = payload.new as Message;
-                        if (newMessage.chat_id === selectedContactId) {
-                            setMessages((prev) => {
-                                if (prev.some(m => m.id === newMessage.id)) return prev;
-                                return [...prev, newMessage];
+                        const newMessageId = (payload.new as { id: string }).id;
+                        const chatId = (payload.new as { chat_id: string }).chat_id;
+                        
+                        if (chatId === selectedContactId) {
+                            // Fetch full enriched message (with sender_contact)
+                            getMessageAction(newMessageId).then((res) => {
+                                if (res.success && res.message) {
+                                    setMessages((prev) => {
+                                        if (prev.some(m => m.id === res.message!.id)) return prev;
+                                        return [...prev, res.message as Message];
+                                    });
+                                }
                             });
                             fetchContacts(1, searchQuery, false);
                         }

@@ -27,6 +27,7 @@ export type Message = {
     mediaUrl?: string | null;
     mediaCaption?: string | null;
     raw_payload?: unknown;
+    sender_contact?: Contact | null;
 };
 
 export type QuickReply = {
