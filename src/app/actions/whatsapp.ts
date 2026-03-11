@@ -1133,6 +1133,7 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
                 contact_id: chat.contact_id,
                 wa_id: contact.wa_jid,
                 name: contact.display_name || erpInfo?.customer_name || contact.wa_jid.split('@')[0],
+                phone: contact.phone,
                 avatar_url: contact.avatar_url,
                 last_message_at: chat.last_message_at,
                 unread_count: chat.unread_count,
@@ -1185,16 +1186,78 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
         
         const { data, count, error } = await supabase
             .from('wa_messages')
-            .select('*', { count: 'exact' })
+            .select(
+                `
+                id,
+                chat_id,
+                external_message_id,
+                body,
+                type,
+                direction,
+                sender_type,
+                status,
+                sent_at,
+                quoted_message_id,
+                is_forwarded,
+                is_deleted,
+                raw_payload,
+                wa_message_media (
+                    storage_key,
+                    media_type
+                )
+                `,
+                { count: 'exact' }
+            )
             .eq('chat_id', chatId)
             .order('sent_at', { ascending: false })
             .range(offset, offset + limit - 1);
 
         if (error) throw error;
 
+        const rows = (data ?? []) as unknown as Array<{
+            id: string;
+            chat_id: string;
+            external_message_id: string;
+            body: string | null;
+            type: string;
+            direction: string;
+            sender_type: string;
+            status: string;
+            sent_at: string;
+            quoted_message_id?: string | null;
+            is_forwarded?: boolean | null;
+            is_deleted?: boolean | null;
+            raw_payload?: unknown;
+            wa_message_media?: { storage_key?: string | null; media_type?: string | null }[] | { storage_key?: string | null; media_type?: string | null } | null;
+        }>;
+
+        const messages = rows.map((row) => {
+            const mediaRelation = row.wa_message_media;
+            const media =
+                Array.isArray(mediaRelation) ? mediaRelation[0] : mediaRelation || null;
+
+            return {
+                id: row.id,
+                external_message_id: row.external_message_id,
+                chat_id: row.chat_id,
+                body: row.body,
+                type: row.type,
+                direction: row.direction as 'inbound' | 'outbound',
+                sender_type: row.sender_type as 'customer' | 'agent' | 'system',
+                status: row.status,
+                sent_at: row.sent_at,
+                quoted_message_id: row.quoted_message_id ?? null,
+                is_forwarded: row.is_forwarded ?? false,
+                is_deleted: row.is_deleted ?? false,
+                mediaUrl: media?.storage_key ?? null,
+                mediaCaption: row.type === 'document' ? row.body : null,
+                raw_payload: row.raw_payload ?? null,
+            };
+        });
+
         const result = {
             success: true,
-            messages: data || [],
+            messages,
             pagination: {
                 page,
                 limit,

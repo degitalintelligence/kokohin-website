@@ -147,15 +147,39 @@ const AudioPlayer = ({ src, isOutbound }: { src: string, isOutbound: boolean }) 
     );
 };
 
-const MessageItem = memo(({ msg, quoted, isOutbound, onQuote, onDelete, isDeleting }: { 
-    msg: Message, 
-    quoted: Message | null, 
-    isOutbound: boolean,
-    onQuote: (id: string) => void,
-    onDelete: (id: string) => void,
-    isDeleting: boolean
-}) => {
+const MessageItem = memo((
+    { 
+        msg, 
+        quoted, 
+        isOutbound, 
+        onQuote, 
+        onDelete, 
+        isDeleting,
+        isGroup,
+        senderLabel
+    }: { 
+        msg: Message; 
+        quoted: Message | null; 
+        isOutbound: boolean;
+        onQuote: (id: string) => void;
+        onDelete: (id: string) => void;
+        isDeleting: boolean;
+        isGroup?: boolean;
+        senderLabel?: string | null;
+    }
+) => {
     const isMedia = msg.type === 'image' || msg.type === 'video' || msg.type === 'audio' || msg.type === 'voice' || msg.type === 'document';
+    const isVisualMedia = msg.type === 'image' || msg.type === 'video';
+    const [mediaLoading, setMediaLoading] = useState(isVisualMedia && !!msg.mediaUrl);
+    const [mediaError, setMediaError] = useState(false);
+    const roleLabel =
+        msg.sender_type === 'agent'
+            ? 'Admin'
+            : msg.sender_type === 'customer'
+                ? 'Customer'
+                : msg.sender_type === 'system'
+                    ? 'System'
+                    : null;
     
     return (
         <div className={`flex mb-4 ${isOutbound ? 'justify-end' : 'justify-start'} group animate-in fade-in slide-in-from-bottom-3 duration-500`}>
@@ -164,6 +188,25 @@ const MessageItem = memo(({ msg, quoted, isOutbound, onQuote, onDelete, isDeleti
                     ? 'bg-[#E30613] text-white rounded-tr-none shadow-[0_4px_15px_rgba(227,6,19,0.15)]' 
                     : 'bg-white text-[#1D1D1B] rounded-tl-none border border-gray-100'}`}
             >
+                {isGroup && (
+                    <div className="mb-1 flex items-center gap-1.5">
+                        <p className={`text-[12px] font-black leading-tight truncate ${isOutbound ? 'text-white' : 'text-[#1D1D1B]'}`}>
+                            {isOutbound ? 'Anda' : senderLabel || 'Anggota Grup'}
+                        </p>
+                        {roleLabel && (
+                            <span
+                                className={`px-2 py-[2px] rounded-full text-[9px] font-bold tracking-[0.16em] uppercase border
+                                    ${isOutbound
+                                        ? 'bg-white/10 border-white/40 text-white/80'
+                                        : 'bg-[#E30613]/5 border-[#E30613]/40 text-[#E30613]'
+                                    }`}
+                            >
+                                {roleLabel}
+                            </span>
+                        )}
+                    </div>
+                )}
+
                 {/* Quoted Message */}
                 {quoted && (
                     <div className={`mb-2 rounded-xl overflow-hidden border-l-[4px] p-2.5 cursor-pointer transition-all hover:opacity-90
@@ -177,29 +220,59 @@ const MessageItem = memo(({ msg, quoted, isOutbound, onQuote, onDelete, isDeleti
 
                 {/* Media Content */}
                 {msg.mediaUrl && (
-                    <div className="mb-2 rounded-xl overflow-hidden shadow-inner">
+                    <div className="mb-2 rounded-xl overflow-hidden shadow-inner relative">
                         {msg.type === 'image' && (
                             <div
                                 className="relative w-full max-h-[400px] border border-black/5 cursor-pointer overflow-hidden"
                                 onClick={() => window.open(msg.mediaUrl!, '_blank')}
                             >
                                 <div className="relative w-full h-[400px]">
-                                    <Image
-                                        src={msg.mediaUrl}
-                                        alt="Image"
-                                        fill
-                                        className="object-cover hover:scale-105 transition-transform duration-500"
-                                        sizes="(max-width: 768px) 90vw, 600px"
-                                    />
+                                    {!mediaError ? (
+                                        <Image
+                                            src={msg.mediaUrl}
+                                            alt="Image"
+                                            fill
+                                            className="object-cover hover:scale-105 transition-transform duration-500"
+                                            sizes="(max-width: 768px) 90vw, 600px"
+                                            loading="lazy"
+                                            onLoadingComplete={() => setMediaLoading(false)}
+                                            onError={() => {
+                                                setMediaError(true);
+                                                setMediaLoading(false);
+                                            }}
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center bg-black/5">
+                                            <span className="text-xs font-semibold text-gray-600">
+                                                Media gambar gagal dimuat
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
                         {msg.type === 'video' && (
-                            <video 
-                                src={msg.mediaUrl} 
-                                controls 
-                                className="w-full max-h-[400px] object-cover border border-black/5"
-                            />
+                            <>
+                                {!mediaError ? (
+                                    <video 
+                                        src={msg.mediaUrl} 
+                                        controls 
+                                        preload="metadata"
+                                        className="w-full max-h-[400px] object-cover border border-black/5"
+                                        onLoadedData={() => setMediaLoading(false)}
+                                        onError={() => {
+                                            setMediaError(true);
+                                            setMediaLoading(false);
+                                        }}
+                                    />
+                                ) : (
+                                    <div className="w-full h-[220px] flex items-center justify-center bg-black/5">
+                                        <span className="text-xs font-semibold text-gray-600">
+                                            Media video gagal dimuat
+                                        </span>
+                                    </div>
+                                )}
+                            </>
                         )}
                         {(msg.type === 'audio' || msg.type === 'voice' || msg.type === 'ptt') && (
                             <AudioPlayer src={msg.mediaUrl} isOutbound={isOutbound} />
@@ -221,6 +294,12 @@ const MessageItem = memo(({ msg, quoted, isOutbound, onQuote, onDelete, isDeleti
                                 </div>
                                 <Download size={18} className={`transition-transform group-hover/doc:translate-y-0.5 ${isOutbound ? 'text-white/60' : 'text-gray-400'}`} />
                             </a>
+                        )}
+
+                        {isVisualMedia && mediaLoading && !mediaError && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                                <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            </div>
                         )}
                     </div>
                 )}
@@ -300,6 +379,7 @@ export default function ChatWindow({
     const scrollRef = useRef<HTMLDivElement>(null);
     const endRef = useRef<HTMLDivElement>(null);
     const [deletingMessageIds, setDeletingMessageIds] = useState<string[]>([]);
+    const [avatarBroken, setAvatarBroken] = useState(false);
 
     // Load Quick Replies
     useEffect(() => {
@@ -309,6 +389,10 @@ export default function ChatWindow({
             }
         });
     }, []);
+
+    useEffect(() => {
+        setAvatarBroken(false);
+    }, [contact.id]);
 
     // Scroll to bottom on new messages
     useEffect(() => {
@@ -327,16 +411,24 @@ export default function ChatWindow({
         if (!newMessage.trim() || sending) return;
         setSending(true);
         try {
+            let result;
             if (quotedId) {
-                await quoteReplyAction(contact.id, newMessage, quotedId);
+                result = await quoteReplyAction(contact.id, quotedId, newMessage);
             } else {
-                await sendMessageAction(contact.id, newMessage);
+                result = await sendMessageAction(contact.id, newMessage);
             }
+
+            if (!result.success) {
+                toast.error('Gagal mengirim pesan');
+                return;
+            }
+
             setNewMessage('');
             setQuotedId(null);
             onSendMessage();
         } catch (error) {
             console.error('Failed to send message:', error);
+            toast.error('Gagal mengirim pesan');
         } finally {
             setSending(false);
         }
@@ -363,6 +455,58 @@ export default function ChatWindow({
         return groups;
     }, [messages]);
 
+    const isGroupChat = useMemo(() => {
+        const waId = contact.wa_id || '';
+        return waId.includes('@g.us');
+    }, [contact]);
+
+    const getGroupSenderLabel = useCallback((msg: Message) => {
+        const raw = (msg as unknown as { raw_payload?: unknown }).raw_payload;
+        if (!raw || typeof raw !== 'object') return null;
+
+        const payload = raw as Record<string, unknown>;
+
+        const notifyName = typeof payload.notifyName === 'string' ? payload.notifyName : null;
+        const senderName = typeof payload.senderName === 'string' ? payload.senderName : null;
+
+        const contacts = Array.isArray((payload as { contacts?: unknown }).contacts)
+            ? ((payload as { contacts?: unknown }).contacts as unknown[])
+            : null;
+
+        const firstContact = contacts && contacts.length > 0 ? (contacts[0] as Record<string, unknown>) : null;
+        const contactProfileName =
+            firstContact && firstContact.profile && typeof (firstContact.profile as { name?: unknown }).name === 'string'
+                ? ((firstContact.profile as { name?: string }).name ?? null)
+                : null;
+        const contactWaId =
+            firstContact && typeof firstContact.wa_id === 'string' ? (firstContact.wa_id as string) : null;
+
+        const author = typeof payload.author === 'string' ? payload.author : null;
+        const from = typeof payload.from === 'string' ? payload.from : null;
+
+        const primaryName = notifyName || senderName || contactProfileName || null;
+        const jidSource = author || from || contactWaId || null;
+
+        if (primaryName && primaryName.trim()) {
+            return primaryName.trim();
+        }
+
+        if (jidSource) {
+            const localPart = String(jidSource).split('@')[0];
+            const digitsOnly = localPart.replace(/\D/g, '');
+
+            if (
+                digitsOnly.length >= 8 &&
+                digitsOnly.length <= 15 &&
+                digitsOnly.startsWith('62')
+            ) {
+                return digitsOnly;
+            }
+        }
+
+        return null;
+    }, []);
+
     const handleDeleteMessage = async (id: string) => {
         setDeletingMessageIds((prev) => {
             if (prev.includes(id)) return prev;
@@ -375,7 +519,7 @@ export default function ChatWindow({
             } else {
                 toast.success('Pesan dihapus');
             }
-        } catch (error) {
+        } catch {
             toast.error('Gagal menghapus pesan');
         } finally {
             setDeletingMessageIds((prev) => prev.filter((messageId) => messageId !== id));
@@ -403,13 +547,14 @@ export default function ChatWindow({
                         
                         <div className="flex items-center gap-3 cursor-pointer group flex-1 min-w-0" onClick={onToggleContactInfo}>
                             <div className="w-10 h-10 rounded-2xl overflow-hidden bg-gray-100 border border-gray-100 shadow-sm transition-transform group-hover:scale-105 relative">
-                                {contact.avatar_url ? (
+                                {contact.avatar_url && !avatarBroken ? (
                                     <Image
                                         src={contact.avatar_url}
                                         alt=""
                                         fill
                                         className="object-cover"
                                         sizes="40px"
+                                        onError={() => setAvatarBroken(true)}
                                     />
                                 ) : (
                                     <div className="w-full h-full flex items-center justify-center bg-gray-50 text-gray-300">
@@ -419,7 +564,7 @@ export default function ChatWindow({
                             </div>
                             <div className="min-w-0 flex-1">
                                 <h2 className="text-[#1D1D1B] text-base font-black tracking-tight truncate group-hover:text-[#E30613] transition-colors leading-tight">
-                                    {contact.name || contact.wa_id.split('@')[0]}
+                                    {(contact.name || '').trim() || contact.phone || contact.wa_id.split('@')[0]}
                                 </h2>
                                 <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mt-0.5 group-hover:text-gray-600">
                                     {contact.erp_project_status || 'Info Kontak'}
@@ -470,6 +615,8 @@ export default function ChatWindow({
                                 onQuote={setQuotedId}
                                 onDelete={handleDeleteMessage}
                                 isDeleting={deletingMessageIds.includes(msg.id)}
+                                isGroup={isGroupChat}
+                                senderLabel={isGroupChat ? getGroupSenderLabel(msg) : null}
                             />
                         ))}
                     </React.Fragment>

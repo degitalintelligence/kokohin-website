@@ -7,6 +7,7 @@ export type Contact = {
     unread_count?: number | null;
     erp_project_status?: string | null;
     erp_project_id?: string | null;
+    phone?: string | null;
     isGroup?: boolean;
 };
 
@@ -25,6 +26,7 @@ export type Message = {
     is_deleted?: boolean | null;
     mediaUrl?: string | null;
     mediaCaption?: string | null;
+    raw_payload?: unknown;
 };
 
 export type QuickReply = {

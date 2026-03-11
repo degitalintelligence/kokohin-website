@@ -20,6 +20,7 @@ type MessageListProps = {
     onForward: (id: string) => void;
     onDelete: (message: Message) => void;
     isDarkMode: boolean;
+    isGroup: boolean;
 };
 
 type RowProps = {
@@ -32,6 +33,7 @@ type RowProps = {
     onReply: (id: string) => void;
     onForward: (id: string) => void;
     onDelete: (message: Message) => void;
+    isGroup: boolean;
 };
 
 const MessageList = ({
@@ -44,7 +46,8 @@ const MessageList = ({
     onReply,
     onForward,
     onDelete,
-    isDarkMode
+    isDarkMode,
+    isGroup
 }: MessageListProps) => {
     const listRef = useRef<ListImperativeAPI | null>(null);
     const hasLoadMoreRow = hasMoreMessages;
@@ -63,7 +66,7 @@ const MessageList = ({
     }, [lastIndex, loadingMessages, listRef]);
 
     const getRowHeight = (index: number, rowProps: RowProps) => {
-        const { messages, uploadingMedia, hasMoreMessages } = rowProps;
+        const { messages, uploadingMedia, hasMoreMessages, isGroup } = rowProps;
         if (hasMoreMessages && index === 0) {
             return 64;
         }
@@ -73,6 +76,10 @@ const MessageList = ({
         if (baseIndex < messages.length) {
             const msg = messages[baseIndex];
             let height = 72;
+
+            if (isGroup) {
+                height += 20;
+            }
 
             if (msg.mediaUrl) {
                 height += 220;
@@ -108,7 +115,8 @@ const MessageList = ({
         onCancelUpload,
         onReply,
         onForward,
-        onDelete
+        onDelete,
+        isGroup
     }: RowComponentProps<RowProps>) => {
         if (hasMoreMessages && index === 0) {
             return (
@@ -145,6 +153,7 @@ const MessageList = ({
                             onReply={onReply}
                             onForward={onForward}
                             onDelete={onDelete}
+                            isGroup={isGroup}
                         />
                     </div>
                 </div>
@@ -266,7 +275,8 @@ const MessageList = ({
                         onCancelUpload,
                         onReply,
                         onForward,
-                        onDelete
+                        onDelete,
+                        isGroup
                     };
 
                     return (

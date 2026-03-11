@@ -309,8 +309,17 @@ export default function WhatsAppWebClient({ onContactsFetchFailure }: WhatsAppWe
                     : m
             )
         );
-        const result = await deleteMessageForSenderAction(msg.id);
-        if (!result.success) {
+        try {
+            const result = await deleteMessageForSenderAction(msg.id);
+            if (!result.success) {
+                toast.error('Gagal menghapus pesan');
+                setMessages((prev) =>
+                    prev.map((m) => (m.id === original.id ? original : m))
+                );
+            } else {
+                toast.success('Pesan dihapus');
+            }
+        } catch {
             toast.error('Gagal menghapus pesan');
             setMessages((prev) =>
                 prev.map((m) => (m.id === original.id ? original : m))
@@ -558,6 +567,7 @@ export default function WhatsAppWebClient({ onContactsFetchFailure }: WhatsAppWe
                                     }}
                                     onDelete={handleDeleteMessage}
                                     isDarkMode={isDarkMode}
+                                    isGroup={Boolean(selectedContact.isGroup)}
                                 />
 
                                 <ChatInput

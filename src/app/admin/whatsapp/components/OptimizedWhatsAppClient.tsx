@@ -47,6 +47,7 @@ export type Contact = {
     unread_count?: number | null;
     erp_project_status?: string | null;
     erp_project_id?: string | null;
+    phone?: string | null;
 };
 
 export type Message = {
@@ -64,6 +65,7 @@ export type Message = {
     is_deleted?: boolean | null;
     mediaUrl?: string | null;
     mediaCaption?: string | null;
+    raw_payload?: unknown;
 };
 
 const CONTACTS_PER_PAGE = 20;
@@ -84,6 +86,7 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
     const [showSettings, setShowSettings] = useState(false);
     const [showBroadcast, setShowBroadcast] = useState(false);
     const [showContactInfo, setShowContactInfo] = useState(false);
+    const [headerAvatarBroken, setHeaderAvatarBroken] = useState(false);
     
     // Navigation State
     const [activeTab, setActiveTab] = useState<'chats' | 'broadcast' | 'contacts' | 'settings'>('chats');
@@ -104,6 +107,10 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
         if (!searchQuery.trim()) return contacts;
         return contacts;
     }, [contacts, searchQuery]);
+
+    useEffect(() => {
+        setHeaderAvatarBroken(false);
+    }, [selectedContactId]);
 
     // Fetch contacts with infinite scroll support
     const fetchContacts = useCallback(async (page = 1, search = '', showLoading = false) => {
@@ -188,8 +195,8 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
 
     // Initial load
     useEffect(() => {
-        fetchContacts(1, searchQuery, true);
-    }, []); 
+        fetchContacts(1, '', true);
+    }, [fetchContacts]); 
 
     // Search handler
     useEffect(() => {
@@ -397,13 +404,14 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
                                             onClick={() => setShowContactInfo(prev => !prev)}
                                         >
                                             <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100 border border-gray-100 shrink-0 shadow-sm group-hover:scale-105 transition-transform duration-300 relative">
-                                                {selectedContact.avatar_url ? (
+                                                {selectedContact.avatar_url && !headerAvatarBroken ? (
                                                     <Image
                                                         src={selectedContact.avatar_url}
                                                         alt=""
                                                         fill
                                                         className="object-cover"
                                                         sizes="40px"
+                                                        onError={() => setHeaderAvatarBroken(true)}
                                                     />
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center bg-gray-50 text-gray-300">
@@ -413,7 +421,7 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
                                             </div>
                                             <div className="min-w-0 flex-1">
                                                 <h2 className="text-[#1D1D1B] text-base font-black leading-tight truncate group-hover:text-[#E30613] transition-colors tracking-tight">
-                                                    {selectedContact.name || selectedContact.wa_id}
+                                                    {(selectedContact.name || '').trim() || (selectedContact.phone || selectedContact.wa_id.split('@')[0])}
                                                 </h2>
                                                 <div className="flex items-center gap-1.5 mt-0.5">
                                                     <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>

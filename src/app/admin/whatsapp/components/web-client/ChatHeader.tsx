@@ -39,6 +39,12 @@ const getPresenceStatus = (contact: Contact | null) => {
     return `last seen ${formatRelativeStatus(contact.last_message_at)}`;
 };
 
+const getDisplayName = (contact: Contact) => {
+    const rawLocalId = contact.wa_id?.split('@')[0] || '';
+    const phoneNumber = (contact.phone || rawLocalId).trim();
+    return contact.name?.trim() || phoneNumber;
+};
+
 const ChatHeader = ({
     contact,
     brokenAvatars,
@@ -78,7 +84,7 @@ const ChatHeader = ({
                 </div>
                 <div className="flex flex-col justify-center overflow-hidden flex-1">
                     <h2 className="text-[#111b21] dark:text-[#e9edef] font-normal truncate text-base leading-tight">
-                        {contact.name || contact.wa_id}
+                        {getDisplayName(contact)}
                     </h2>
                     {contact.isGroup ? (
                         <p className="text-[12px] text-[#667781] dark:text-[#8696a0] truncate leading-tight mt-0.5 flex items-center gap-1">

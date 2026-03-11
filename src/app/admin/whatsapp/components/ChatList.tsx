@@ -36,13 +36,6 @@ export default function ChatList({
     const containerRef = useRef<HTMLDivElement>(null);
     const [containerHeight, setContainerHeight] = useState(800);
 
-    // Sync local search
-    useEffect(() => {
-        if (searchQuery !== undefined && searchQuery !== localSearch) {
-            setLocalSearch(searchQuery);
-        }
-    }, [searchQuery]);
-
     // Debounce search
     useEffect(() => {
         if (!onSearchChange) return;
@@ -147,7 +140,7 @@ export default function ChatList({
                 onScroll={onScroll}
             >
                 {/* Virtual Scroll Container */}
-                <div style={{ height: totalHeight }} className="relative">
+                <div style={{ height: totalHeight, paddingBottom }} className="relative">
                     <div style={{ transform: `translateY(${paddingTop}px)` }} className="divide-y divide-gray-50">
                          {visibleItems.map(({ index, contact }) => (
                              <div 

@@ -11,6 +11,54 @@ type MessageBubbleProps = {
     onReply: (id: string) => void;
     onForward: (id: string) => void;
     onDelete: (message: Message) => void;
+    isGroup?: boolean;
+};
+
+const getGroupSenderLabel = (msg: Message) => {
+    const raw = (msg as unknown as { raw_payload?: unknown }).raw_payload;
+    if (!raw || typeof raw !== 'object') return null;
+
+    const payload = raw as Record<string, unknown>;
+
+    const notifyName = typeof payload.notifyName === 'string' ? payload.notifyName : null;
+    const senderName = typeof payload.senderName === 'string' ? payload.senderName : null;
+
+    const contacts = Array.isArray((payload as { contacts?: unknown }).contacts)
+        ? ((payload as { contacts?: unknown }).contacts as unknown[])
+        : null;
+
+    const firstContact = contacts && contacts.length > 0 ? (contacts[0] as Record<string, unknown>) : null;
+    const contactProfileName =
+        firstContact && firstContact.profile && typeof (firstContact.profile as { name?: unknown }).name === 'string'
+            ? ((firstContact.profile as { name?: string }).name ?? null)
+            : null;
+    const contactWaId =
+        firstContact && typeof firstContact.wa_id === 'string' ? (firstContact.wa_id as string) : null;
+
+    const author = typeof payload.author === 'string' ? payload.author : null;
+    const from = typeof payload.from === 'string' ? payload.from : null;
+
+    const primaryName = notifyName || senderName || contactProfileName || null;
+    const jidSource = author || from || contactWaId || null;
+
+    if (primaryName && primaryName.trim()) {
+        return primaryName.trim();
+    }
+
+    if (jidSource) {
+        const localPart = String(jidSource).split('@')[0];
+        const digitsOnly = localPart.replace(/\D/g, '');
+
+        if (
+            digitsOnly.length >= 8 &&
+            digitsOnly.length <= 15 &&
+            digitsOnly.startsWith('62')
+        ) {
+            return digitsOnly;
+        }
+    }
+
+    return null;
 };
 
 const formatTime = (dateString: string) => {
@@ -21,7 +69,17 @@ const formatTime = (dateString: string) => {
     return format(date, 'dd/MM/yyyy HH:mm');
 };
 
-const MessageBubble = ({ message: msg, isOutbound, showTail, onReply, onForward, onDelete }: MessageBubbleProps) => {
+const MessageBubble = ({ message: msg, isOutbound, showTail, onReply, onForward, onDelete, isGroup }: MessageBubbleProps) => {
+    const roleLabel =
+        msg.sender_type === 'agent'
+            ? 'Admin'
+            : msg.sender_type === 'customer'
+                ? 'Customer'
+                : msg.sender_type === 'system'
+                    ? 'System'
+                    : null;
+    const senderLabel = isGroup && !isOutbound ? getGroupSenderLabel(msg) : null;
+    const showHeader = isGroup && (isOutbound || (senderLabel && senderLabel.trim().length > 0));
     return (
         <div 
             className={`
@@ -36,6 +94,24 @@ const MessageBubble = ({ message: msg, isOutbound, showTail, onReply, onForward,
                     ${isOutbound ? 'bg-[#E30613] text-white dark:bg-[#c0000f] rounded-tr-none' : 'bg-white dark:bg-[#202c33] rounded-tl-none'}
                 `}
             >
+                {showHeader && (
+                    <div className="mb-1 flex items-center gap-1.5">
+                        <p className={`text-[12px] font-black leading-tight truncate ${isOutbound ? 'text-white' : 'text-[#111b21] dark:text-[#e9edef]'}`}>
+                            {isOutbound ? 'Anda' : senderLabel}
+                        </p>
+                        {roleLabel && (
+                            <span
+                                className={`px-2 py-[2px] rounded-full text-[9px] font-bold tracking-[0.16em] uppercase border
+                                    ${isOutbound
+                                        ? 'bg-white/10 border-white/40 text-white/80'
+                                        : 'bg-[#E30613]/5 border-[#E30613]/40 text-[#E30613]'
+                                    }`}
+                            >
+                                {roleLabel}
+                            </span>
+                        )}
+                    </div>
+                )}
                 {!msg.is_deleted && (
                     <div className="absolute -top-2 right-6 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                         <button

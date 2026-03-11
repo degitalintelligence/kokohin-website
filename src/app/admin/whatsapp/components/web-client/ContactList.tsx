@@ -60,7 +60,9 @@ function ContactItem({
 
     const isGroup = contact.isGroup;
     const hasAvatar = contact.avatar_url && !brokenAvatars[contact.id];
-    const displayName = contact.name || (contact.wa_id?.split('@')[0] || '');
+    const rawLocalId = contact.wa_id?.split('@')[0] || '';
+    const phoneNumber = (contact.phone || rawLocalId).trim();
+    const displayName = contact.name?.trim() || phoneNumber;
     const isSelected = selectedContactId === contact.id;
 
     const formatTime = (dateString: string) => {
