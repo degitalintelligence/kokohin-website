@@ -335,6 +335,129 @@ export async function POST(req: Request) {
             }
         }
 
+        if (
+            event === 'group.v2.join' ||
+            event === 'group.v2.participants' ||
+            event === 'group.join'
+        ) {
+            const payload = toRecord(data);
+            const groupRecord = toRecord(payload.group);
+            const groupJid = toSerializedId(groupRecord.id);
+            if (groupJid) {
+                const groupSubject =
+                    typeof groupRecord.subject === 'string' ? groupRecord.subject : null;
+                const nowIso = new Date().toISOString();
+
+                const { data: groupContact, error: groupContactError } = await supabase
+                    .from('wa_contacts')
+                    .upsert(
+                        {
+                            wa_jid: groupJid,
+                            phone: groupJid.split('@')[0]?.replace(/\D/g, '') || null,
+                            display_name: groupSubject,
+                            last_message_at: nowIso,
+                        },
+                        { onConflict: 'wa_jid' }
+                    )
+                    .select('id')
+                    .single();
+                if (groupContactError || !groupContact) {
+                    console.error('WA Webhook group contact upsert error:', groupContactError, {
+                        groupJid,
+                    });
+                    throw groupContactError || new Error('Failed to upsert group contact');
+                }
+
+                const { data: chat, error: chatError } = await supabase
+                    .from('wa_chats')
+                    .upsert(
+                        {
+                            contact_id: groupContact.id,
+                            type: 'group',
+                            last_message_at: nowIso,
+                            group_subject: groupSubject,
+                            group_owner_jid: null,
+                        },
+                        { onConflict: 'contact_id' }
+                    )
+                    .select('id')
+                    .single();
+                if (chatError || !chat) {
+                    console.error('WA Webhook group chat upsert error:', chatError, {
+                        contactId: groupContact.id,
+                        groupJid,
+                    });
+                    throw chatError || new Error('Failed to upsert group chat');
+                }
+
+                const participantsSource =
+                    Array.isArray(payload.participants)
+                        ? payload.participants
+                        : Array.isArray(groupRecord.participants)
+                            ? groupRecord.participants
+                            : [];
+
+                const changeType =
+                    typeof payload.type === 'string' ? payload.type.toLowerCase() : 'join';
+
+                for (const item of participantsSource) {
+                    const p = toRecord(item);
+                    const participantJid = toSerializedId(p.id);
+                    if (!participantJid) continue;
+                    const phone =
+                        participantJid.split('@')[0]?.replace(/\D/g, '') || null;
+
+                    const { data: memberContact, error: memberContactError } = await supabase
+                        .from('wa_contacts')
+                        .upsert(
+                            {
+                                wa_jid: participantJid,
+                                phone,
+                            },
+                            { onConflict: 'wa_jid' }
+                        )
+                        .select('id')
+                        .single();
+                    if (memberContactError || !memberContact) {
+                        console.error(
+                            'WA Webhook group member contact upsert error:',
+                            memberContactError,
+                            { participantJid }
+                        );
+                        continue;
+                    }
+
+                    const roleRaw = typeof p.role === 'string' ? p.role.toLowerCase() : '';
+                    const role =
+                        roleRaw === 'admin'
+                            ? 'admin'
+                            : roleRaw === 'superadmin' || roleRaw === 'owner'
+                                ? 'superadmin'
+                                : 'member';
+
+                    if (changeType === 'leave') {
+                        await supabase
+                            .from('wa_group_members')
+                            .update({ left_at: nowIso, role })
+                            .eq('chat_id', chat.id)
+                            .eq('contact_id', memberContact.id);
+                    } else {
+                        await supabase
+                            .from('wa_group_members')
+                            .upsert(
+                                {
+                                    chat_id: chat.id,
+                                    contact_id: memberContact.id,
+                                    role,
+                                    left_at: null,
+                                },
+                                { onConflict: 'chat_id,contact_id' }
+                            );
+                    }
+                }
+            }
+        }
+
         if (event === 'session.status') {
             const name = typeof data.name === 'string' ? data.name : process.env.WAHA_SESSION_ID || 'default';
             const status = typeof data.status === 'string' ? data.status : 'UNKNOWN';

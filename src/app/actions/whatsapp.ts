@@ -759,8 +759,26 @@ export async function registerWebhookAction() {
             throw new Error('WAHA_WEBHOOK_SECRET is not configured in environment variables.');
         }
 
-        // 1. Get existing webhooks to avoid duplicates
-        const existing = await waha.getWebhooks();
+        // 1. Get existing webhooks to avoid duplicates (best-effort; older WAHA may not support listing)
+        let existing: { url?: string }[] = [];
+        try {
+            const rawExisting = await waha.getWebhooks();
+            if (Array.isArray(rawExisting)) {
+                existing = rawExisting as { url?: string }[];
+            }
+        } catch (error: unknown) {
+            const message =
+                error instanceof Error ? error.message.toLowerCase() : String(error ?? '').toLowerCase();
+            const listingUnsupported =
+                message.includes('cannot get') ||
+                message.includes('404') ||
+                message.includes('not found');
+            if (!listingUnsupported) {
+                throw error;
+            }
+            // If WAHA doesn't support GET /api/webhooks, skip duplicate detection and continue.
+            existing = [];
+        }
         const normalizedPrimary = webhookUrl.replace(/\/$/, '');
         const legacyAlias = normalizedPrimary.endsWith('/api/public/whatsapp/webhook')
             ? normalizedPrimary.replace('/api/public/whatsapp/webhook', '/api/whatsapp/webhook')
@@ -775,7 +793,18 @@ export async function registerWebhookAction() {
         }
 
         // 2. Register new webhook
-        await waha.registerWebhook(webhookUrl, secret, ['message', 'message.ack', 'session.status', 'message.reaction']);
+        await waha.registerWebhook(webhookUrl, secret, [
+            'message',
+            'message.ack',
+            'session.status',
+            'message.reaction',
+            'group.v2.join',
+            'group.v2.leave',
+            'group.v2.participants',
+            'group.v2.update',
+            'group.join',
+            'group.leave',
+        ]);
         
         return { success: true, message: 'Webhook berhasil didaftarkan ke ' + webhookUrl };
     } catch (error: unknown) {
