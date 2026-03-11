@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
+import Image from 'next/image';
 import { Contact, Message } from './OptimizedWhatsAppClient';
 import { 
     Send, 
@@ -33,6 +34,7 @@ import {
     sendMessageAction,
     getQuickRepliesAction,
 } from '@/app/actions/whatsapp';
+import { toast } from 'sonner';
 
 interface ChatWindowProps {
     contact: Contact;
@@ -64,6 +66,7 @@ const AudioPlayer = ({ src, isOutbound }: { src: string, isOutbound: boolean }) 
     const [isPlaying, setIsPlaying] = useState(false);
     const [progress, setProgress] = useState(0);
     const [duration, setDuration] = useState(0);
+    const [currentTime, setCurrentTime] = useState(0);
     const audioRef = useRef<HTMLAudioElement>(null);
 
     const togglePlay = () => {
@@ -82,7 +85,10 @@ const AudioPlayer = ({ src, isOutbound }: { src: string, isOutbound: boolean }) 
         if (!audio) return;
 
         const updateProgress = () => {
-            setProgress((audio.currentTime / audio.duration) * 100);
+            if (!audio.duration) return;
+            const time = audio.currentTime;
+            setProgress((time / audio.duration) * 100);
+            setCurrentTime(time);
         };
 
         const handleEnded = () => {
@@ -130,7 +136,7 @@ const AudioPlayer = ({ src, isOutbound }: { src: string, isOutbound: boolean }) 
                 </div>
                 <div className="flex justify-between items-center">
                     <span className="text-[10px] text-gray-400 font-bold tabular-nums">
-                        {isPlaying && audioRef.current ? formatTime(audioRef.current.currentTime) : formatTime(duration)}
+                        {isPlaying ? formatTime(currentTime) : formatTime(duration)}
                     </span>
                     <div className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest ${isOutbound ? 'text-[#E30613]' : 'text-gray-400'}`}>
                         <Mic size={10} strokeWidth={3} /> Voice
@@ -141,12 +147,13 @@ const AudioPlayer = ({ src, isOutbound }: { src: string, isOutbound: boolean }) 
     );
 };
 
-const MessageItem = memo(({ msg, quoted, isOutbound, onQuote, onDelete }: { 
+const MessageItem = memo(({ msg, quoted, isOutbound, onQuote, onDelete, isDeleting }: { 
     msg: Message, 
     quoted: Message | null, 
     isOutbound: boolean,
     onQuote: (id: string) => void,
-    onDelete: (id: string) => void
+    onDelete: (id: string) => void,
+    isDeleting: boolean
 }) => {
     const isMedia = msg.type === 'image' || msg.type === 'video' || msg.type === 'audio' || msg.type === 'voice' || msg.type === 'document';
     
@@ -172,12 +179,20 @@ const MessageItem = memo(({ msg, quoted, isOutbound, onQuote, onDelete }: {
                 {msg.mediaUrl && (
                     <div className="mb-2 rounded-xl overflow-hidden shadow-inner">
                         {msg.type === 'image' && (
-                            <img 
-                                src={msg.mediaUrl} 
-                                alt="Image" 
-                                className="w-full max-h-[400px] object-cover border border-black/5 cursor-pointer hover:scale-105 transition-transform duration-500"
+                            <div
+                                className="relative w-full max-h-[400px] border border-black/5 cursor-pointer overflow-hidden"
                                 onClick={() => window.open(msg.mediaUrl!, '_blank')}
-                            />
+                            >
+                                <div className="relative w-full h-[400px]">
+                                    <Image
+                                        src={msg.mediaUrl}
+                                        alt="Image"
+                                        fill
+                                        className="object-cover hover:scale-105 transition-transform duration-500"
+                                        sizes="(max-width: 768px) 90vw, 600px"
+                                    />
+                                </div>
+                            </div>
                         )}
                         {msg.type === 'video' && (
                             <video 
@@ -247,6 +262,16 @@ const MessageItem = memo(({ msg, quoted, isOutbound, onQuote, onDelete }: {
                         >
                             <MessageSquareReply size={16} strokeWidth={2.5} />
                         </button>
+                        {isOutbound && (
+                            <button
+                                className="p-1.5 rounded-lg transition-colors hover:bg-white/20 text-white/70 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={() => onDelete(msg.id)}
+                                title={isDeleting ? 'Menghapus...' : 'Hapus untuk saya'}
+                                disabled={isDeleting}
+                            >
+                                <Trash2 size={16} strokeWidth={2.5} />
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -274,6 +299,7 @@ export default function ChatWindow({
     const [showQuickReplies, setShowQuickReplies] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
     const endRef = useRef<HTMLDivElement>(null);
+    const [deletingMessageIds, setDeletingMessageIds] = useState<string[]>([]);
 
     // Load Quick Replies
     useEffect(() => {
@@ -337,6 +363,25 @@ export default function ChatWindow({
         return groups;
     }, [messages]);
 
+    const handleDeleteMessage = async (id: string) => {
+        setDeletingMessageIds((prev) => {
+            if (prev.includes(id)) return prev;
+            return [...prev, id];
+        });
+        try {
+            const result = await deleteMessageForSenderAction(id);
+            if (!result.success) {
+                toast.error('Gagal menghapus pesan');
+            } else {
+                toast.success('Pesan dihapus');
+            }
+        } catch (error) {
+            toast.error('Gagal menghapus pesan');
+        } finally {
+            setDeletingMessageIds((prev) => prev.filter((messageId) => messageId !== id));
+        }
+    };
+
     const formatMessageDate = (dateStr: string) => {
         const date = new Date(dateStr);
         if (isToday(date)) return 'Hari Ini';
@@ -357,9 +402,15 @@ export default function ChatWindow({
                         </button>
                         
                         <div className="flex items-center gap-3 cursor-pointer group flex-1 min-w-0" onClick={onToggleContactInfo}>
-                            <div className="w-10 h-10 rounded-2xl overflow-hidden bg-gray-100 border border-gray-100 shadow-sm transition-transform group-hover:scale-105">
+                            <div className="w-10 h-10 rounded-2xl overflow-hidden bg-gray-100 border border-gray-100 shadow-sm transition-transform group-hover:scale-105 relative">
                                 {contact.avatar_url ? (
-                                    <img src={contact.avatar_url} className="w-full h-full object-cover" alt="" />
+                                    <Image
+                                        src={contact.avatar_url}
+                                        alt=""
+                                        fill
+                                        className="object-cover"
+                                        sizes="40px"
+                                    />
                                 ) : (
                                     <div className="w-full h-full flex items-center justify-center bg-gray-50 text-gray-300">
                                         <User size={22} />
@@ -417,7 +468,8 @@ export default function ChatWindow({
                                 quoted={msg.quoted_message_id ? messages.find(m => m.id === msg.quoted_message_id) || null : null}
                                 isOutbound={msg.direction === 'outbound'}
                                 onQuote={setQuotedId}
-                                onDelete={(id) => deleteMessageForSenderAction(id)}
+                                onDelete={handleDeleteMessage}
+                                isDeleting={deletingMessageIds.includes(msg.id)}
                             />
                         ))}
                     </React.Fragment>

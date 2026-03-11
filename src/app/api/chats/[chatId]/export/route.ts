@@ -1,5 +1,6 @@
 'use server';
 
+import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
@@ -12,11 +13,11 @@ const escapeCsvValue = (value: string | number | boolean | null | undefined) => 
 };
 
 export async function GET(
-    request: Request,
-    context: { params: { chatId: string } }
+    request: NextRequest,
+    context: { params: Promise<{ chatId: string }> }
 ) {
     const supabase = await createClient();
-    const chatId = context.params.chatId;
+    const { chatId } = await context.params;
 
     const { data: messages, error } = await supabase
         .from('wa_messages')
@@ -60,4 +61,3 @@ export async function GET(
 
     return response;
 }
-

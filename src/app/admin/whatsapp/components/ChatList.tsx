@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import { Contact } from './OptimizedWhatsAppClient';
 import { Search, Filter, User, MoreVertical, Archive, PlusCircle, Check } from 'lucide-react';
 import { format } from 'date-fns';
@@ -161,14 +162,14 @@ export default function ChatList({
                                  )}
 
                                  {/* Avatar Wrapper */}
-                                 <div className="w-[52px] h-[52px] rounded-2xl overflow-hidden bg-gray-100 mr-4 shrink-0 relative border border-gray-100 shadow-sm group-hover:scale-105 transition-transform duration-300">
+                                <div className="w-[52px] h-[52px] rounded-2xl overflow-hidden bg-gray-100 mr-4 shrink-0 relative border border-gray-100 shadow-sm group-hover:scale-105 transition-transform duration-300">
                                      {contact.avatar_url ? (
-                                         <img 
-                                            src={contact.avatar_url} 
-                                            className="w-full h-full object-cover" 
-                                            alt="" 
-                                            loading="lazy"
-                                            referrerPolicy="no-referrer"
+                                         <Image
+                                            src={contact.avatar_url}
+                                            alt=""
+                                            fill
+                                            className="object-cover"
+                                            sizes="52px"
                                          />
                                      ) : (
                                          <div className="w-full h-full flex items-center justify-center bg-gray-50 text-gray-300 group-hover:bg-gray-100 transition-colors">

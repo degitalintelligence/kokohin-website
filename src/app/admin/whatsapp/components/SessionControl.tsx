@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import type { WahaSession } from '@/lib/waha';
 import { 
     getSessionStatusAction, 
@@ -259,11 +260,15 @@ export default function SessionControl() {
                             <div className="space-y-8 text-center animate-in zoom-in-95 duration-700">
                                 <div className="bg-white p-8 rounded-[3rem] border-4 border-gray-50 shadow-2xl inline-block relative group">
                                     <div className="absolute inset-0 bg-red-50 opacity-0 group-hover:opacity-20 transition-opacity rounded-[3rem]"></div>
-                                    <img 
-                                        src={qrCode.startsWith('data:') ? qrCode : `data:image/png;base64,${qrCode}`} 
-                                        alt="Scan me" 
-                                        className="w-64 h-64 mx-auto relative z-10"
-                                    />
+                                    <div className="w-64 h-64 mx-auto relative z-10">
+                                        <Image
+                                            src={qrCode.startsWith('data:') ? qrCode : `data:image/png;base64,${qrCode}`}
+                                            alt="Scan me"
+                                            fill
+                                            className="object-contain"
+                                            sizes="256px"
+                                        />
+                                    </div>
                                 </div>
                                 <div>
                                     <h3 className="text-2xl font-black text-[#1D1D1B] tracking-tight">Pindai Kode QR</h3>

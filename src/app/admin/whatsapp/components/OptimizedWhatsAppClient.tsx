@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import { Toaster, toast } from 'sonner';
 import {
@@ -110,15 +111,16 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
         try {
             const result = await getPaginatedContactsAction(page, CONTACTS_PER_PAGE, search);
             
-            if (result.success && result.contacts) {
+            if (result.success && Array.isArray((result as { contacts?: Contact[] }).contacts)) {
+                const contactsData = (result as { contacts?: Contact[] }).contacts ?? [];
                 setContactsError(result.warning || null);
                 if (result.warning) toast.warning(result.warning);
                 
                 if (page === 1) {
-                    setContacts(result.contacts);
+                    setContacts(contactsData);
                 } else {
                     setContacts(prev => {
-                        const newContacts = result.contacts.filter(c => !prev.some(p => p.id === c.id));
+                        const newContacts = contactsData.filter(c => !prev.some(p => p.id === c.id));
                         return [...prev, ...newContacts];
                     });
                 }
@@ -131,7 +133,8 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
                 }
                 setContactsPage(page);
             } else {
-                const errorMessage = result.error || 'Terjadi kesalahan saat memuat daftar chat.';
+                const errorMessage =
+                    (result as { error?: string }).error || 'Terjadi kesalahan saat memuat daftar chat.';
                 console.error('Failed to fetch contacts:', errorMessage);
                 setContactsError(errorMessage);
                 onContactsFetchFailure?.(errorMessage);
@@ -158,18 +161,21 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
         }
         try {
             const result = await getPaginatedMessagesAction(contactId, page, MESSAGES_PER_PAGE);
-            if (result.success && result.messages) {
+            const messagesData = (result as { messages?: Message[] }).messages;
+            if (result.success && messagesData) {
                 if (append) {
-                    setMessages(prev => [...result.messages.reverse(), ...prev]);
+                    setMessages(prev => [...messagesData.reverse(), ...prev]);
                 } else {
-                    setMessages(result.messages.reverse());
+                    setMessages(messagesData.reverse());
                 }
                 setMessagesPage(page);
                 if (result.pagination) {
                     setHasMoreMessages(page < result.pagination.totalPages);
                 }
             } else {
-                console.error('Failed to fetch messages:', result.error);
+                const errorMessage =
+                    (result as { error?: string }).error || 'Terjadi kesalahan saat memuat pesan.';
+                console.error('Failed to fetch messages:', errorMessage);
                 if (!append) setMessages([]);
             }
         } catch (error) {
@@ -390,9 +396,15 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
                                             className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-1.5 pr-4 rounded-2xl transition-all duration-200 group flex-1 min-w-0"
                                             onClick={() => setShowContactInfo(prev => !prev)}
                                         >
-                                            <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100 border border-gray-100 shrink-0 shadow-sm group-hover:scale-105 transition-transform duration-300">
+                                            <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100 border border-gray-100 shrink-0 shadow-sm group-hover:scale-105 transition-transform duration-300 relative">
                                                 {selectedContact.avatar_url ? (
-                                                    <img src={selectedContact.avatar_url} className="w-full h-full object-cover" alt="" />
+                                                    <Image
+                                                        src={selectedContact.avatar_url}
+                                                        alt=""
+                                                        fill
+                                                        className="object-cover"
+                                                        sizes="40px"
+                                                    />
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center bg-gray-50 text-gray-300">
                                                         <User size={22} strokeWidth={2} />

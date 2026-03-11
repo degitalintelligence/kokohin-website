@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { Contact } from './OptimizedWhatsAppClient';
 import { X, Plus, Tag, StickyNote, User, Phone, MapPin, Briefcase } from 'lucide-react';
 import { 
@@ -47,32 +48,41 @@ export default function ContactInfo({ contact, onClose }: ContactInfoProps) {
     const [chatLabels, setChatLabels] = useState<ChatLabel[]>([]);
     const [showLabelPicker, setShowLabelPicker] = useState(false);
 
-    const loadNotes = async () => {
-        setLoadingNotes(true);
-        const result = await getInternalNotesAction(contact.id);
-        if (result.success && result.notes) {
-            setNotes(result.notes);
-        }
-        setLoadingNotes(false);
-    };
-
-    const loadLabels = async () => {
-        const [allLabelsRes, chatLabelsRes] = await Promise.all([
-            getLabelsAction(),
-            getChatLabelsAction(contact.id)
-        ]);
-
-        if (allLabelsRes.success && allLabelsRes.labels) {
-            setLabels(allLabelsRes.labels);
-        }
-        if (chatLabelsRes.success && chatLabelsRes.chatLabels) {
-            setChatLabels(chatLabelsRes.chatLabels);
-        }
-    };
-
     useEffect(() => {
-        loadNotes();
-        loadLabels();
+        let cancelled = false;
+
+        const timeoutId = setTimeout(() => {
+            (async () => {
+                setLoadingNotes(true);
+
+                const [notesRes, allLabelsRes, chatLabelsRes] = await Promise.all([
+                    getInternalNotesAction(contact.id),
+                    getLabelsAction(),
+                    getChatLabelsAction(contact.id)
+                ]);
+
+                if (cancelled) {
+                    return;
+                }
+
+                if (notesRes.success && notesRes.notes) {
+                    setNotes(notesRes.notes);
+                }
+                setLoadingNotes(false);
+
+                if (allLabelsRes.success && allLabelsRes.labels) {
+                    setLabels(allLabelsRes.labels);
+                }
+                if (chatLabelsRes.success && chatLabelsRes.chatLabels) {
+                    setChatLabels(chatLabelsRes.chatLabels);
+                }
+            })();
+        }, 0);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timeoutId);
+        };
     }, [contact.id]);
 
     const handleAddNote = async () => {
@@ -93,7 +103,10 @@ export default function ContactInfo({ contact, onClose }: ContactInfoProps) {
             setNotes(prev => prev.filter(n => n.id !== tempId));
             alert('Gagal menyimpan catatan');
         } else {
-            loadNotes();
+            const refreshed = await getInternalNotesAction(contact.id);
+            if (refreshed.success && refreshed.notes) {
+                setNotes(refreshed.notes);
+            }
         }
     };
 
@@ -127,9 +140,15 @@ export default function ContactInfo({ contact, onClose }: ContactInfoProps) {
             <div className="flex-1 overflow-y-auto custom-scrollbar">
                 {/* Profile Hero Section */}
                 <div className="p-8 flex flex-col items-center bg-gradient-to-b from-gray-50/50 to-white border-b border-gray-100">
-                    <div className="w-32 h-32 rounded-[2.5rem] overflow-hidden bg-gray-100 mb-6 border-4 border-white shadow-2xl transform hover:scale-105 transition-transform duration-500">
+                    <div className="w-32 h-32 rounded-[2.5rem] overflow-hidden bg-gray-100 mb-6 border-4 border-white shadow-2xl transform hover:scale-105 transition-transform duration-500 relative">
                         {contact.avatar_url ? (
-                            <img src={contact.avatar_url} alt="" className="w-full h-full object-cover" />
+                            <Image
+                                src={contact.avatar_url}
+                                alt=""
+                                fill
+                                className="object-cover"
+                                sizes="128px"
+                            />
                         ) : (
                             <div className="w-full h-full flex items-center justify-center bg-gray-50 text-gray-200">
                                 <User size={64} strokeWidth={1} />

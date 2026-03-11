@@ -48,6 +48,30 @@ type SendMediaInput = {
     idempotencyKey?: string;
 };
 
+type CacheEntry<T> = {
+    value: T;
+    expiresAt: number;
+};
+
+const CONTACTS_CACHE_TTL_MS = 5_000;
+const MESSAGES_CACHE_TTL_MS = 5_000;
+
+const contactsCache = new Map<string, CacheEntry<unknown>>();
+const messagesCache = new Map<string, CacheEntry<unknown>>();
+
+function clearContactsCache() {
+    contactsCache.clear();
+}
+
+function clearMessagesCacheForChat(chatId: string) {
+    const prefix = `${chatId}:`;
+    for (const key of messagesCache.keys()) {
+        if (key.startsWith(prefix)) {
+            messagesCache.delete(key);
+        }
+    }
+}
+
 function getErrorMessage(error: unknown, fallback = 'Unknown error'): string {
     if (error instanceof Error && error.message) return error.message;
     return fallback;
@@ -274,6 +298,9 @@ export async function sendMessageAction(chatId: string, text: string, options?: 
             });
         }
 
+        clearMessagesCacheForChat(chatId);
+        clearContactsCache();
+
         revalidatePath('/admin/whatsapp');
         return { success: true, messageId: result.id };
     } catch (error: unknown) {
@@ -349,6 +376,9 @@ export async function forwardMessageAction(targetChatId: string, sourceMessageId
             source_message_id: sourceMessageId,
             target_chat_id: chat.id,
         });
+
+        clearMessagesCacheForChat(targetChatId);
+        clearContactsCache();
 
         revalidatePath('/admin/whatsapp');
         return { success: true, messageId: externalId };
@@ -443,6 +473,9 @@ export async function sendMediaMessageAction(chatId: string, payload: SendMediaI
             media_type: mediaType,
             idempotency_key: idempotencyKey,
         });
+
+        clearMessagesCacheForChat(chatId);
+        clearContactsCache();
 
         revalidatePath('/admin/whatsapp');
         return { success: true, messageId: externalId };
@@ -779,6 +812,16 @@ export async function deleteMessageForSenderAction(messageId: string) {
 
         await insertAuditLog(supabase, 'delete_for_sender', 'message', messageId, { is_deleted: true });
 
+        const { data: messageRow } = await supabase
+            .from('wa_messages')
+            .select('chat_id')
+            .eq('id', messageId)
+            .maybeSingle();
+
+        if (messageRow?.chat_id) {
+            clearMessagesCacheForChat(messageRow.chat_id as string);
+        }
+
         revalidatePath('/admin/whatsapp');
         return { success: true };
     } catch (error: unknown) {
@@ -958,6 +1001,24 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
     try {
         const offset = (page - 1) * limit;
         let warning: string | null = null;
+        const normalizedSearch = search.trim();
+        const cacheKey = `${page}:${limit}:${normalizedSearch.toLowerCase()}`;
+        const now = Date.now();
+        const cached = contactsCache.get(cacheKey);
+        if (cached && cached.expiresAt > now) {
+            return cached.value as {
+                success: boolean;
+                contacts?: unknown[];
+                pagination?: {
+                    page: number;
+                    limit: number;
+                    total: number;
+                    totalPages: number;
+                };
+                warning?: string | null;
+                error?: string;
+            };
+        }
 
         const baseQuery = () =>
             supabase
@@ -979,7 +1040,6 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
             .range(offset, offset + limit - 1);
 
         let filteredContactIds: string[] | null = null;
-        const normalizedSearch = search.trim();
         if (normalizedSearch) {
             const { data: matchedContacts, error: contactSearchError } = await supabase
                 .from('wa_contacts')
@@ -1062,7 +1122,6 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
                 console.error('Error fetching ERP projects:', erpError);
             }
         }
-
         const chatsWithDetails = rows.map(chat => {
             const contact = Array.isArray(chat.wa_contacts) ? chat.wa_contacts[0] : chat.wa_contacts;
             if (!contact) return null;
@@ -1082,7 +1141,7 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
             };
         }).filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-        return {
+        const result = {
             success: true,
             contacts: chatsWithDetails,
             pagination: {
@@ -1093,6 +1152,11 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
             },
             warning,
         };
+        contactsCache.set(cacheKey, {
+            value: result,
+            expiresAt: now + CONTACTS_CACHE_TTL_MS,
+        });
+        return result;
     } catch (error: unknown) {
         return { success: false, error: getErrorMessage(error, 'Gagal memuat kontak WhatsApp') };
     }
@@ -1102,6 +1166,22 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
     const supabase = await createClient();
     try {
         const offset = (page - 1) * limit;
+        const cacheKey = `${chatId}:${page}:${limit}`;
+        const now = Date.now();
+        const cached = messagesCache.get(cacheKey);
+        if (cached && cached.expiresAt > now) {
+            return cached.value as {
+                success: boolean;
+                messages?: unknown[];
+                pagination?: {
+                    page: number;
+                    limit: number;
+                    total: number;
+                    totalPages: number;
+                };
+                error?: string;
+            };
+        }
         
         const { data, count, error } = await supabase
             .from('wa_messages')
@@ -1112,7 +1192,7 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
 
         if (error) throw error;
 
-        return {
+        const result = {
             success: true,
             messages: data || [],
             pagination: {
@@ -1122,6 +1202,11 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
                 totalPages: Math.ceil((count || 0) / limit),
             },
         };
+        messagesCache.set(cacheKey, {
+            value: result,
+            expiresAt: now + MESSAGES_CACHE_TTL_MS,
+        });
+        return result;
     } catch (error: unknown) {
         return { success: false, error: getErrorMessage(error, 'Gagal memuat pesan WhatsApp') };
     }

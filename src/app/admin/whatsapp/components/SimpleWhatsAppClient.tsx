@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import {
     getChatsAction,
@@ -34,9 +35,19 @@ export default function SimpleWhatsAppClient() {
             try {
                 setLoading(true);
                 const result = await getChatsAction();
-                if (result.success && result.contacts) {
-                    setContacts(result.contacts);
-                } else {
+                if (result.success && Array.isArray(result.chats)) {
+                    const mappedContacts: Contact[] = result.chats.map((chat) => ({
+                        id: chat.id,
+                        wa_id: chat.id,
+                        name: chat.name || chat.pushname,
+                        avatar_url: null,
+                        last_message_at: chat.timestamp,
+                        unread_count: 0,
+                        erp_project_status: null,
+                        erp_project_id: null,
+                    }));
+                    setContacts(mappedContacts);
+                } else if (!result.success) {
                     setContactsError(result.error || 'Failed to load chats');
                 }
             } catch (error) {
@@ -61,8 +72,24 @@ export default function SimpleWhatsAppClient() {
         try {
             setLoadingMessages(true);
             const result = await getMessagesAction(contactId);
-            if (result.success && result.messages) {
-                 setMessages(result.messages.reverse());
+            if (result.success && Array.isArray(result.messages)) {
+                const mappedMessages: Message[] = result.messages.map((msg) => ({
+                    id: msg.id,
+                    external_message_id: msg.id,
+                    chat_id: msg.chatId,
+                    body: msg.body,
+                    type: msg.type,
+                    direction: msg.fromMe ? 'outbound' : 'inbound',
+                    sender_type: msg.fromMe ? 'agent' : 'customer',
+                    status: msg.status,
+                    sent_at: msg.timestamp,
+                    quoted_message_id: msg.quotedMessageId,
+                    is_forwarded: msg.isForwarded,
+                    is_deleted: msg.isDeleted,
+                    mediaUrl: msg.mediaUrl,
+                    mediaCaption: msg.mediaCaption,
+                }));
+                setMessages(mappedMessages.reverse());
             } else {
                 setMessages([]);
             }
@@ -147,9 +174,15 @@ export default function SimpleWhatsAppClient() {
                                         <ChevronLeft size={24} />
                                     </button>
                                     <div className="flex items-center gap-3 p-2 -ml-2 flex-1 min-w-0">
-                                        <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shrink-0">
+                                        <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shrink-0 relative">
                                             {selectedContact.avatar_url ? (
-                                                <img src={selectedContact.avatar_url} className="w-full h-full object-cover" alt="" />
+                                                <Image
+                                                    src={selectedContact.avatar_url}
+                                                    alt=""
+                                                    fill
+                                                    className="object-cover"
+                                                    sizes="40px"
+                                                />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">
                                                     <User size={20} />
@@ -198,7 +231,6 @@ export default function SimpleWhatsAppClient() {
             {/* Modals */}
             {showBroadcast && (
                 <BroadcastModal 
-                    isOpen={showBroadcast} 
                     onClose={() => setShowBroadcast(false)} 
                 />
             )}
