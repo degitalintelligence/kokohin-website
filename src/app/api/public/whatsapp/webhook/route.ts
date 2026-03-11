@@ -90,6 +90,7 @@ async function createWebhookClient() {
     if (supabaseUrl && serviceRole) {
         return createSupabaseAdminClient(supabaseUrl, serviceRole);
     }
+    console.warn('WA Webhook: Missing Service Role Key, falling back to anon client (writes may fail due to RLS)');
     return createClient();
 }
 
