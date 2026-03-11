@@ -31,12 +31,26 @@ export interface WahaMessage {
     hasMedia: boolean;
 }
 
+type WahaGroupParticipant = {
+    id: string;
+    isAdmin?: boolean;
+    isSuperAdmin?: boolean;
+};
+
+type WahaGroupMetadata = {
+    id?: string;
+    subject?: string;
+    name?: string;
+    participants?: WahaGroupParticipant[];
+};
+
 export class WahaClient {
     private baseUrl: string;
     private apiKey: string;
     private sessionId: string;
     private lastKnownSession: WahaSession | null = null;
     private lastKnownSessionAt = 0;
+    private groupCache = new Map<string, { metadata: WahaGroupMetadata; expiresAt: number }>();
 
     constructor() {
         // Ensure baseUrl doesn't have a trailing slash
@@ -422,6 +436,104 @@ export class WahaClient {
             1
         );
         return this.normalizeArrayPayload<unknown>(response);
+    }
+
+    async getGroupMetadata(chatId: string): Promise<WahaGroupMetadata> {
+        const encodedChatId = encodeURIComponent(chatId);
+        const candidates = [
+            `/api/${this.sessionId}/groups/${encodedChatId}`,
+            `/api/groups/${encodedChatId}?session=${this.sessionId}`,
+            `/api/${this.sessionId}/chats/${encodedChatId}`,
+            `/api/chats/${encodedChatId}?session=${this.sessionId}`,
+        ];
+
+        const raw = await this.requestWithCandidates<unknown>(candidates, {}, 1);
+        if (!raw || typeof raw !== 'object') {
+            return {};
+        }
+
+        const record = raw as Record<string, unknown>;
+        const metadataSource = (() => {
+            if (record.groupMetadata && typeof record.groupMetadata === 'object') {
+                return record.groupMetadata as Record<string, unknown>;
+            }
+            if (record.metadata && typeof record.metadata === 'object') {
+                return record.metadata as Record<string, unknown>;
+            }
+            return record;
+        })();
+
+        const rawParticipants = Array.isArray((metadataSource as Record<string, unknown>).participants)
+            ? ((metadataSource as Record<string, unknown>).participants as unknown[])
+            : Array.isArray(record.participants)
+                ? (record.participants as unknown[])
+                : [];
+
+        const participants: WahaGroupParticipant[] = rawParticipants
+            .map((p) => (p && typeof p === 'object' ? (p as Record<string, unknown>) : null))
+            .filter((p): p is Record<string, unknown> => Boolean(p))
+            .map((p) => {
+                const rawId = p.id ?? p.jid;
+                let id = '';
+                if (typeof rawId === 'string') {
+                    id = rawId;
+                } else if (rawId && typeof rawId === 'object') {
+                    const idObj = rawId as Record<string, unknown>;
+                    if (typeof idObj._serialized === 'string') {
+                        id = idObj._serialized;
+                    } else if (typeof idObj.user === 'string' && typeof idObj.server === 'string') {
+                        id = `${idObj.user}@${idObj.server}`;
+                    }
+                }
+                const isAdmin = typeof p.isAdmin === 'boolean' ? p.isAdmin : undefined;
+                const isSuperAdmin = typeof p.isSuperAdmin === 'boolean' ? p.isSuperAdmin : undefined;
+                if (!id) return null;
+                const participant: WahaGroupParticipant = {
+                    id,
+                };
+                if (typeof isAdmin !== 'undefined') {
+                    participant.isAdmin = isAdmin;
+                }
+                if (typeof isSuperAdmin !== 'undefined') {
+                    participant.isSuperAdmin = isSuperAdmin;
+                }
+                return participant;
+            })
+            .filter((p): p is WahaGroupParticipant => Boolean(p));
+
+        return {
+            id:
+                typeof (metadataSource as Record<string, unknown>).id === 'string'
+                    ? ((metadataSource as Record<string, unknown>).id as string)
+                    : typeof record.id === 'string'
+                        ? (record.id as string)
+                        : undefined,
+            subject:
+                typeof (metadataSource as Record<string, unknown>).subject === 'string'
+                    ? ((metadataSource as Record<string, unknown>).subject as string)
+                    : typeof record.subject === 'string'
+                        ? (record.subject as string)
+                        : undefined,
+            name:
+                typeof (metadataSource as Record<string, unknown>).name === 'string'
+                    ? ((metadataSource as Record<string, unknown>).name as string)
+                    : typeof record.name === 'string'
+                        ? (record.name as string)
+                        : undefined,
+            participants,
+        };
+    }
+
+    async getGroupMetadataCached(chatId: string, ttlMs = 5 * 60 * 1000): Promise<WahaGroupMetadata> {
+        const key = `${this.sessionId}:${chatId}`;
+        const now = Date.now();
+        const cached = this.groupCache.get(key);
+        if (cached && cached.expiresAt > now) {
+            return cached.metadata;
+        }
+        const metadata = await this.getGroupMetadata(chatId);
+        this.groupCache.set(key, { metadata, expiresAt: now + ttlMs });
+        return metadata;
     }
 
     // --- Presence & Seen ---

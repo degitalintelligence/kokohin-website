@@ -16,6 +16,7 @@ import {
     sendSeenAction,
     sendMediaMessageAction,
     forwardMessageAction,
+    syncGroupMembersAction,
 } from '@/app/actions/whatsapp';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import { Contact, Message, QuickReply, UploadingMedia } from './web-client/types';
@@ -113,6 +114,21 @@ export default function WhatsAppWebClient({ onContactsFetchFailure }: WhatsAppWe
         const url = `/api/chats/${selectedContactId}/export`;
         window.open(url, '_blank');
     }, [selectedContactId]);
+
+    const handleSyncGroupMembers = useCallback(async () => {
+        if (!selectedWaId) return;
+        try {
+            const result = await syncGroupMembersAction(selectedWaId);
+            if (result.success) {
+                toast.success('Anggota grup disinkronkan');
+            } else {
+                toast.error(result.error || 'Gagal sinkronisasi anggota grup');
+            }
+        } catch (error) {
+            console.error('Error syncing group members:', error);
+            toast.error('Gagal sinkronisasi anggota grup');
+        }
+    }, [selectedWaId]);
 
     const handleForwardToContact = async (target: Contact) => {
         if (!forwardSourceId) return;
@@ -551,6 +567,7 @@ export default function WhatsAppWebClient({ onContactsFetchFailure }: WhatsAppWe
                                     onBack={handleBackToContacts}
                                     onContactInfo={() => setShowContactInfo(true)}
                                     onExportChat={handleExportChat}
+                                    onSyncGroupMembers={selectedContact.isGroup ? handleSyncGroupMembers : undefined}
                                 />
 
                                 <MessageList

@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import Image from 'next/image';
-import { User as UserIcon, Search, FileText, MoreVertical, ArrowLeft } from 'lucide-react';
+import { User as UserIcon, Search, FileText, MoreVertical, ArrowLeft, Users } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 import { Contact } from './types';
 
@@ -12,6 +12,7 @@ type ChatHeaderProps = {
     onBack: () => void;
     onContactInfo: () => void;
     onExportChat: () => void;
+    onSyncGroupMembers?: () => void;
 };
 
 const formatRelativeStatus = (dateString: string | null) => {
@@ -51,7 +52,8 @@ const ChatHeader = ({
     setBrokenAvatars,
     onBack,
     onContactInfo,
-    onExportChat
+    onExportChat,
+    onSyncGroupMembers
 }: ChatHeaderProps) => {
     return (
         <div className="h-[60px] bg-[#f0f2f5] dark:bg-[#202c33] px-4 py-2 flex items-center justify-between shrink-0 border-l border-[#d1d7db] dark:border-[#222d34] z-20 shadow-sm">
@@ -87,12 +89,27 @@ const ChatHeader = ({
                         {getDisplayName(contact)}
                     </h2>
                     {contact.isGroup ? (
-                        <p className="text-[12px] text-[#667781] dark:text-[#8696a0] truncate leading-tight mt-0.5 flex items-center gap-1">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-[11px] font-semibold uppercase tracking-[0.16em]">
-                                Grup
-                            </span>
-                            <span>Detail anggota di WhatsApp</span>
-                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-[12px] text-[#667781] dark:text-[#8696a0] truncate leading-tight flex items-center gap-1">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                                    Grup
+                                </span>
+                                <span>Detail anggota di WhatsApp</span>
+                            </p>
+                            {onSyncGroupMembers && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onSyncGroupMembers();
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#E30613]/5 text-[#E30613] hover:bg-[#E30613]/10 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                                >
+                                    <Users size={12} />
+                                    Sync
+                                </button>
+                            )}
+                        </div>
                     ) : (
                         <p className="text-[12px] text-[#667781] dark:text-[#8696a0] truncate leading-tight mt-0.5">
                             {getPresenceStatus(contact) || 'offline'}

@@ -188,10 +188,10 @@ const MessageItem = memo((
                     ? 'bg-[#E30613] text-white rounded-tr-none shadow-[0_4px_15px_rgba(227,6,19,0.15)]' 
                     : 'bg-white text-[#1D1D1B] rounded-tl-none border border-gray-100'}`}
             >
-                {isGroup && (
+                {isGroup && (isOutbound || (senderLabel && senderLabel.trim().length > 0)) && (
                     <div className="mb-1 flex items-center gap-1.5">
                         <p className={`text-[12px] font-black leading-tight truncate ${isOutbound ? 'text-white' : 'text-[#1D1D1B]'}`}>
-                            {isOutbound ? 'Anda' : senderLabel || 'Anggota Grup'}
+                            {isOutbound ? 'Anda' : senderLabel}
                         </p>
                         {roleLabel && (
                             <span

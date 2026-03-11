@@ -181,6 +181,98 @@ async function upsertChatContext(supabase: Awaited<ReturnType<typeof createClien
     return { contact, chat };
 }
 
+async function syncGroupMembersForChat(
+    supabase: Awaited<ReturnType<typeof createClient>>,
+    waJid: string
+) {
+    const metadata = await waha.getGroupMetadataCached(waJid);
+    const participants = Array.isArray(metadata.participants) ? metadata.participants : [];
+
+    const { data: contactRow, error: contactError } = await supabase
+        .from('wa_contacts')
+        .upsert(
+            {
+                wa_jid: waJid,
+                phone: waJid.split('@')[0]?.replace(/\D/g, '') || null,
+                display_name: metadata.subject || metadata.name || null,
+                last_message_at: new Date().toISOString(),
+            },
+            { onConflict: 'wa_jid' }
+        )
+        .select('id')
+        .single();
+    if (contactError || !contactRow) {
+        throw contactError || new Error('Failed to upsert group contact');
+    }
+
+    const { data: chatRow, error: chatError } = await supabase
+        .from('wa_chats')
+        .upsert(
+            {
+                contact_id: contactRow.id,
+                type: 'group',
+                last_message_at: new Date().toISOString(),
+                group_subject: metadata.subject || metadata.name || null,
+                group_owner_jid: null,
+            },
+            { onConflict: 'contact_id' }
+        )
+        .select('id')
+        .single();
+    if (chatError || !chatRow) {
+        throw chatError || new Error('Failed to upsert group chat');
+    }
+
+    if (participants.length === 0) {
+        return { chatId: chatRow.id, membersSynced: 0 };
+    }
+
+    let count = 0;
+    for (const p of participants) {
+        const jid = typeof p.id === 'string' ? p.id : '';
+        if (!jid) continue;
+        const phone = jid.split('@')[0]?.replace(/\D/g, '') || null;
+
+        const { data: memberContact, error: memberContactError } = await supabase
+            .from('wa_contacts')
+            .upsert(
+                {
+                    wa_jid: jid,
+                    phone,
+                },
+                { onConflict: 'wa_jid' }
+            )
+            .select('id')
+            .single();
+        if (memberContactError || !memberContact) {
+            continue;
+        }
+
+        const role =
+            p.isSuperAdmin === true
+                ? 'superadmin'
+                : p.isAdmin === true
+                    ? 'admin'
+                    : 'member';
+
+        const { error: memberError } = await supabase
+            .from('wa_group_members')
+            .upsert(
+                {
+                    chat_id: chatRow.id,
+                    contact_id: memberContact.id,
+                    role,
+                },
+                { onConflict: 'chat_id,contact_id' }
+            );
+        if (!memberError) {
+            count += 1;
+        }
+    }
+
+    return { chatId: chatRow.id, membersSynced: count };
+}
+
 async function insertStatusLog(
     supabase: Awaited<ReturnType<typeof createClient>>,
     messageId: string,
@@ -233,6 +325,25 @@ export async function trackOptimizedFallbackAction(reason: string, source = 'opt
         return { success: true };
     } catch (error: unknown) {
         return { success: false, error: getErrorMessage(error, 'Gagal mencatat telemetry fallback') };
+    }
+}
+
+export async function syncGroupMembersAction(waJid: string) {
+    const supabase = await createClient();
+    try {
+        const normalizedJid = waJid.includes('@') ? waJid : `${waJid}@g.us`;
+        const result = await syncGroupMembersForChat(supabase, normalizedJid);
+        revalidatePath('/admin/whatsapp');
+        return {
+            success: true,
+            chatId: result.chatId,
+            membersSynced: result.membersSynced,
+        };
+    } catch (error: unknown) {
+        return {
+            success: false,
+            error: getErrorMessage(error, 'Gagal sinkronisasi anggota grup dari WA'),
+        };
     }
 }
 
