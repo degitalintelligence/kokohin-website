@@ -153,6 +153,12 @@ export async function POST(req: Request) {
             )
             .select('id')
             .maybeSingle();
+        if (webhookLogResult.error) {
+            console.error('WA Webhook log upsert error:', webhookLogResult.error, {
+                event_name: event || 'unknown',
+                external_event_id: eventId,
+            });
+        }
         const webhookLogId = webhookLogResult.data?.id ?? null;
 
         if (event === 'message' || event === 'message.any') {
@@ -338,7 +344,9 @@ export async function POST(req: Request) {
         if (
             event === 'group.v2.join' ||
             event === 'group.v2.participants' ||
-            event === 'group.join'
+            event === 'group.v2.leave' ||
+            event === 'group.join' ||
+            event === 'group.leave'
         ) {
             const payload = toRecord(data);
             const groupRecord = toRecord(payload.group);
