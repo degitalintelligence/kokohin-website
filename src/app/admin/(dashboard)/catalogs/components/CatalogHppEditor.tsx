@@ -50,15 +50,14 @@ export default function CatalogHppEditor({
   const groupedMaterials = useMemo(() => {
     const groups: Record<string, typeof materials> = { 
       atap: [], 
-      rangka: [], 
-      isian: [],
+      frame: [], 
       finishing: [],
+      isian: [],
       aksesoris: [], 
       lainnya: [] 
     }
     for (const m of materials) {
-      const cat = m.category === 'frame' ? 'rangka' : m.category
-      if (cat && groups[cat]) groups[cat].push(m)
+      if (groups[m.category]) groups[m.category].push(m)
       else groups.lainnya.push(m)
     }
     return groups
@@ -176,11 +175,10 @@ export default function CatalogHppEditor({
                         value={row.material_id}
                         onChange={(e) => {
                           const mat = materialMap.get(e.target.value)
-                          const matCat = mat?.category === 'frame' ? 'rangka' : mat?.category
-                          updateRow(idx, { material_id: e.target.value, section: matCat || 'lainnya' })
+                          updateRow(idx, { material_id: e.target.value, section: mat?.category || 'lainnya' })
                         }}
                       >
-                        {(['atap', 'rangka', 'isian', 'finishing', 'aksesoris', 'lainnya'] as const).map((cat) => (
+                        {(['atap','frame','aksesoris','lainnya'] as const).map((cat) => (
                           <optgroup key={cat} label={cat.toUpperCase()} className="font-bold">
                             {groupedMaterials[cat].map((m) => (
                               <option key={m.id} value={m.id} className="font-normal text-gray-600">
@@ -254,11 +252,11 @@ export default function CatalogHppEditor({
                       ).toLocaleString('id-ID')}
                     </div>
                     
-                    {/* Delete Button */}
+                    {/* Delete Button (Absolute positioned for layout cleanliness) */}
                     <button
                       type="button"
                       onClick={() => removeRow(idx)}
-                      className="absolute -top-1 -right-1 lg:-right-4 lg:top-8 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all lg:opacity-0 lg:group-hover:opacity-100"
+                      className="absolute -top-1 -right-1 lg:-right-4 lg:top-8 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all opacity-0 group-hover:opacity-100"
                       title="Hapus Komponen"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -357,7 +355,6 @@ export default function CatalogHppEditor({
                         }
                         const normalized: HppComponentRow[] = (raw as RawHpp[]).map((c) => {
                           const mat = materialMap.get(c.material_id)
-                          const matCat = mat?.category === 'frame' ? 'rangka' : mat?.category
                           return {
                             id: undefined,
                             material_id: c.material_id,
@@ -365,7 +362,7 @@ export default function CatalogHppEditor({
                               typeof c.quantity === 'number'
                                 ? Number(c.quantity) * (copyFactor || 1)
                                 : 0,
-                            section: c.section || matCat || 'lainnya',
+                            section: c.section || mat?.category || 'lainnya',
                             material: mat,
                           }
                         })

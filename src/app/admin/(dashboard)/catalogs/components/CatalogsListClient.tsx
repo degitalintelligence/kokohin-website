@@ -1,16 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import Image from 'next/image'
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp, Loader2, Maximize2, MoreHorizontal, Search, Star, Trash2, Image as ImageIcon } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, MoreHorizontal, Search, Star } from 'lucide-react'
 
 type Unit = 'm2' | 'm1' | 'unit'
 
 type CatalogItem = {
   id: string
   title: string
-  image_url: string | null
   category?: 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya' | null
   atapName: string
   rangkaName: string
@@ -49,7 +47,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
     'recent' | 'price_asc' | 'price_desc' | 'hpp_asc' | 'hpp_desc' | 'title_asc'
   >('recent')
   const [page, setPage] = useState(1)
-  const pageSize = 10
+  const [pageSize, setPageSize] = useState(10)
   const [categoryFilter, setCategoryFilter] = useState<
     'all' | 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya'
   >('all')
@@ -61,8 +59,6 @@ export default function CatalogsListClient({ catalogs }: Props) {
   const [saving, setSaving] = useState(false)
   const [confirmActive, setConfirmActive] = useState<{ id: string; nextVal: boolean; title: string } | null>(null)
   const [savingActive, setSavingActive] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null)
-  const [savingDelete, setSavingDelete] = useState(false)
 
   useEffect(() => {
     setRowsState(catalogs)
@@ -71,7 +67,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
   useEffect(() => {
     const id = window.setTimeout(() => setPage(1), 0)
     return () => window.clearTimeout(id)
-  }, [query, sortKey, categoryFilter, onlyPopular])
+  }, [query, sortKey, pageSize, categoryFilter, onlyPopular])
 
   useEffect(() => {
     if (menuOpenId) {
@@ -215,7 +211,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
     setConfirm({ id, nextVal, title })
   }
 
-  const handleDoConfirm = async () => {
+  const doConfirm = async () => {
     if (!confirm) return
     setSaving(true)
     try {
@@ -236,7 +232,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
     setConfirmActive({ id, nextVal, title })
   }
 
-  const handleDoConfirmActive = async () => {
+  const doConfirmActive = async () => {
     if (!confirmActive) return
     setSavingActive(true)
     try {
@@ -253,121 +249,110 @@ export default function CatalogsListClient({ catalogs }: Props) {
     }
   }
 
-  const doDelete = async () => {
-    if (!confirmDelete) return
-    setSavingDelete(true)
-    try {
-      const formData = new FormData()
-      formData.append('id', confirmDelete.id)
-      
-      // We use the server action directly if imported, or fetch an API
-      // Since deleteCatalog is a server action, we can try to call it if we import it
-      // But for simplicity in client component, we might want an API route or use the action via a form
-      const res = await fetch(`/api/admin/catalogs/delete?id=${confirmDelete.id}`, { method: 'DELETE' })
-      if (res.ok) {
-        setRowsState(prev => prev.filter(c => c.id !== confirmDelete.id))
-      }
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setSavingDelete(false)
-      setConfirmDelete(null)
-    }
-  }
-
   return (
-    <div className="space-y-6">
-      {/* Filters & Search */}
-      <div className="bg-gray-50/50 p-4 rounded-xl border border-gray-100 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="w-full md:max-w-md relative">
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="w-full md:max-w-sm relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input
             type="text"
             placeholder="Cari paket berdasarkan nama, atap, atau rangka..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#E30613]/20 focus:border-[#E30613] transition-all"
+            aria-label="Cari paket"
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613] focus-visible:ring-2 focus-visible:ring-[#E30613]"
           />
         </div>
-        <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex flex-wrap gap-3 justify-between md:justify-end">
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
-            className="px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#E30613]/20 focus:border-[#E30613] transition-all cursor-pointer"
+            aria-label="Filter kategori"
+            className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613] focus-visible:ring-2 focus-visible:ring-[#E30613]"
           >
             <option value="all">Semua Kategori</option>
-            <option value="kanopi">Kanopi</option>
-            <option value="pagar">Pagar</option>
-            <option value="railing">Railing</option>
-            <option value="aksesoris">Aksesoris</option>
-            <option value="lainnya">Lainnya</option>
+            <option value="kanopi">kanopi</option>
+            <option value="pagar">pagar</option>
+            <option value="railing">railing</option>
+            <option value="aksesoris">aksesoris</option>
+            <option value="lainnya">lainnya</option>
           </select>
-          
-          <label className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
             <input
               type="checkbox"
               checked={onlyPopular}
               onChange={(e) => setOnlyPopular(e.target.checked)}
               className="h-4 w-4 rounded border-gray-300 text-[#E30613] focus:ring-[#E30613]"
             />
-            <span className="text-sm font-bold text-gray-700">Populer</span>
+            Hanya populer
           </label>
-
           <select
             value={sortKey}
             onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
-            className="px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#E30613]/20 focus:border-[#E30613] transition-all cursor-pointer"
+            aria-label="Urutkan daftar katalog"
+            className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613] focus-visible:ring-2 focus-visible:ring-[#E30613]"
           >
             <option value="recent">Terbaru</option>
             <option value="title_asc">Nama A-Z</option>
-            <option value="price_asc">Harga Terendah</option>
-            <option value="price_desc">Harga Tertinggi</option>
-            <option value="hpp_asc">HPP Terendah</option>
-            <option value="hpp_desc">HPP Tertinggi</option>
+            <option value="price_asc">Harga jual termurah</option>
+            <option value="price_desc">Harga jual termahal</option>
+            <option value="hpp_asc">HPP terendah</option>
+            <option value="hpp_desc">HPP tertinggi</option>
+          </select>
+          <select
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value) || 10)}
+            aria-label="Jumlah item per halaman"
+            className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613] focus-visible:ring-2 focus-visible:ring-[#E30613]"
+          >
+            <option value={10}>10 / halaman</option>
+            <option value={20}>20 / halaman</option>
+            <option value={50}>50 / halaman</option>
           </select>
         </div>
       </div>
 
       {isFiltering && (
-        <div className="flex items-center gap-2 text-xs text-gray-400 animate-pulse">
+        <div className="flex items-center gap-2 text-xs text-gray-400" role="status" aria-live="polite">
           <Loader2 className="h-3 w-3 animate-spin" />
-          <span>Menyaring hasil pencarian...</span>
+          <span>Menyaring katalog...</span>
         </div>
       )}
 
       {confirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => !saving && setConfirm(null)} />
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-gray-200 shadow-2xl p-8 animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 rounded-full bg-yellow-50 flex items-center justify-center mx-auto mb-6 text-yellow-600">
-              <Star className="w-8 h-8" />
-            </div>
-            <h3 className="text-xl font-black text-gray-900 text-center">{confirm.nextVal ? 'Tandai Populer?' : 'Hapus Populer?'}</h3>
-            <p className="mt-3 text-sm text-gray-500 text-center leading-relaxed">
-              Anda akan {confirm.nextVal ? 'menandai' : 'menghapus'} status populer untuk paket <span className="font-bold text-gray-900">&quot;{confirm.title}&quot;</span>.
+          <div className="absolute inset-0 bg-black/50" onClick={() => !saving && setConfirm(null)} />
+          <div className="relative w-full max-w-md bg-white rounded-xl border border-gray-200 shadow-xl p-6">
+            <h3 className="text-lg font-bold text-gray-900">Ubah Status Populer</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              {`Tandai paket "`}
+              <span className="font-semibold text-gray-900">{confirm.title}</span>
+              {`" sebagai `}
+              <span className="font-semibold">{confirm.nextVal ? 'populer' : 'tidak populer'}</span>
+              {`?`}
             </p>
             {saving && (
-              <div className="mt-6 text-sm text-red-600 flex items-center justify-center gap-2 font-bold animate-pulse">
+              <div className="mt-4 text-sm text-gray-600 flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Sedang menyimpan...</span>
+                <span>Menyimpan perubahan...</span>
               </div>
             )}
-            <div className="mt-8 flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={handleDoConfirm}
-                disabled={saving}
-                className="w-full py-3.5 rounded-xl bg-red-600 text-white hover:bg-red-700 font-black text-sm transition-all shadow-lg shadow-red-200 active:scale-[0.98]"
-              >
-                {confirm.nextVal ? 'Tandai Populer' : 'Batalkan Populer'}
-              </button>
+            <div className="mt-6 flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => !saving && setConfirm(null)}
                 disabled={saving}
-                className="w-full py-3.5 rounded-xl bg-gray-50 text-gray-700 hover:bg-gray-100 font-bold text-sm transition-all"
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-bold"
               >
                 Batal
+              </button>
+              <button
+                type="button"
+                onClick={doConfirm}
+                disabled={saving}
+                className="px-4 py-2 rounded-lg bg-[#E30613] text-white hover:bg-[#c10510] font-bold"
+              >
+                {confirm.nextVal ? 'Tandai Populer' : 'Batalkan Populer'}
               </button>
             </div>
           </div>
@@ -376,234 +361,266 @@ export default function CatalogsListClient({ catalogs }: Props) {
 
       {confirmActive && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => !savingActive && setConfirmActive(null)} />
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-gray-200 shadow-2xl p-8 animate-in zoom-in-95 duration-200">
-            <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 ${confirmActive.nextVal ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-              <div className={`w-3 h-3 rounded-full ${confirmActive.nextVal ? 'bg-green-600' : 'bg-red-600'}`} />
-            </div>
-            <h3 className="text-xl font-black text-gray-900 text-center">{confirmActive.nextVal ? 'Aktifkan Katalog?' : 'Nonaktifkan Katalog?'}</h3>
-            <p className="mt-3 text-sm text-gray-500 text-center leading-relaxed">
-              Ubah status paket <span className="font-bold text-gray-900">&quot;{confirmActive.title}&quot;</span> menjadi {confirmActive.nextVal ? 'aktif' : 'nonaktif'}.
+          <div className="absolute inset-0 bg-black/50" onClick={() => !savingActive && setConfirmActive(null)} />
+          <div className="relative w-full max-w-md bg-white rounded-xl border border-gray-200 shadow-xl p-6">
+            <h3 className="text-lg font-bold text-gray-900">Ubah Status Aktif</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              {`Ubah paket "`}
+              <span className="font-semibold text-gray-900">{confirmActive.title}</span>
+              {`" menjadi `}
+              <span className="font-semibold">{confirmActive.nextVal ? 'Aktif' : 'Nonaktif'}</span>
+              {`?`}
             </p>
             {savingActive && (
-              <div className="mt-6 text-sm text-red-600 flex items-center justify-center gap-2 font-bold animate-pulse">
+              <div className="mt-4 text-sm text-gray-600 flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Sedang menyimpan...</span>
+                <span>Menyimpan perubahan...</span>
               </div>
             )}
-            <div className="mt-8 flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={handleDoConfirmActive}
-                disabled={savingActive}
-                className={`w-full py-3.5 rounded-xl text-white font-black text-sm transition-all shadow-lg active:scale-[0.98] ${confirmActive.nextVal ? 'bg-green-600 hover:bg-green-700 shadow-green-200' : 'bg-red-600 hover:bg-red-700 shadow-red-200'}`}
-              >
-                Ya, {confirmActive.nextVal ? 'Aktifkan' : 'Nonaktifkan'}
-              </button>
+            <div className="mt-6 flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => !savingActive && setConfirmActive(null)}
                 disabled={savingActive}
-                className="w-full py-3.5 rounded-xl bg-gray-50 text-gray-700 hover:bg-gray-100 font-bold text-sm transition-all"
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-bold"
               >
                 Batal
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => !savingDelete && setConfirmDelete(null)} />
-          <div className="relative w-full max-w-md bg-white rounded-2xl border border-gray-200 shadow-2xl p-8 animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-6 text-red-600">
-              <Trash2 className="w-8 h-8" />
-            </div>
-            <h3 className="text-xl font-black text-gray-900 text-center">Hapus Katalog?</h3>
-            <p className="mt-3 text-sm text-gray-500 text-center leading-relaxed">
-              Anda akan menghapus paket <span className="font-bold text-gray-900">&quot;{confirmDelete.title}&quot;</span>. 
-              Tindakan ini tidak dapat dibatalkan dan akan berpengaruh pada penawaran yang sedang berjalan.
-            </p>
-            {savingDelete && (
-              <div className="mt-6 text-sm text-red-600 flex items-center justify-center gap-2 font-bold animate-pulse">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Sedang menghapus...</span>
-              </div>
-            )}
-            <div className="mt-8 flex flex-col gap-3">
               <button
                 type="button"
-                onClick={doDelete}
-                disabled={savingDelete}
-                className="w-full py-3.5 rounded-xl bg-red-600 text-white hover:bg-red-700 font-black text-sm transition-all shadow-lg shadow-red-200 active:scale-[0.98]"
+                onClick={doConfirmActive}
+                disabled={savingActive}
+                className="px-4 py-2 rounded-lg bg-[#E30613] text-white hover:bg-[#c10510] font-bold"
               >
-                Ya, Hapus Permanen
-              </button>
-              <button
-                type="button"
-                onClick={() => !savingDelete && setConfirmDelete(null)}
-                disabled={savingDelete}
-                className="w-full py-3.5 rounded-xl bg-gray-50 text-gray-700 hover:bg-gray-100 font-bold text-sm transition-all"
-              >
-                Batalkan
+                {confirmActive.nextVal ? 'Aktifkan' : 'Nonaktifkan'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Table Desktop */}
-      <div className="hidden lg:block overflow-hidden bg-white rounded-xl border border-gray-200">
-        <table className="w-full text-left border-collapse table-fixed">
-          <thead>
-            <tr className="bg-gray-50/80 border-b border-gray-200">
-              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider w-[40%]">Info Paket</th>
-              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider w-[18%] text-right">Harga Jual</th>
-              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider w-[18%] text-right">HPP Estimasi</th>
-              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider w-[12%] text-center">Status</th>
-              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider w-[12%] text-right">Aksi</th>
+      <div className="hidden lg:block overflow-x-hidden">
+        <table id="catalogs-table" className="w-full table-fixed text-left border-collapse">
+          <caption className="sr-only">Daftar paket katalog</caption>
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-white border-b border-gray-200 text-xs md:text-sm">
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[30%]"
+                aria-sort={sortKey === 'title_asc' ? 'ascending' : undefined}
+              >
+                Nama Paket
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[12%] hidden xl:table-cell"
+              >
+                Kategori
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[18%]"
+                aria-sort={
+                  sortKey === 'price_asc'
+                    ? 'ascending'
+                    : sortKey === 'price_desc'
+                    ? 'descending'
+                    : undefined
+                }
+              >
+                Harga/Unit
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[14%]"
+                aria-sort={
+                  sortKey === 'hpp_asc'
+                    ? 'ascending'
+                    : sortKey === 'hpp_desc'
+                    ? 'descending'
+                    : undefined
+                }
+              >
+                HPP/Unit
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[12%] hidden xl:table-cell"
+              >
+                Estimasi
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap w-[8%]"
+              >
+                Status
+              </th>
+              <th
+                scope="col"
+                className="px-4 py-3 font-bold text-gray-500 whitespace-nowrap text-right w-[8%]"
+              >
+                Aksi
+              </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="bg-white">
             {pageItems.map((catalog) => {
-              const unitLabel = catalog.base_price_unit === 'm2' ? 'm²' : catalog.base_price_unit === 'm1' ? 'm¹' : 'unit'
+              const unitLabel =
+                catalog.base_price_unit === 'm2'
+                  ? 'm²'
+                  : catalog.base_price_unit === 'm1'
+                  ? 'm¹'
+                  : 'unit'
+              const sampleQty = catalog.base_price_unit === 'unit' ? 1 : 10
+              const estimatedPrice = (catalog.base_price_per_m2 || 0) * sampleQty
               const isExpanded = expandedId === catalog.id
               const isMenuOpen = menuOpenId === catalog.id
               const categoryClass = getCategoryBadgeClass(catalog.category ?? null)
 
               return (
                 <Fragment key={catalog.id}>
-                  <tr className="group hover:bg-gray-50/50 transition-colors">
-                    <td className="px-6 py-5">
-                      <div className="flex items-start gap-4">
+                  <tr className="group hover:bg-gray-50 border-b border-gray-100">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => openConfirm(catalog.id, !catalog.is_popular, catalog.title)}
-                          className={`mt-1 flex-shrink-0 transition-transform active:scale-90 ${
-                            catalog.is_popular ? 'text-yellow-400' : 'text-gray-300 hover:text-gray-400'
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            openConfirm(catalog.id, !catalog.is_popular, catalog.title)
+                          }}
+                          aria-pressed={catalog.is_popular}
+                          aria-label={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
+                          title={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
+                          className={`inline-flex items-center justify-center w-5 h-5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${
+                            catalog.is_popular
+                              ? 'bg-[#E30613] text-white'
+                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                           }`}
                         >
-                          <Star className={`w-5 h-5 ${catalog.is_popular ? 'fill-current' : ''}`} />
+                          <Star className="w-3 h-3" aria-hidden="true" />
                         </button>
-                        
-                        {/* Catalog Thumbnail */}
-                        <div className="relative w-16 h-12 rounded-lg bg-gray-100 overflow-hidden flex-shrink-0 border border-gray-100">
-                          {catalog.image_url ? (
-                            <Image
-                              src={catalog.image_url}
-                              alt={catalog.title}
-                              fill
-                              className="object-cover"
-                              sizes="64px"
-                              unoptimized
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-gray-300">
-                              <ImageIcon className="w-6 h-6" />
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`px-2 py-0.5 text-[10px] font-black uppercase tracking-widest rounded-md ${categoryClass}`}>
-                              {catalog.category || 'lainnya'}
-                            </span>
-                          </div>
-                          <Link 
-                            href={`/admin/catalogs/${catalog.id}`}
-                            className="text-base font-bold text-gray-900 hover:text-[#E30613] transition-colors truncate block"
+                        <button
+                          type="button"
+                          onClick={() => handleToggleExpand(catalog.id)}
+                          aria-expanded={isExpanded}
+                          aria-controls={`row-details-${catalog.id}`}
+                          aria-label={
+                            isExpanded
+                              ? `Sembunyikan detail ${catalog.title}`
+                              : `Tampilkan detail ${catalog.title}`
+                          }
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
+                        >
+                          {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        </button>
+                        <div>
+                          <div
+                            className="text-sm font-medium text-gray-900 max-w-[220px] xl:max-w-[320px] truncate"
+                            title={catalog.title}
                           >
                             {catalog.title}
-                          </Link>
-                          <div className="flex items-center gap-3 mt-1">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleExpand(catalog.id)}
-                              className="text-[11px] font-bold text-gray-500 hover:text-gray-700 flex items-center gap-1"
-                            >
-                              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                              Detail Material
-                            </button>
-                            <span className="text-[11px] text-gray-300">|</span>
-                            <span className="text-[11px] text-gray-400">ID: {catalog.id.slice(0, 8)}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-gray-500">
+                            Dibuat:{' '}
+                            {catalog.created_at
+                              ? new Date(catalog.created_at).toLocaleDateString('id-ID', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })
+                              : '-'}
                           </div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-5 text-right">
-                      <div className="text-base font-black text-gray-900">
-                        {formatCurrency(catalog.base_price_per_m2)}
-                      </div>
-                      <div className="text-[11px] font-bold text-gray-400">per {unitLabel}</div>
+                    <td className="px-4 py-3 whitespace-nowrap hidden xl:table-cell">
+                      <span
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${categoryClass}`}
+                      >
+                        {catalog.category ?? '-'}
+                      </span>
                     </td>
-                    <td className="px-6 py-5 text-right">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {formatCurrency(catalog.base_price_per_m2)} <span>/ {unitLabel}</span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
                       {typeof catalog.hpp_per_unit === 'number' && catalog.hpp_per_unit > 0 ? (
                         <div>
-                          <div className="text-base font-bold text-gray-700">
+                          <div className="text-sm text-gray-900">
                             {formatCurrency(catalog.hpp_per_unit)}
                           </div>
                           <div className="mt-1">
-                            <span className={`px-2 py-0.5 text-[10px] font-black uppercase tracking-widest rounded-md ${catalog.priorityClassName}`}>
-                              {catalog.priorityLabel.replace('Prioritas ', '')}
+                            <span
+                              title="Prioritas berdasarkan HPP relatif"
+                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${catalog.priorityClassName}`}
+                            >
+                              {catalog.priorityLabel}
                             </span>
                           </div>
                         </div>
                       ) : (
-                        <span className="text-sm font-medium text-gray-300 italic">Belum dihitung</span>
+                        <span className="text-sm text-gray-500">-</span>
                       )}
                     </td>
-                    <td className="px-6 py-5 text-center">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 hidden xl:table-cell">
+                      <div>{formatCurrency(estimatedPrice)}</div>
+                      <div>
+                        Estimasi {sampleQty} {unitLabel}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <button
                         type="button"
-                        onClick={() => openConfirmActive(catalog.id, !catalog.is_active, catalog.title)}
-                        className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          openConfirmActive(catalog.id, !catalog.is_active, catalog.title)
+                        }}
+                        aria-pressed={catalog.is_active}
+                        aria-label={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
+                        title={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${
                           catalog.is_active
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                            : 'bg-red-100 text-red-700 hover:bg-red-200'
+                            ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                            : 'bg-red-100 text-red-800 hover:bg-red-200'
                         }`}
                       >
                         {catalog.is_active ? 'Aktif' : 'Nonaktif'}
                       </button>
                     </td>
-                    <td className="px-6 py-5">
-                      <div className="flex items-center justify-end gap-2 relative" data-menu-id={catalog.id}>
+                    <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="relative flex items-center justify-end gap-1" data-menu-id={catalog.id}>
                         <Link
                           href={`/admin/catalogs/${catalog.id}`}
-                          className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-[#1D1D1B] hover:text-white transition-all shadow-sm"
-                          title="Edit Katalog"
+                          className="px-3 py-1.5 rounded-md border border-gray-300 text-xs text-gray-800 hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
                         >
-                          <Search className="w-4 h-4" />
+                          Edit
                         </Link>
                         <button
                           type="button"
                           onClick={() => handleToggleMenu(catalog.id)}
-                          className="p-2 bg-white border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 transition-all shadow-sm"
+                          aria-label="Buka menu tindakan"
                         >
-                          <MoreHorizontal className="w-4 h-4" />
+                          <MoreHorizontal className="w-5 h-5 text-gray-500" />
                         </button>
-
                         {isMenuOpen && (
-                          <div className="absolute top-full right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-20 py-1 animate-in fade-in slide-in-from-top-2 duration-200 overflow-hidden">
+                          <div
+                            id={`row-menu-${catalog.id}`}
+                            className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20"
+                          >
                             <Link
                               href={`/katalog/${catalog.id}`}
                               target="_blank"
-                              className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors"
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                             >
-                              <Maximize2 className="w-4 h-4 text-gray-400" />
-                              Halaman Publik
+                              Lihat Halaman Publik
                             </Link>
                             <button
                               type="button"
-                              onClick={() => {
-                                setMenuOpenId(null)
-                                setConfirmDelete({ id: catalog.id, title: catalog.title })
-                              }}
-                              className="flex items-center gap-2 w-full text-left px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 transition-colors"
+                              className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                             >
-                              <Trash2 className="w-4 h-4" />
-                              Hapus Katalog
+                              Hapus
                             </button>
                           </div>
                         )}
@@ -611,24 +628,19 @@ export default function CatalogsListClient({ catalogs }: Props) {
                     </td>
                   </tr>
                   {isExpanded && (
-                    <tr className="bg-gray-50/30">
-                      <td colSpan={5} className="px-6 py-4">
-                        <div className="grid grid-cols-4 gap-6 bg-white p-5 rounded-xl border border-gray-100 shadow-sm animate-in slide-in-from-top-1">
-                          <div>
-                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Atap</p>
-                            <p className="text-xs font-bold text-gray-700">{catalog.atapName || '-'}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Rangka</p>
-                            <p className="text-xs font-bold text-gray-700">{catalog.rangkaName || '-'}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Finishing</p>
-                            <p className="text-xs font-bold text-gray-700">{catalog.finishingName || '-'}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Isian</p>
-                            <p className="text-xs font-bold text-gray-700">{catalog.isianName || '-'}</p>
+                    <tr id={`row-details-${catalog.id}`}>
+                      <td colSpan={7} className="p-0">
+                        <div className="bg-gray-50 p-4 border-t border-gray-200">
+                          <h4 className="font-bold text-sm mb-2">Detail Komponen:</h4>
+                          <div className="text-xs grid grid-cols-2 gap-x-4 gap-y-1">
+                            <div className="font-semibold">Atap:</div>
+                            <div>{catalog.atapName || '-'}</div>
+                            <div className="font-semibold">Rangka:</div>
+                            <div>{catalog.rangkaName || '-'}</div>
+                            <div className="font-semibold">Finishing:</div>
+                            <div>{catalog.finishingName || '-'}</div>
+                            <div className="font-semibold">Isian:</div>
+                            <div>{catalog.isianName || '-'}</div>
                           </div>
                         </div>
                       </td>
@@ -637,126 +649,157 @@ export default function CatalogsListClient({ catalogs }: Props) {
                 </Fragment>
               )
             })}
+            {total === 0 && (
+              <tr>
+                <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-500">
+                  Tidak ada paket yang cocok dengan filter. Coba ubah kata kunci pencarian.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
 
-      {/* Mobile View */}
       <div className="grid grid-cols-1 gap-4 lg:hidden">
         {pageItems.map((catalog) => {
-          const unitLabel = catalog.base_price_unit === 'm2' ? 'm²' : catalog.base_price_unit === 'm1' ? 'm¹' : 'unit'
-          const categoryClass = getCategoryBadgeClass(catalog.category ?? null)
-
+          const unitLabel =
+            catalog.base_price_unit === 'm2'
+              ? 'm²'
+              : catalog.base_price_unit === 'm1'
+              ? 'm¹'
+              : 'unit'
+          const sampleQty = catalog.base_price_unit === 'unit' ? 1 : 10
+          const estimatedPrice = (catalog.base_price_per_m2 || 0) * sampleQty
           return (
-            <div key={catalog.id} className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm active:scale-[0.98] transition-transform">
-              {/* Card Image Mobile */}
-              <div className="relative aspect-video w-full bg-gray-100">
-                {catalog.image_url ? (
-                  <Image
-                    src={catalog.image_url}
-                    alt={catalog.title}
-                    fill
-                    className="object-cover"
-                    unoptimized
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-300">
-                    <ImageIcon className="w-12 h-12" />
+            <div
+              key={catalog.id}
+              className="bg-white rounded-lg shadow-md p-4 border border-gray-200"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">{catalog.title}</div>
+                  <div className="mt-1 text-xs text-gray-500 capitalize">
+                    {(catalog.category ?? '-')} •{' '}
+                    {catalog.created_at
+                      ? new Date(catalog.created_at).toLocaleDateString('id-ID', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })
+                      : '-'}
                   </div>
-                )}
-                <div className="absolute top-4 left-4">
-                  <span className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-widest rounded-md shadow-sm ${categoryClass}`}>
-                    {catalog.category || 'lainnya'}
-                  </span>
                 </div>
-                <div className="absolute top-4 right-4 flex items-center gap-2">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => openConfirm(catalog.id, !catalog.is_popular, catalog.title)}
-                    className={`p-1.5 rounded-full backdrop-blur-md transition-colors ${
-                      catalog.is_popular ? 'bg-yellow-400 text-white' : 'bg-black/20 text-white'
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      openConfirm(catalog.id, !catalog.is_popular, catalog.title)
+                    }}
+                    aria-pressed={catalog.is_popular}
+                    aria-label={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
+                    title={catalog.is_popular ? 'Batalkan populer' : 'Tandai populer'}
+                    className={`inline-flex items-center justify-center w-5 h-5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${
+                      catalog.is_popular
+                        ? 'bg-[#E30613] text-white'
+                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                     }`}
                   >
-                    <Star className={`w-4 h-4 ${catalog.is_popular ? 'fill-current' : ''}`} />
+                    <Star className="w-3 h-3" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => openConfirmActive(catalog.id, !catalog.is_active, catalog.title)}
-                    className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest backdrop-blur-md shadow-sm ${
-                      catalog.is_active ? 'bg-green-500/90 text-white' : 'bg-red-500/90 text-white'
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      openConfirmActive(catalog.id, !catalog.is_active, catalog.title)
+                    }}
+                    aria-pressed={catalog.is_active}
+                    aria-label={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
+                    title={catalog.is_active ? 'Nonaktifkan katalog' : 'Aktifkan katalog'}
+                    className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613] ${
+                      catalog.is_active
+                        ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                        : 'bg-red-100 text-red-800 hover:bg-red-200'
                     }`}
                   >
-                    {catalog.is_active ? 'Aktif' : 'Non'}
+                    {catalog.is_active ? 'Aktif' : 'Nonaktif'}
                   </button>
                 </div>
               </div>
-
-              <div className="p-5">
-                <h3 className="text-base font-bold text-gray-900 mb-4 line-clamp-1">{catalog.title}</h3>
-
-                <div className="grid grid-cols-2 gap-y-4 border-t border-gray-50 pt-4">
-                  <div>
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Harga / {unitLabel}</p>
-                    <p className="text-sm font-black text-gray-900">{formatCurrency(catalog.base_price_per_m2)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">HPP Estimasi</p>
-                    <p className="text-sm font-bold text-gray-700">
-                      {catalog.hpp_per_unit ? formatCurrency(catalog.hpp_per_unit) : '-'}
-                    </p>
+              <div className="mt-4 grid grid-cols-2 gap-4 text-sm text-gray-700">
+                <div>
+                  <div className="text-xs text-gray-500">Atap</div>
+                  <div className="font-medium">{catalog.atapName}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500">Rangka</div>
+                  <div className="font-medium">{catalog.rangkaName}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500">Harga / {unitLabel}</div>
+                  <div className="font-semibold text-gray-900">
+                    {formatCurrency(catalog.base_price_per_m2)}
                   </div>
                 </div>
-
-                <div className="mt-5 flex gap-2">
-                  <Link
-                    href={`/admin/catalogs/${catalog.id}`}
-                    className="flex-1 py-2.5 bg-[#1D1D1B] text-white text-xs font-bold rounded-xl text-center shadow-md active:bg-black transition-colors"
-                  >
-                    Edit Paket
-                  </Link>
-                  <Link
-                    href={`/kalkulator?catalog_id=${catalog.id}`}
-                    className="flex-1 py-2.5 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-xl text-center shadow-sm active:bg-gray-50 transition-colors"
-                  >
-                    Buka Kalkulator
-                  </Link>
+                <div>
+                  <div className="text-xs text-gray-500">HPP / {unitLabel}</div>
+                  <div className="font-semibold text-gray-900">
+                    {typeof catalog.hpp_per_unit === 'number' && catalog.hpp_per_unit > 0
+                      ? formatCurrency(catalog.hpp_per_unit)
+                      : '-'}
+                  </div>
                 </div>
+                <div>
+                  <div className="text-xs text-gray-500">Estimasi</div>
+                  <div className="font-semibold text-gray-900">
+                    {formatCurrency(estimatedPrice)}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Estimasi {sampleQty} {unitLabel}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link
+                  href={`/admin/catalogs/${catalog.id}`}
+                  className="px-3 py-1.5 rounded-md border border-gray-300 text-xs text-gray-800 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
+                >
+                  Edit Paket
+                </Link>
+                <Link
+                  href={`/kalkulator?catalog_id=${catalog.id}`}
+                  className="px-3 py-1.5 rounded-md border border-gray-300 text-xs text-gray-800 hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#E30613]"
+                >
+                  Buka di Kalkulator
+                </Link>
               </div>
             </div>
           )
         })}
+        {total === 0 && (
+          <div className="text-center text-sm text-gray-500 py-8">
+            Tidak ada paket yang cocok dengan filter. Coba ubah kata kunci pencarian.
+          </div>
+        )}
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-1.5 py-4">
-          <button
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-            className="p-2 bg-white border border-gray-200 rounded-lg text-gray-400 disabled:opacity-30"
-          >
-            <ChevronDown className="w-4 h-4 rotate-90" />
-          </button>
+        <div className="mt-6 flex justify-center items-center gap-2">
           {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
             <button
               key={p}
               onClick={() => setPage(p)}
-              className={`min-w-[40px] h-10 px-3 rounded-lg text-sm font-bold transition-all ${
+              className={`px-3 py-1 rounded-md text-sm font-medium ${
                 currentPage === p
-                  ? 'bg-[#E30613] text-white shadow-brand'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-400'
+                  ? 'bg-[#E30613] text-white'
+                  : 'bg-white text-gray-700 border border-gray-300'
               }`}
             >
               {p}
             </button>
           ))}
-          <button
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-            className="p-2 bg-white border border-gray-200 rounded-lg text-gray-400 disabled:opacity-30"
-          >
-            <ChevronDown className="w-4 h-4 -rotate-90" />
-          </button>
         </div>
       )}
     </div>

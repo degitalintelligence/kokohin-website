@@ -14,22 +14,16 @@ async function uploadImage(file: File, supabase: SupabaseClient) {
   const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
   const filePath = `catalogs/${fileName}`
 
-  // Convert File to ArrayBuffer for better reliability in server environment
-  const arrayBuffer = await file.arrayBuffer()
-  const buffer = Buffer.from(arrayBuffer)
-
   // Upload to Supabase Storage 'images' bucket (public)
+  // Assuming 'images' bucket exists and is public
   const { error: uploadError } = await supabase.storage
     .from('images')
-    .upload(filePath, buffer, {
-      contentType: file.type,
-      upsert: false
-    })
+    .upload(filePath, file)
 
   if (uploadError) {
     console.error('Error uploading image:', uploadError)
-    // Throw error so the parent action can handle and notify user
-    throw new Error(`Gagal mengupload gambar: ${uploadError.message}`)
+    // Don't throw, just return null so we can proceed without image
+    return null
   }
 
   const { data: { publicUrl } } = supabase.storage
@@ -177,125 +171,117 @@ export async function fetchCatalogHppComponents(catalogId: string) {
 export async function createCatalog(formData: FormData) {
   const supabase = await createClient()
 
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return redirect('/admin/login')
-    }
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .maybeSingle()
-    const role = (profile as { role?: string } | null)?.role ?? null
-    if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
-      return redirect('/admin/leads')
-    }
-
-    const title = formData.get('title') as string
-    const description = (formData.get('description') as string) || ''
-    const category = formData.get('category') as string
-    const basePriceStr = formData.get('base_price_per_m2') as string
-    const basePriceUnit = ((formData.get('base_price_unit') as string) || 'm2') as 'm2' | 'm1' | 'unit'
-    const atapId = (formData.get('atap_id') as string) || ''
-    const rangkaId = (formData.get('rangka_id') as string) || ''
-    const finishingId = (formData.get('finishing_id') as string) || ''
-    const isianId = (formData.get('isian_id') as string) || ''
-    const addonsJson = (formData.get('addons_json') as string) || '[]'
-    const imageFile = formData.get('image_file') as File
-    const isActive = formData.get('is_active') === 'on'
-    const laborCostStr = (formData.get('labor_cost') as string) || '0'
-    const transportCostStr = (formData.get('transport_cost') as string) || '0'
-    const marginPercentageStr = (formData.get('margin_percentage') as string) || '0'
-
-    if (!title || !basePriceStr) {
-      throw new Error('Nama paket dan harga dasar wajib diisi')
-    }
-
-    const basePrice = parseFloat(basePriceStr)
-    if (isNaN(basePrice)) {
-      throw new Error('Harga harus berupa angka')
-    }
-    const laborCost = parseFloat(laborCostStr) || 0
-    const transportCost = parseFloat(transportCostStr) || 0
-    const marginPercentage = Math.max(0, Math.min(100, parseFloat(marginPercentageStr) || 0))
-    
-    // Mandatory Components Validation
-    if (category === 'kanopi') {
-      if (!atapId) throw new Error('Kategori Kanopi wajib memilih Material Atap')
-      if (!rangkaId) throw new Error('Kategori Kanopi wajib memilih Material Rangka')
-      if (!finishingId) throw new Error('Kategori Kanopi wajib memilih Jenis Finishing')
-    }
-    if (category === 'pagar' || category === 'railing') {
-      if (!rangkaId) throw new Error('Kategori Pagar/Railing wajib memilih Material Rangka')
-      if (!isianId) throw new Error('Kategori Pagar/Railing wajib memilih Material Isian')
-      if (!finishingId) throw new Error('Kategori Pagar/Railing wajib memilih Jenis Finishing')
-    }
-
-    const allowedUnits = new Set(['m2', 'm1', 'unit'])
-    const safeUnit = allowedUnits.has(basePriceUnit) ? basePriceUnit : 'm2'
-
-    let addons: Array<{ id?: string; material_id: string; basis?: 'm2'|'m1'|'unit'; qty_per_basis?: number; is_optional: boolean }> = []
-    try {
-      addons = JSON.parse(addonsJson) ?? []
-    } catch {
-      addons = []
-    }
-
-    const imageUrl = await uploadImage(imageFile, supabase)
-
-    const payload = {
-      title,
-      description,
-      category,
-      base_price_per_m2: basePrice,
-      base_price_unit: safeUnit,
-      labor_cost: laborCost,
-      transport_cost: transportCost,
-      margin_percentage: marginPercentage,
-      atap_id: atapId || null,
-      rangka_id: rangkaId || null,
-      finishing_id: finishingId || null,
-      isian_id: isianId || null,
-      image_url: imageUrl || null,
-      is_active: isActive,
-    }
-
-    const { data: inserted, error: insertErr } = await supabase
-      .from('catalogs')
-      .insert(payload)
-      .select('id')
-      .single()
-
-    if (insertErr || !inserted) {
-      throw new Error(`Gagal menyimpan katalog: ${insertErr?.message ?? 'Unknown error'}`)
-    }
-
-    const catalogId = inserted.id as string
-
-    if (addons.length > 0) {
-      const rows = addons
-        .filter((a) => a.material_id)
-        .map((a) => ({
-          catalog_id: catalogId,
-          material_id: a.material_id,
-          basis: (a.basis === 'm1' || a.basis === 'unit') ? a.basis : 'm2',
-          qty_per_basis: typeof a.qty_per_basis === 'number' ? a.qty_per_basis : 0,
-          is_optional: !!a.is_optional,
-        }))
-      const { error: addErr } = await supabase.from('catalog_addons').insert(rows)
-      if (addErr) {
-        throw new Error(`Katalog tersimpan, namun gagal menyimpan addons: ${addErr.message}`)
-      }
-    }
-
-    try { await updateHppPerUnit(catalogId, user.id) } catch {}
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred'
-    console.error(`[FATAL] Error in createCatalog:`, error)
-    return redirect(`/admin/catalogs/new?error=${encodeURIComponent(errorMessage)}`)
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return redirect('/admin/login')
   }
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle()
+  const role = (profile as { role?: string } | null)?.role ?? null
+  if (!isRoleAllowed(role, ALLOWED_MATERIALS_ROLES, user.email)) {
+    return redirect('/admin/leads')
+  }
+
+  const title = formData.get('title') as string
+  const category = formData.get('category') as string
+  const basePriceStr = formData.get('base_price_per_m2') as string
+  const basePriceUnit = ((formData.get('base_price_unit') as string) || 'm2') as 'm2' | 'm1' | 'unit'
+  const atapId = (formData.get('atap_id') as string) || ''
+  const rangkaId = (formData.get('rangka_id') as string) || ''
+  const finishingId = (formData.get('finishing_id') as string) || ''
+  const isianId = (formData.get('isian_id') as string) || ''
+  const addonsJson = (formData.get('addons_json') as string) || '[]'
+  const imageFile = formData.get('image_file') as File
+  const isActive = formData.get('is_active') === 'on'
+  const laborCostStr = (formData.get('labor_cost') as string) || '0'
+  const transportCostStr = (formData.get('transport_cost') as string) || '0'
+  const marginPercentageStr = (formData.get('margin_percentage') as string) || '0'
+
+  if (!title || !basePriceStr) {
+    return redirect('/admin/catalogs/new?error=Nama%20paket%20dan%20harga%20dasar%20wajib%20diisi')
+  }
+
+  const basePrice = parseFloat(basePriceStr)
+  if (isNaN(basePrice)) {
+    return redirect('/admin/catalogs/new?error=Harga%20harus%20berupa%20angka')
+  }
+  const laborCost = parseFloat(laborCostStr) || 0
+  const transportCost = parseFloat(transportCostStr) || 0
+  const marginPercentage = Math.max(0, Math.min(100, parseFloat(marginPercentageStr) || 0))
+  
+  // Mandatory Components Validation
+  if (category === 'kanopi') {
+    if (!atapId) return redirect('/admin/catalogs/new?error=Kategori%20Kanopi%20wajib%20memilih%20Material%20Atap')
+    if (!rangkaId) return redirect('/admin/catalogs/new?error=Kategori%20Kanopi%20wajib%20memilih%20Material%20Rangka')
+    if (!finishingId) return redirect('/admin/catalogs/new?error=Kategori%20Kanopi%20wajib%20memilih%20Jenis%20Finishing')
+  }
+  if (category === 'pagar' || category === 'railing') {
+    if (!rangkaId) return redirect('/admin/catalogs/new?error=Kategori%20Pagar/Railing%20wajib%20memilih%20Material%20Rangka')
+    if (!isianId) return redirect('/admin/catalogs/new?error=Kategori%20Pagar/Railing%20wajib%20memilih%20Material%20Isian')
+    if (!finishingId) return redirect('/admin/catalogs/new?error=Kategori%20Pagar/Railing%20wajib%20memilih%20Jenis%20Finishing')
+  }
+
+  const allowedUnits = new Set(['m2', 'm1', 'unit'])
+  const safeUnit = allowedUnits.has(basePriceUnit) ? basePriceUnit : 'm2'
+
+  let addons: Array<{ id?: string; material_id: string; basis?: 'm2'|'m1'|'unit'; qty_per_basis?: number; is_optional: boolean }> = []
+  try {
+    addons = JSON.parse(addonsJson) ?? []
+  } catch {
+    addons = []
+  }
+
+  const imageUrl = await uploadImage(imageFile, supabase)
+
+  const payload = {
+    title,
+    category,
+    base_price_per_m2: basePrice,
+    base_price_unit: safeUnit,
+    labor_cost: laborCost,
+    transport_cost: transportCost,
+    margin_percentage: marginPercentage,
+    atap_id: atapId || null,
+    rangka_id: rangkaId || null,
+    finishing_id: finishingId || null,
+    isian_id: isianId || null,
+    image_url: imageUrl || null,
+    is_active: isActive,
+  }
+
+  const { data: inserted, error: insertErr } = await supabase
+    .from('catalogs')
+    .insert(payload)
+    .select('id')
+    .single()
+
+  if (insertErr || !inserted) {
+    const msg = insertErr?.message ?? 'Unknown error'
+    return redirect(`/admin/catalogs/new?error=Gagal%20menyimpan%20katalog:%20${encodeURIComponent(msg)}`)
+  }
+
+  const catalogId = inserted.id as string
+
+  if (addons.length > 0) {
+    const rows = addons
+      .filter((a) => a.material_id)
+      .map((a) => ({
+        catalog_id: catalogId,
+        material_id: a.material_id,
+        basis: (a.basis === 'm1' || a.basis === 'unit') ? a.basis : 'm2',
+        qty_per_basis: typeof a.qty_per_basis === 'number' ? a.qty_per_basis : 0,
+        is_optional: !!a.is_optional,
+      }))
+    const { error: addErr } = await supabase.from('catalog_addons').insert(rows)
+    if (addErr) {
+      return redirect(`/admin/catalogs/new?error=Katalog%20tersimpan%2C%20namun%20gagal%20menyimpan%20addons:%20${encodeURIComponent(addErr.message)}`)
+    }
+  }
+
+  try { await updateHppPerUnit(catalogId, user.id) } catch {}
 
   revalidatePath('/admin/catalogs')
   revalidatePath('/admin/catalogs/new')
@@ -329,7 +315,6 @@ export async function updateCatalog(formData: FormData) {
 
     const rawTitle = (formData.get('title') as string) || ''
     const title = rawTitle.trim()
-    const description = (formData.get('description') as string) || ''
     const category = formData.get('category') as string
     const rawBasePriceStr = (formData.get('base_price_per_m2') as string) || ''
     const basePriceStr = rawBasePriceStr.trim()
@@ -390,7 +375,6 @@ export async function updateCatalog(formData: FormData) {
 
     const payload = {
       title,
-      description,
       category,
       base_price_per_m2: basePrice,
       base_price_unit: safeUnit,

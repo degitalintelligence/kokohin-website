@@ -1,16 +1,17 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { AlertTriangle, Info, DollarSign, Wrench, UploadCloud } from 'lucide-react'
 import DeleteCatalogButton from '../components/DeleteCatalogButton'
 import CatalogAddonsEditor from '../components/CatalogAddonsEditor'
 import CatalogBaseFields from '../components/CatalogBaseFields'
 import CatalogTabs from '../components/CatalogTabs'
 import CatalogHppEditor from '../components/CatalogHppEditor'
-import CatalogSaveButton from '../components/CatalogSaveButton'
+import CatalogPartialSaveButton from '../components/CatalogPartialSaveButton'
 import CatalogEditUXController from '../components/CatalogEditUXController'
 import CatalogTitleField from '../components/CatalogTitleField'
-import ImageUpload from '../components/ImageUpload'
+import CatalogAutosaveIndicator from '../components/CatalogAutosaveIndicator'
 
 // import styles from '../../page.module.css'
 import { updateCatalog, importCatalogAddons } from '@/app/actions/catalogs'
@@ -135,6 +136,7 @@ export default async function AdminCatalogDetailPage({
           </Link>
           <DeleteCatalogButton id={catalog.id} />
           </div>
+          <CatalogAutosaveIndicator formId="editCatalogForm" />
         </div>
       </div>
 
@@ -157,6 +159,7 @@ export default async function AdminCatalogDetailPage({
                     </div>
                     Informasi Katalog
                   </h2>
+                  <CatalogPartialSaveButton formId="editCatalogForm" mode="info" />
                 </div>
                 
                 
@@ -164,16 +167,6 @@ export default async function AdminCatalogDetailPage({
                 <div className="p-6 space-y-8">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <CatalogTitleField defaultValue={catalog.title} />
-
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium mb-2">Deskripsi Katalog</label>
-                      <textarea
-                        name="description"
-                        className="w-full px-4 py-2 border rounded-md min-h-[100px]"
-                        defaultValue={catalog.description || ''}
-                        placeholder="Jelaskan keunggulan paket ini kepada pelanggan..."
-                      />
-                    </div>
 
                     <CatalogBaseFields
                       key={`${catalog.id}-${catalog.atap_id}-${catalog.rangka_id}-${catalogMetadata.finishing_id || ''}-${catalogMetadata.isian_id || ''}`}
@@ -188,14 +181,28 @@ export default async function AdminCatalogDetailPage({
                       initialIsianId={catalogMetadata.isian_id || ''}
                     />
 
-                    <div id="gambar" className="md:col-span-2">
-                      <ImageUpload
+                    <div id="gambar" className={`md:col-span-2`}>
+                      <label className="block text-sm font-medium mb-2">Upload Gambar</label>
+                      {catalog.image_url && (
+                        <div className="mb-2">
+                          <Image
+                            src={catalog.image_url}
+                            alt="Preview"
+                            width={128}
+                            height={128}
+                            unoptimized
+                            className="w-32 h-32 object-cover rounded-md border"
+                          />
+                          <input type="hidden" name="current_image_url" value={catalog.image_url} />
+                        </div>
+                      )}
+                      <input
+                        type="file"
                         name="image_file"
-                        defaultValue={catalog.image_url}
+                        accept="image/*"
+                        className="w-full px-4 py-3 rounded-md border border-gray-200 focus:outline-none focus:ring-0 focus:border-[#E30613]"
                       />
-                      <p className="text-[10px] text-gray-400 mt-2 italic font-medium">
-                        * Gambar akan otomatis dioptimalkan ukurannya sebelum disimpan.
-                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Biarkan kosong jika tidak ingin mengubah gambar.</p>
                     </div>
 
                     <div id="status" className={`md:col-span-2`}>
@@ -223,6 +230,7 @@ export default async function AdminCatalogDetailPage({
                     </div>
                     Formulasi HPP
                   </h2>
+                  <CatalogPartialSaveButton formId="editCatalogForm" mode="hpp" />
                 </div>
                 <div className="p-6 space-y-8">
                   <div className="flex items-start gap-3 p-4 bg-blue-50/50 border border-blue-100 rounded-lg text-sm text-blue-800">
@@ -320,6 +328,7 @@ export default async function AdminCatalogDetailPage({
                     </div>
                     Harga Jual & Margin
                   </h2>
+                  <CatalogPartialSaveButton formId="editCatalogForm" mode="pricing" />
                 </div>
                 <div className="p-6 space-y-8">
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -462,6 +471,7 @@ export default async function AdminCatalogDetailPage({
                     </div>
                     Komponen Tambahan (Opsional)
                   </h2>
+                  <CatalogPartialSaveButton formId="editCatalogForm" mode="addons" />
                 </div>
                 <div className="p-6 space-y-8">
                   <div className="flex items-start gap-3 p-4 bg-purple-50/50 border border-purple-100 rounded-lg text-sm text-purple-800">
@@ -500,88 +510,79 @@ export default async function AdminCatalogDetailPage({
                       return { ...ra, material, basis, qty_per_basis: qtyPerBasis }
                     })}
                   />
+                </div>
+              </div>
+            </div>
 
-                  {/* Import Addons from CSV (Inside Addons Tab) */}
-                  <div className="mt-12 pt-12 border-t border-gray-100">
-                    <h3 className="text-base font-bold text-gray-800 flex items-center gap-2 mb-4">
-                      <UploadCloud className="w-4 h-4 text-gray-400" />
-                      Import Addons dari CSV
-                    </h3>
-                    <div className="flex flex-col md:flex-row items-start md:items-center gap-4 bg-gray-50 p-5 rounded-xl border border-gray-200 border-dashed">
-                      <input type="hidden" name="catalog_id" value={catalog.id} />
-                      <div className="flex-1 w-full">
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Upload File CSV</label>
-                        <input 
-                          type="file" 
-                          name="file" 
-                          accept=".csv" 
-                          className="block w-full text-sm text-gray-500
-                            file:mr-4 file:py-2 file:px-4
-                            file:rounded-full file:border-0
-                            file:text-sm file:font-semibold
-                            file:bg-[#E30613]/10 file:text-[#E30613]
-                            hover:file:bg-[#E30613]/20
-                            cursor-pointer" 
-                        />
-                      </div>
-                      
-                      <div className="w-full md:w-auto">
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Mode Import</label>
-                        <select name="mode" defaultValue="replace" className="w-full px-3 py-2 border rounded-lg bg-white text-sm focus:outline-none focus:border-[#E30613]">
-                          <option value="replace">Replace (Hapus lama & Ganti baru)</option>
-                          <option value="append">Append (Tambah ke yang sudah ada)</option>
-                          <option value="upsert">Upsert (Update jika ada, Tambah jika baru)</option>
-                        </select>
-                      </div>
-
-                      <div className="w-full md:w-auto pt-6">
-                        <label className="inline-flex items-center gap-2 text-sm bg-white px-3 py-2 border rounded-lg cursor-pointer hover:border-gray-300 transition-colors w-full md:w-auto justify-center">
-                          <input type="checkbox" name="preview" value="1" className="text-[#E30613] focus:ring-[#E30613] rounded" />
-                          <span>Preview Data Saja</span>
-                        </label>
-                      </div>
+            <div id="import">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 mt-6 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <div className="p-1.5 bg-gray-100 rounded-lg">
+                      <UploadCloud className="w-4 h-4 text-gray-600" />
+                    </div>
+                    Import Addons dari CSV
+                  </h2>
+                </div>
+                <div className="p-6">
+                  <div className="flex flex-col md:flex-row items-start md:items-center gap-4 bg-gray-50 p-5 rounded-xl border border-gray-200 border-dashed">
+                    <input type="hidden" name="catalog_id" value={catalog.id} />
+                    <div className="flex-1 w-full">
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Upload File CSV</label>
+                      <input 
+                        type="file" 
+                        name="file" 
+                        accept=".csv" 
+                        className="block w-full text-sm text-gray-500
+                          file:mr-4 file:py-2 file:px-4
+                          file:rounded-full file:border-0
+                          file:text-sm file:font-semibold
+                          file:bg-[#E30613]/10 file:text-[#E30613]
+                          hover:file:bg-[#E30613]/20
+                          cursor-pointer" 
+                      />
                     </div>
                     
-                    <div className="flex justify-between items-center mt-4">
-                      <a href="/templates/catalog_addons_template.csv" className="text-sm font-medium text-[#E30613] hover:underline flex items-center gap-1">
-                        <UploadCloud className="w-4 h-4" /> Download Template CSV
-                      </a>
-                      <button 
-                        type="submit" 
-                        formAction={importCatalogAddons} 
-                        className="px-6 py-2.5 rounded-lg text-white font-bold text-sm shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2" 
-                        style={{ backgroundColor: '#E30613' }}
-                      >
-                        <UploadCloud className="w-4 h-4" />
-                        Proses Import CSV
-                      </button>
+                    <div className="w-full md:w-auto">
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Mode Import</label>
+                      <select name="mode" defaultValue="replace" className="w-full px-3 py-2 border rounded-lg bg-white text-sm focus:outline-none focus:border-[#E30613]">
+                        <option value="replace">Replace (Hapus lama & Ganti baru)</option>
+                        <option value="append">Append (Tambah ke yang sudah ada)</option>
+                        <option value="upsert">Upsert (Update jika ada, Tambah jika baru)</option>
+                      </select>
                     </div>
 
-                    <p className="text-xs text-gray-400 mt-4 italic">
-                      * Format kolom wajib: material_id, basis (m2/m1/unit), qty_per_basis, is_optional.
-                    </p>
+                    <div className="w-full md:w-auto pt-6">
+                      <label className="inline-flex items-center gap-2 text-sm bg-white px-3 py-2 border rounded-lg cursor-pointer hover:border-gray-300 transition-colors w-full md:w-auto justify-center">
+                        <input type="checkbox" name="preview" value="1" className="text-[#E30613] focus:ring-[#E30613] rounded" />
+                        <span>Preview Data Saja</span>
+                      </label>
+                    </div>
                   </div>
+                  
+                  <div className="flex justify-between items-center mt-4">
+                    <a href="/templates/catalog_addons_template.csv" className="text-sm font-medium text-[#E30613] hover:underline flex items-center gap-1">
+                      <UploadCloud className="w-4 h-4" /> Download Template CSV
+                    </a>
+                    <button 
+                      type="submit" 
+                      formAction={importCatalogAddons} 
+                      className="px-6 py-2.5 rounded-lg text-white font-bold text-sm shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2" 
+                      style={{ backgroundColor: '#E30613' }}
+                    >
+                      <UploadCloud className="w-4 h-4" />
+                      Proses Import CSV
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-gray-400 mt-4 italic">
+                    * Format kolom wajib: material_id, basis (m2/m1/unit), qty_per_basis, is_optional.
+                  </p>
                 </div>
               </div>
             </div>
           </CatalogTabs>
         </form>
-      </div>
-
-      {/* Sticky Save Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 md:left-64">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="hidden md:block">
-            <p className="text-sm font-medium text-gray-500">Katalog: <span className="text-gray-900 font-bold">{catalog.title}</span></p>
-            <p className="text-[10px] text-gray-400">Pastikan semua perubahan sudah sesuai sebelum menyimpan.</p>
-          </div>
-          <div className="flex gap-3 items-center w-full md:w-auto">
-            <Link href="/admin/catalogs" className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-semibold flex-1 md:flex-none text-center">
-              Batal
-            </Link>
-            <CatalogSaveButton formId="editCatalogForm" />
-          </div>
-        </div>
       </div>
     </div>
   )

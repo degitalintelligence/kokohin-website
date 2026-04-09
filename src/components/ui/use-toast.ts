@@ -1,4 +1,4 @@
-import { toast as appToast } from '@/components/ui/toaster'
+import { toast as hotToast } from 'react-hot-toast'
 
 type ToastVariant = 'default' | 'destructive'
 
@@ -16,10 +16,15 @@ type UseToastResult = {
 
 export function useToast(): UseToastResult {
   const toast: ToastFn = ({ title, description, variant }) => {
+    const parts: string[] = []
+    if (title) parts.push(title)
+    if (description) parts.push(description)
+    const message = parts.join(': ')
+
     if (variant === 'destructive') {
-      appToast.error(title || 'Terjadi kesalahan', description)
+      hotToast.error(message || description || title || 'Terjadi kesalahan')
     } else {
-      appToast.success(title || description || 'Berhasil', title ? description : undefined)
+      hotToast(message || description || title || '')
     }
   }
 

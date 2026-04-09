@@ -217,7 +217,6 @@ export default async function AdminCatalogsPage({
     return {
       id: String((c as { id: string }).id),
       title: String((c as { title: string }).title),
-      image_url: ((c as { image_url?: string | null }).image_url ?? null),
       category: ((c as { category?: 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya' | null }).category ?? null),
       atapName: '-',
       rangkaName: '-',
