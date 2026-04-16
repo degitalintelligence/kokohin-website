@@ -11,6 +11,7 @@ import {
     registerWebhookAction,
     syncChatsFromWahaAction
 } from '@/app/actions/whatsapp';
+import type { StructuredError } from '@/lib/error-handler';
 import { 
     RefreshCcw, 
     Power, 
@@ -47,7 +48,7 @@ export default function SessionControl() {
         setLoading(true);
         try {
             const result = await getSessionStatusAction();
-            if (result.success) {
+            if ('success' in result && result.success) {
                 setSession(result.status ?? null);
                 setQrCode(result.qrCode ?? null);
                 if (result.status?.status === 'STARTING') {
@@ -60,7 +61,7 @@ export default function SessionControl() {
                 } else {
                     setError(null);
                 }
-            } else {
+            } else if ('success' in result && !result.success) {
                 setError(result.error || 'Gagal memuat status sesi');
             }
         } catch (error: unknown) {
@@ -99,17 +100,20 @@ export default function SessionControl() {
         startingSince !== null &&
         Date.now() - startingSince > 45000;
 
-    const handleAction = async (action: () => Promise<SessionActionResult>) => {
+    const handleAction = async (action: () => Promise<SessionActionResult | StructuredError>) => {
         setLoading(true);
         setError(null);
         setSuccess(null);
         try {
             const result = await action();
-            if (result.success) {
+            if ('success' in result && result.success) {
                 if (result.message) setSuccess(result.message);
                 await fetchStatus();
-            } else {
+            } else if ('success' in result && !result.success) {
                 setError(result.error || 'Gagal melakukan aksi');
+            } else if ('code' in result) {
+                // This is a StructuredError
+                setError(result.message || 'Gagal melakukan aksi');
             }
         } catch (error: unknown) {
             setError(getErrorMessage(error));

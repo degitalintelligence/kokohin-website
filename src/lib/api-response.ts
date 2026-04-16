@@ -7,6 +7,7 @@ export type ApiErrorCode =
   | 'NOT_FOUND'
   | 'INTERNAL_ERROR'
   | 'CONFLICT'
+  | 'TOO_MANY_REQUESTS'
 
 export function errorResponse(
   code: ApiErrorCode,

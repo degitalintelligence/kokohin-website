@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { errorResponse } from '@/lib/api-response'
 import type { CalculatorInput, CalculatorResult, LeadInfo } from '@/lib/types'
 import { createProjectWithEstimation } from '@/app/actions/createProjectWithEstimation'
+import { createRateLimiter } from '@/lib/rate-limit'
 
 type Payload = {
   leadInfo?: LeadInfo
@@ -14,6 +15,13 @@ type Payload = {
 
 export async function POST(request: Request) {
   try {
+    const limiter = createRateLimiter({ windowSeconds: 3600, maxRequests: 5, prefix: 'submit-lead' })
+    const ip = request.headers.get('x-forwarded-for') ?? 'anonymous'
+    const allowed = await limiter.check(ip)
+    if (!allowed) {
+      return errorResponse('TOO_MANY_REQUESTS', 'Terlalu banyak permintaan dari IP ini, coba lagi nanti', 429)
+    }
+
     const json = await request.json().catch(() => null) as Payload | null
     if (!json) {
       return errorResponse('BAD_REQUEST', 'Invalid request body', 400)
@@ -73,4 +81,3 @@ export async function POST(request: Request) {
     return errorResponse('INTERNAL_ERROR', 'Gagal menyimpan lead dengan estimasi', 500, message)
   }
 }
-

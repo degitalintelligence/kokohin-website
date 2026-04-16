@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js';
 import { errorResponse } from '@/lib/api-response';
 import { sendMessageAction } from '@/app/actions/whatsapp';
+import { waha } from '@/lib/waha';
 
 function mapAckToStatus(ack: number): 'sent' | 'delivered' | 'read' | 'failed' {
     if (ack >= 3) return 'read';
@@ -176,356 +177,381 @@ export async function POST(req: Request) {
         const body = await req.json();
         const { event, data } = toWebhookEnvelope(body);
         const eventId = toEventId(data);
-        const supabase = await createWebhookClient();
 
-        const webhookLogResult = await supabase
-            .from('wa_webhook_events')
-            .upsert(
-                {
-                    event_name: event || 'unknown',
-                    external_event_id: eventId,
-                    payload: data,
-                    status: 'received',
-                },
-                { onConflict: 'event_name,external_event_id' }
-            )
-            .select('id')
-            .maybeSingle();
-        if (webhookLogResult.error) {
-            console.error('WA Webhook log upsert error:', webhookLogResult.error, {
-                event_name: event || 'unknown',
-                external_event_id: eventId,
-            });
-        }
-        const webhookLogId = webhookLogResult.data?.id ?? null;
+        const response = NextResponse.json({ success: true });
 
-        if (event === 'message' || event === 'message.any') {
-            const messageRecord = toRecord(data.message);
-            const from = toSerializedId(data.from) || toSerializedId(messageRecord.from) || '';
-            const to = toSerializedId(data.to) || toSerializedId(messageRecord.to) || '';
-            const bodyText =
-                (typeof data.body === 'string' ? data.body : null) ||
-                (typeof messageRecord.body === 'string' ? messageRecord.body : null);
-            const type =
-                (typeof data.type === 'string' ? data.type : null) ||
-                (typeof messageRecord.type === 'string' ? messageRecord.type : null) ||
-                'chat';
-            const fromMe =
-                typeof data.fromMe === 'boolean'
-                    ? data.fromMe
-                    : typeof messageRecord.fromMe === 'boolean'
-                        ? messageRecord.fromMe
-                        : false;
-            const ack = typeof data.ack === 'number' ? data.ack : typeof data.ack === 'string' ? Number(data.ack) : 0;
-            const timestampMs = toEpochMilliseconds(data.timestamp ?? messageRecord.timestamp);
-            const sentAtIso = new Date(timestampMs).toISOString();
-            const waJid = fromMe ? to : from;
-            if (!waJid) {
-                throw new Error('WAHA webhook payload missing wa_jid');
-            }
+        (async () => {
+            try {
+                const supabase = await createWebhookClient();
 
-            const isGroup = waJid.endsWith('@g.us');
-            const participantJid = typeof data.participant === 'string' ? data.participant : null;
-            const notifyName = typeof data.notifyName === 'string' ? data.notifyName : null;
+                const webhookLogResult = await supabase
+                    .from('wa_webhook_events')
+                    .upsert(
+                        {
+                            event_name: event || 'unknown',
+                            external_event_id: eventId,
+                            payload: data,
+                            status: 'received',
+                        },
+                        { onConflict: 'event_name,external_event_id' }
+                    )
+                    .select('id')
+                    .maybeSingle();
+                if (webhookLogResult.error) {
+                    console.error('WA Webhook log upsert error:', webhookLogResult.error, {
+                        event_name: event || 'unknown',
+                        external_event_id: eventId,
+                    });
+                }
+                const webhookLogId = webhookLogResult.data?.id ?? null;
 
-            // 1. Upsert Main Contact (Chat/Group)
-            // If group, notifyName from sender should NOT be applied to group name
-            const contact = await upsertContact(supabase, waJid, isGroup ? null : notifyName, sentAtIso);
+                if (event === 'message' || event === 'message.any') {
+                    const messageRecord = toRecord(data.message);
+                    const from = toSerializedId(data.from) || toSerializedId(messageRecord.from) || '';
+                    const to = toSerializedId(data.to) || toSerializedId(messageRecord.to) || '';
+                    const bodyText =
+                        (typeof data.body === 'string' ? data.body : null) ||
+                        (typeof messageRecord.body === 'string' ? messageRecord.body : null);
+                    const type =
+                        (typeof data.type === 'string' ? data.type : null) ||
+                        (typeof messageRecord.type === 'string' ? messageRecord.type : null) ||
+                        'chat';
+                    const fromMe =
+                        typeof data.fromMe === 'boolean'
+                            ? data.fromMe
+                            : typeof messageRecord.fromMe === 'boolean'
+                                ? messageRecord.fromMe
+                                : false;
+                    const ack = typeof data.ack === 'number' ? data.ack : typeof data.ack === 'string' ? Number(data.ack) : 0;
+                    const timestampMs = toEpochMilliseconds(data.timestamp ?? messageRecord.timestamp);
+                    const sentAtIso = new Date(timestampMs).toISOString();
+                    const waJid = fromMe ? to : from;
+                    if (!waJid) {
+                        throw new Error('WAHA webhook payload missing wa_jid');
+                    }
 
-            // 2. Upsert Participant Contact (if group and participant exists)
-            // This ensures sender info (LID/Phone) is captured correctly
-            if (isGroup && participantJid) {
-                await upsertContact(supabase, participantJid, notifyName, sentAtIso);
-            }
+                    const isGroup = waJid.endsWith('@g.us');
+                    const participantJid = typeof data.participant === 'string' ? data.participant : null;
+                    const notifyName = typeof data.notifyName === 'string' ? data.notifyName : null;
 
-            const { data: chat, error: chatError } = await supabase
-                .from('wa_chats')
-                .upsert(
-                    {
+                    const contact = await upsertContact(supabase, waJid, isGroup ? null : notifyName, sentAtIso);
+
+                    let groupSubject = null;
+                    if (isGroup && !contact.display_name) {
+                        try {
+                            const metadata = await waha.getGroupMetadataCached(waJid);
+                            if (metadata && (metadata.subject || metadata.name)) {
+                                groupSubject = metadata.subject || metadata.name;
+                                await supabase.from('wa_contacts').update({
+                                    display_name: groupSubject,
+                                }).eq('id', contact.id);
+                            }
+                        } catch (e) {
+                            console.warn(`[Webhook] Failed to sync group name for ${waJid}:`, e);
+                        }
+                    }
+
+                    if (isGroup && participantJid) {
+                        await upsertContact(supabase, participantJid, notifyName, sentAtIso);
+                    }
+
+                    const chatPayload: { contact_id: string; last_message_at: string; group_subject?: string | null } = {
                         contact_id: contact.id,
                         last_message_at: sentAtIso,
-                    },
-                    { onConflict: 'contact_id' }
-                )
-                .select('id')
-                .single();
-            if (chatError) {
-                console.error('WA Webhook chat upsert error:', chatError, { contactId: contact.id, waJid });
-                throw chatError;
-            }
-            if (fromMe) {
-                await supabase.from('wa_chats').update({ unread_count: 0 }).eq('id', chat.id);
-            } else {
-                const { data: currentChat } = await supabase
-                    .from('wa_chats')
-                    .select('unread_count')
-                    .eq('id', chat.id)
-                    .maybeSingle();
-                const currentUnread = typeof currentChat?.unread_count === 'number' ? currentChat.unread_count : 0;
-                await supabase.from('wa_chats').update({ unread_count: currentUnread + 1 }).eq('id', chat.id);
-            }
-
-            const messageStatus = mapAckToStatus(ack);
-            const messageUpsert = await supabase
-                .from('wa_messages')
-                .upsert(
-                    {
-                        external_message_id: eventId || crypto.randomUUID(),
-                        chat_id: chat.id,
-                        body: bodyText,
-                        type,
-                        direction: fromMe ? 'outbound' : 'inbound',
-                        sender_type: fromMe ? 'agent' : 'customer',
-                        status: messageStatus,
-                        sent_at: sentAtIso,
-                        delivered_at: messageStatus === 'delivered' || messageStatus === 'read' ? sentAtIso : null,
-                        read_at: messageStatus === 'read' ? sentAtIso : null,
-                        raw_payload: data,
-                    },
-                    { onConflict: 'external_message_id' }
-                )
-                .select('id, created_at, sent_at')
-                .single();
-            if (messageUpsert.error) {
-                console.error('WA Webhook message upsert error:', messageUpsert.error, { chatId: chat.id, waJid, eventId });
-                throw messageUpsert.error;
-            }
-
-            await supabase.from('wa_message_status_log').insert({
-                message_id: messageUpsert.data.id,
-                status: messageStatus,
-                occurred_at: sentAtIso,
-                source: 'waha',
-            });
-
-            const mediaData = toRecord(data.media);
-            const messageMedia = toRecord(messageRecord.media);
-            const media = Object.keys(mediaData).length > 0 ? mediaData : Object.keys(messageMedia).length > 0 ? messageMedia : null;
-            if (media) {
-                await supabase.from('wa_message_media').upsert(
-                    {
-                        message_id: messageUpsert.data.id,
-                        media_type: type,
-                        mime_type: typeof media.mimetype === 'string' ? media.mimetype : null,
-                        storage_key: typeof media.url === 'string' ? media.url : null,
-                        size_bytes: typeof media.filesize === 'number' ? media.filesize : null,
-                    },
-                    { onConflict: 'message_id' }
-                );
-            }
-
-            const createdAt = new Date(messageUpsert.data.created_at as string).getTime();
-            const sentAt = new Date(messageUpsert.data.sent_at as string).getTime();
-            if (createdAt && sentAt && sentAt - createdAt > 3000) {
-                await supabase.from('wa_delivery_anomalies').insert({
-                    message_id: messageUpsert.data.id,
-                    anomaly_type: 'delayed_dashboard_delivery',
-                    severity: 'high',
-                    details: {
-                        latency_ms: sentAt - createdAt,
-                        threshold_ms: 3000,
-                    },
-                });
-            }
-
-            if (!fromMe && type === 'chat' && typeof bodyText === 'string') {
-                const replyText = resolveAutoReplyKeyword(bodyText);
-                if (replyText) {
-                    const { data: recentOutbound } = await supabase
-                        .from('wa_messages')
-                        .select('id,sent_at')
-                        .eq('chat_id', chat.id)
-                        .eq('direction', 'outbound')
-                        .order('sent_at', { ascending: false })
-                        .limit(1);
-
-                    const lastSentAt = recentOutbound?.[0]?.sent_at as string | undefined;
-                    const lastSentTime = lastSentAt ? new Date(lastSentAt).getTime() : 0;
-                    const nowMs = Date.now();
-                    const recentlyReplied = lastSentTime && nowMs - lastSentTime < 60_000;
-
-                    if (!recentlyReplied) {
-                        await sendMessageAction(waJid, replyText);
+                    };
+                    if (groupSubject) {
+                        chatPayload.group_subject = groupSubject;
                     }
-                }
-            }
-        }
 
-        if (event === 'message.ack') {
-            const id = toEventId(data);
-            if (id) {
-                const ack = typeof data.ack === 'number' ? data.ack : typeof data.ack === 'string' ? Number(data.ack) : -1;
-                const status = mapAckToStatus(ack);
-                const timestampIso = new Date(toEpochMilliseconds(data.timestamp)).toISOString();
-                const updateResult = await supabase
-                    .from('wa_messages')
-                    .update({
-                        status,
-                        delivered_at: status === 'delivered' || status === 'read' ? timestampIso : null,
-                        read_at: status === 'read' ? timestampIso : null,
-                    })
-                    .eq('external_message_id', id)
-                    .select('id')
-                    .maybeSingle();
-                if (updateResult.data?.id) {
-                    await supabase.from('wa_message_status_log').insert({
-                        message_id: updateResult.data.id,
-                        status,
-                        occurred_at: timestampIso,
-                        source: 'waha_ack',
-                    });
-                }
-            }
-        }
-
-        if (
-            event === 'group.v2.join' ||
-            event === 'group.v2.participants' ||
-            event === 'group.v2.leave' ||
-            event === 'group.join' ||
-            event === 'group.leave'
-        ) {
-            const payload = toRecord(data);
-            const groupRecord = toRecord(payload.group);
-            const groupJid = toSerializedId(groupRecord.id);
-            if (groupJid) {
-                const groupSubject =
-                    typeof groupRecord.subject === 'string' ? groupRecord.subject : null;
-                const nowIso = new Date().toISOString();
-
-                const { data: groupContact, error: groupContactError } = await supabase
-                    .from('wa_contacts')
-                    .upsert(
-                        {
-                            wa_jid: groupJid,
-                            phone: groupJid.split('@')[0]?.replace(/\D/g, '') || null,
-                            display_name: groupSubject,
-                            last_message_at: nowIso,
-                        },
-                        { onConflict: 'wa_jid' }
-                    )
-                    .select('id')
-                    .single();
-                if (groupContactError || !groupContact) {
-                    console.error('WA Webhook group contact upsert error:', groupContactError, {
-                        groupJid,
-                    });
-                    throw groupContactError || new Error('Failed to upsert group contact');
-                }
-
-                const { data: chat, error: chatError } = await supabase
-                    .from('wa_chats')
-                    .upsert(
-                        {
-                            contact_id: groupContact.id,
-                            type: 'group',
-                            last_message_at: nowIso,
-                            group_subject: groupSubject,
-                            group_owner_jid: null,
-                        },
-                        { onConflict: 'contact_id' }
-                    )
-                    .select('id')
-                    .single();
-                if (chatError || !chat) {
-                    console.error('WA Webhook group chat upsert error:', chatError, {
-                        contactId: groupContact.id,
-                        groupJid,
-                    });
-                    throw chatError || new Error('Failed to upsert group chat');
-                }
-
-                const participantsSource =
-                    Array.isArray(payload.participants)
-                        ? payload.participants
-                        : Array.isArray(groupRecord.participants)
-                            ? groupRecord.participants
-                            : [];
-
-                const changeType =
-                    typeof payload.type === 'string' ? payload.type.toLowerCase() : 'join';
-
-                for (const item of participantsSource) {
-                    const p = toRecord(item);
-                    const participantJid = toSerializedId(p.id);
-                    if (!participantJid) continue;
-                    const phone =
-                        participantJid.split('@')[0]?.replace(/\D/g, '') || null;
-
-                    const { data: memberContact, error: memberContactError } = await supabase
-                        .from('wa_contacts')
+                    const { data: chat, error: chatError } = await supabase
+                        .from('wa_chats')
                         .upsert(
-                            {
-                                wa_jid: participantJid,
-                                phone,
-                            },
-                            { onConflict: 'wa_jid' }
+                            chatPayload,
+                            { onConflict: 'contact_id' }
                         )
                         .select('id')
                         .single();
-                    if (memberContactError || !memberContact) {
-                        console.error(
-                            'WA Webhook group member contact upsert error:',
-                            memberContactError,
-                            { participantJid }
-                        );
-                        continue;
+                    if (chatError) {
+                        console.error('WA Webhook chat upsert error:', chatError, { contactId: contact.id, waJid });
+                        throw chatError;
+                    }
+                    if (fromMe) {
+                        await supabase.from('wa_chats').update({ unread_count: 0 }).eq('id', chat.id);
+                    } else {
+                        const { data: currentChat } = await supabase
+                            .from('wa_chats')
+                            .select('unread_count')
+                            .eq('id', chat.id)
+                            .maybeSingle();
+                        const currentUnread = typeof currentChat?.unread_count === 'number' ? currentChat.unread_count : 0;
+                        await supabase.from('wa_chats').update({ unread_count: currentUnread + 1 }).eq('id', chat.id);
                     }
 
-                    const roleRaw = typeof p.role === 'string' ? p.role.toLowerCase() : '';
-                    const role =
-                        roleRaw === 'admin'
-                            ? 'admin'
-                            : roleRaw === 'superadmin' || roleRaw === 'owner'
-                                ? 'superadmin'
-                                : 'member';
+                    const messageStatus = mapAckToStatus(ack);
+                    const messageUpsert = await supabase
+                        .from('wa_messages')
+                        .upsert(
+                            {
+                                external_message_id: eventId || crypto.randomUUID(),
+                                chat_id: chat.id,
+                                body: bodyText,
+                                type,
+                                direction: fromMe ? 'outbound' : 'inbound',
+                                sender_type: fromMe ? 'agent' : 'customer',
+                                status: messageStatus,
+                                sent_at: sentAtIso,
+                                delivered_at: messageStatus === 'delivered' || messageStatus === 'read' ? sentAtIso : null,
+                                read_at: messageStatus === 'read' ? sentAtIso : null,
+                                raw_payload: data,
+                            },
+                            { onConflict: 'external_message_id' }
+                        )
+                        .select('id, created_at, sent_at')
+                        .single();
+                    if (messageUpsert.error) {
+                        console.error('WA Webhook message upsert error:', messageUpsert.error, { chatId: chat.id, waJid, eventId });
+                        throw messageUpsert.error;
+                    }
 
-                    if (changeType === 'leave') {
-                        await supabase
-                            .from('wa_group_members')
-                            .update({ left_at: nowIso, role })
-                            .eq('chat_id', chat.id)
-                            .eq('contact_id', memberContact.id);
-                    } else {
-                        await supabase
-                            .from('wa_group_members')
-                            .upsert(
-                                {
-                                    chat_id: chat.id,
-                                    contact_id: memberContact.id,
-                                    role,
-                                    left_at: null,
-                                },
-                                { onConflict: 'chat_id,contact_id' }
-                            );
+                    await supabase.from('wa_message_status_log').insert({
+                        message_id: messageUpsert.data.id,
+                        status: messageStatus,
+                        occurred_at: sentAtIso,
+                        source: 'waha',
+                    });
+
+                    const mediaData = toRecord(data.media);
+                    const messageMedia = toRecord(messageRecord.media);
+                    const media = Object.keys(mediaData).length > 0 ? mediaData : Object.keys(messageMedia).length > 0 ? messageMedia : null;
+                    if (media) {
+                        await supabase.from('wa_message_media').upsert(
+                            {
+                                message_id: messageUpsert.data.id,
+                                media_type: type,
+                                mime_type: typeof media.mimetype === 'string' ? media.mimetype : null,
+                                storage_key: typeof media.url === 'string' ? media.url : null,
+                                size_bytes: typeof media.filesize === 'number' ? media.filesize : null,
+                            },
+                            { onConflict: 'message_id' }
+                        );
+                    }
+
+                    const createdAt = new Date(messageUpsert.data.created_at as string).getTime();
+                    const sentAt = new Date(messageUpsert.data.sent_at as string).getTime();
+                    if (createdAt && sentAt && sentAt - createdAt > 3000) {
+                        await supabase.from('wa_delivery_anomalies').insert({
+                            message_id: messageUpsert.data.id,
+                            anomaly_type: 'delayed_dashboard_delivery',
+                            severity: 'high',
+                            details: {
+                                latency_ms: sentAt - createdAt,
+                                threshold_ms: 3000,
+                            },
+                        });
+                    }
+
+                    if (!fromMe && type === 'chat' && typeof bodyText === 'string') {
+                        const replyText = resolveAutoReplyKeyword(bodyText);
+                        if (replyText) {
+                            const { data: recentOutbound } = await supabase
+                                .from('wa_messages')
+                                .select('id,sent_at')
+                                .eq('chat_id', chat.id)
+                                .eq('direction', 'outbound')
+                                .order('sent_at', { ascending: false })
+                                .limit(1);
+
+                            const lastSentAt = recentOutbound?.[0]?.sent_at as string | undefined;
+                            const lastSentTime = lastSentAt ? new Date(lastSentAt).getTime() : 0;
+                            const nowMs = Date.now();
+                            const recentlyReplied = lastSentTime && nowMs - lastSentTime < 60_000;
+
+                            if (!recentlyReplied) {
+                                await sendMessageAction(waJid, replyText);
+                            }
+                        }
                     }
                 }
+
+                if (event === 'message.ack') {
+                    const id = toEventId(data);
+                    if (id) {
+                        const ack = typeof data.ack === 'number' ? data.ack : typeof data.ack === 'string' ? Number(data.ack) : -1;
+                        const status = mapAckToStatus(ack);
+                        const timestampIso = new Date(toEpochMilliseconds(data.timestamp)).toISOString();
+                        const updateResult = await supabase
+                            .from('wa_messages')
+                            .update({
+                                status,
+                                delivered_at: status === 'delivered' || status === 'read' ? timestampIso : null,
+                                read_at: status === 'read' ? timestampIso : null,
+                            })
+                            .eq('external_message_id', id)
+                            .select('id')
+                            .maybeSingle();
+                        if (updateResult.data?.id) {
+                            await supabase.from('wa_message_status_log').insert({
+                                message_id: updateResult.data.id,
+                                status,
+                                occurred_at: timestampIso,
+                                source: 'waha_ack',
+                            });
+                        }
+                    }
+                }
+
+                if (
+                    event === 'group.v2.join' ||
+                    event === 'group.v2.participants' ||
+                    event === 'group.v2.leave' ||
+                    event === 'group.join' ||
+                    event === 'group.leave'
+                ) {
+                    const payload = toRecord(data);
+                    const groupRecord = toRecord(payload.group);
+                    const groupJid = toSerializedId(groupRecord.id);
+                    if (groupJid) {
+                        const groupSubject =
+                            typeof groupRecord.subject === 'string' ? groupRecord.subject : null;
+                        const nowIso = new Date().toISOString();
+
+                        const { data: groupContact, error: groupContactError } = await supabase
+                            .from('wa_contacts')
+                            .upsert(
+                                {
+                                    wa_jid: groupJid,
+                                    phone: groupJid.split('@')[0]?.replace(/\D/g, '') || null,
+                                    display_name: groupSubject,
+                                    last_message_at: nowIso,
+                                },
+                                { onConflict: 'wa_jid' }
+                            )
+                            .select('id')
+                            .single();
+                        if (groupContactError || !groupContact) {
+                            console.error('WA Webhook group contact upsert error:', groupContactError, {
+                                groupJid,
+                            });
+                            throw groupContactError || new Error('Failed to upsert group contact');
+                        }
+
+                        const { data: chat, error: chatError } = await supabase
+                            .from('wa_chats')
+                            .upsert(
+                                {
+                                    contact_id: groupContact.id,
+                                    type: 'group',
+                                    last_message_at: nowIso,
+                                    group_subject: groupSubject,
+                                    group_owner_jid: null,
+                                },
+                                { onConflict: 'contact_id' }
+                            )
+                            .select('id')
+                            .single();
+                        if (chatError || !chat) {
+                            console.error('WA Webhook group chat upsert error:', chatError, {
+                                contactId: groupContact.id,
+                                groupJid,
+                            });
+                            throw chatError || new Error('Failed to upsert group chat');
+                        }
+
+                        const participantsSource =
+                            Array.isArray(payload.participants)
+                                ? payload.participants
+                                : Array.isArray(groupRecord.participants)
+                                    ? groupRecord.participants
+                                    : [];
+
+                        const changeType =
+                            typeof payload.type === 'string' ? payload.type.toLowerCase() : 'join';
+
+                        for (const item of participantsSource) {
+                            const p = toRecord(item);
+                            const participantJid = toSerializedId(p.id);
+                            if (!participantJid) continue;
+                            const phone =
+                                participantJid.split('@')[0]?.replace(/\D/g, '') || null;
+
+                            const { data: memberContact, error: memberContactError } = await supabase
+                                .from('wa_contacts')
+                                .upsert(
+                                    {
+                                        wa_jid: participantJid,
+                                        phone,
+                                    },
+                                    { onConflict: 'wa_jid' }
+                                )
+                                .select('id')
+                                .single();
+                            if (memberContactError || !memberContact) {
+                                console.error(
+                                    'WA Webhook group member contact upsert error:',
+                                    memberContactError,
+                                    { participantJid }
+                                );
+                                continue;
+                            }
+
+                            const roleRaw = typeof p.role === 'string' ? p.role.toLowerCase() : '';
+                            const role =
+                                roleRaw === 'admin'
+                                    ? 'admin'
+                                    : roleRaw === 'superadmin' || roleRaw === 'owner'
+                                        ? 'superadmin'
+                                        : 'member';
+
+                            if (changeType === 'leave') {
+                                await supabase
+                                    .from('wa_group_members')
+                                    .update({ left_at: nowIso, role })
+                                    .eq('chat_id', chat.id)
+                                    .eq('contact_id', memberContact.id);
+                            } else {
+                                await supabase
+                                    .from('wa_group_members')
+                                    .upsert(
+                                        {
+                                            chat_id: chat.id,
+                                            contact_id: memberContact.id,
+                                            role,
+                                            left_at: null,
+                                        },
+                                        { onConflict: 'chat_id,contact_id' }
+                                    );
+                            }
+                        }
+                    }
+                }
+
+                if (event === 'session.status') {
+                    const name = typeof data.name === 'string' ? data.name : process.env.WAHA_SESSION_ID || 'default';
+                    const status = typeof data.status === 'string' ? data.status : 'UNKNOWN';
+                    await supabase.from('wa_sessions').upsert(
+                        {
+                            session_name: name,
+                            status,
+                            qr_state: typeof data.qr === 'string' ? 'available' : null,
+                            health_meta: data,
+                            last_connected_at: status === 'WORKING' ? new Date().toISOString() : null,
+                        },
+                        { onConflict: 'session_name' }
+                    );
+                }
+
+                if (webhookLogId) {
+                    await supabase
+                        .from('wa_webhook_events')
+                        .update({ processed_at: new Date().toISOString(), status: 'processed' })
+                        .eq('id', webhookLogId);
+                }
+            } catch (error: unknown) {
+                console.error('Webhook async processing error:', error);
             }
-        }
+        })();
 
-        if (event === 'session.status') {
-            const name = typeof data.name === 'string' ? data.name : process.env.WAHA_SESSION_ID || 'default';
-            const status = typeof data.status === 'string' ? data.status : 'UNKNOWN';
-            await supabase.from('wa_sessions').upsert(
-                {
-                    session_name: name,
-                    status,
-                    qr_state: typeof data.qr === 'string' ? 'available' : null,
-                    health_meta: data,
-                    last_connected_at: status === 'WORKING' ? new Date().toISOString() : null,
-                },
-                { onConflict: 'session_name' }
-            );
-        }
-
-        if (webhookLogId) {
-            await supabase
-                .from('wa_webhook_events')
-                .update({ processed_at: new Date().toISOString(), status: 'processed' })
-                .eq('id', webhookLogId);
-        }
-
-        return NextResponse.json({ success: true });
+        return response;
     } catch (error: unknown) {
         console.error('Webhook error:', error);
         return errorResponse('INTERNAL_ERROR', 'Internal server error', 500, error instanceof Error ? error.message : null);

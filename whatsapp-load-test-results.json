@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-03-13T02:10:27.009Z",
+  "config": {
+    "baseUrl": "http://localhost:3000",
+    "concurrentRequests": 10,
+    "totalRequestsPerEndpoint": 100
+  },
+  "results": {
+    "total": 30,
+    "success": 30,
+    "failed": 0,
+    "responseTimes": {
+      "average": 2390.588190000001,
+      "min": 417.9951999999994,
+      "max": 4458.3845
+    },
+    "errors": []
+  }
+}

@@ -1,4 +1,4 @@
-import React, { memo, useRef } from 'react';
+import React, { memo, useRef, useState } from 'react';
 import { Smile, Zap, Paperclip, Send, Mic, X } from 'lucide-react';
 import { QuickReply } from './types';
 
@@ -28,9 +28,22 @@ const ChatInput = ({
     onFileSelect
 }: ChatInputProps) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [showEmoji, setShowEmoji] = useState(false);
+    const emojiList = ['😀', '😁', '😂', '🤣', '😊', '😍', '😎', '🤔', '😢', '🙏', '👍', '🔥'];
+
+    const handleEmojiSelect = (emoji: string) => {
+        setMessageInput((prev) => (prev ? `${prev}${emoji}` : emoji));
+    };
+
+    const handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSendMessage();
+        }
+    };
 
     return (
-        <footer className="min-h-[62px] bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#d1d7db] dark:border-[#222d34] z-20">
+        <footer className="relative min-h-[62px] bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#d1d7db] dark:border-[#222d34] z-20">
             {quotedMessage && (
                 <div className="px-4 py-2 bg-red-50/40 border-l-4 border-[#E30613] flex items-center justify-between">
                     <div className="min-w-0 mr-3">
@@ -51,9 +64,30 @@ const ChatInput = ({
                     </button>
                 </div>
             )}
+            {showEmoji && (
+                <div className="absolute bottom-20 left-4 z-50 bg-white dark:bg-[#111b21] rounded-2xl shadow-2xl border border-gray-100 dark:border-[#222d34] p-3 w-64">
+                    <div className="flex flex-wrap gap-2">
+                        {emojiList.map((emoji) => (
+                            <button
+                                key={emoji}
+                                type="button"
+                                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#f0f2f5] dark:hover:bg-[#202c33] text-xl"
+                                onClick={() => handleEmojiSelect(emoji)}
+                                aria-label={`Insert emoji ${emoji}`}
+                            >
+                                {emoji}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
             <div className="px-4 py-2 flex items-end gap-3">
                 <div className="flex items-center gap-1 text-[#54656f] dark:text-[#aebac1] mb-1">
-                    <button className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors" aria-label="Emoji">
+                    <button
+                        className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"
+                        aria-label="Emoji"
+                        onClick={() => setShowEmoji((prev) => !prev)}
+                    >
                         <Smile size={24} strokeWidth={1.5} />
                     </button>
                     <div className="relative">
@@ -123,14 +157,15 @@ const ChatInput = ({
                     >
                         <Paperclip size={22} strokeWidth={1.8} />
                     </button>
-                    <div className="flex-1 bg-white dark:bg-[#2a3942] rounded-lg min-h-[42px] px-4 py-2 flex items-center shadow-sm border border-gray-200 dark:border-gray-700 focus-within:border-[#E30613] transition-colors">
-                        <input
-                            type="text"
-                            placeholder="Type a message"
-                            className="w-full bg-transparent border-none outline-none text-[#111b21] dark:text-[#e9edef] placeholder:text-[#54656f] dark:placeholder:text-[#8696a0] text-[15px] font-normal"
+                    <div className="flex-1 bg-white dark:bg-[#2a3942] rounded-lg max-h-32 min-h-[42px] px-4 py-2 flex items-center shadow-sm border border-gray-200 dark:border-gray-700 focus-within:border-[#E30613] transition-colors">
+                        <textarea
+                            placeholder="Type a message (Shift+Enter untuk baris baru)..."
+                            className="w-full bg-transparent border-none outline-none text-[#111b21] dark:text-[#e9edef] placeholder:text-[#54656f] dark:placeholder:text-[#8696a0] text-[15px] font-normal resize-none leading-relaxed"
                             value={messageInput}
                             onChange={(e) => setMessageInput(e.target.value)}
                             aria-label="Type a message"
+                            rows={1}
+                            onKeyDown={handleKeyDown}
                         />
                     </div>
                     {messageInput.trim() ? (

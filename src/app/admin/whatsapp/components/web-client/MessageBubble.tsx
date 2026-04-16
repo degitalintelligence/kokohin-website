@@ -137,11 +137,37 @@ const MessageBubble = ({ message: msg, isOutbound, showTail, onReply, onForward,
                                 />
                             </div>
                         )}
+                        {msg.type === 'video' && (
+                            <video
+                                controls
+                                className="w-full max-w-[300px] rounded-lg outline-none"
+                            >
+                                <source src={msg.mediaUrl} />
+                            </video>
+                        )}
+                        {(msg.type === 'audio' || msg.type === 'voice' || msg.type === 'ptt') && (
+                            <audio
+                                controls
+                                className="w-full max-w-[260px] rounded-lg outline-none"
+                            >
+                                <source src={msg.mediaUrl} />
+                            </audio>
+                        )}
                         {msg.type === 'document' && (
-                            <div className={`flex items-center gap-3 p-3 rounded-lg ${isOutbound ? 'bg-white/10' : 'bg-black/5 dark:bg-white/5'}`}>
-                                <FileText size={24} className={isOutbound ? "text-white" : "text-[#54656f] dark:text-[#aebac1]"} />
-                                <span className="text-sm truncate max-w-[150px]">Document</span>
-                            </div>
+                            <a
+                                href={msg.mediaUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`flex items-center gap-3 p-3 rounded-lg ${isOutbound ? 'bg-white/10' : 'bg-black/5 dark:bg-white/5'}`}
+                            >
+                                <FileText
+                                    size={24}
+                                    className={isOutbound ? 'text-white' : 'text-[#54656f] dark:text-[#aebac1]'}
+                                />
+                                <span className="text-sm truncate max-w-[180px]">
+                                    {msg.body || 'Document'}
+                                </span>
+                            </a>
                         )}
                     </div>
                 )}

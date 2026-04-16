@@ -37,12 +37,63 @@ type WahaGroupParticipant = {
     isSuperAdmin?: boolean;
 };
 
-type WahaGroupMetadata = {
+export type WahaGroupMetadata = {
     id?: string;
     subject?: string;
     name?: string;
     participants?: WahaGroupParticipant[];
 };
+
+// Connection Pool Configuration
+export const WAHA_MAX_CONNECTIONS = 10;
+
+interface ConnectionPoolConfig {
+    maxConnections: number;
+    idleTimeoutMs: number;
+    connectionTimeoutMs: number;
+}
+
+class WahaConnectionPool {
+    private config: ConnectionPoolConfig;
+    private activeConnections = 0;
+    private waitQueue: Array<() => void> = [];
+
+    constructor(config: ConnectionPoolConfig) {
+        this.config = config;
+    }
+
+    async acquireConnection(): Promise<void> {
+        if (this.activeConnections < this.config.maxConnections) {
+            this.activeConnections++;
+            return Promise.resolve();
+        }
+
+        // Wait for available connection
+        return new Promise<void>((resolve) => {
+            this.waitQueue.push(resolve);
+        });
+    }
+
+    releaseConnection(): void {
+        this.activeConnections--;
+        
+        // Process waiting queue
+        if (this.waitQueue.length > 0) {
+            const next = this.waitQueue.shift();
+            if (next) {
+                this.activeConnections++;
+                next();
+            }
+        }
+    }
+
+    destroy(): void {
+        // Clear all waiting connections
+        this.waitQueue.forEach(resolve => resolve());
+        this.waitQueue = [];
+        this.activeConnections = 0;
+    }
+}
 
 export class WahaClient {
     private baseUrl: string;
@@ -51,74 +102,88 @@ export class WahaClient {
     private lastKnownSession: WahaSession | null = null;
     private lastKnownSessionAt = 0;
     private groupCache = new Map<string, { metadata: WahaGroupMetadata; expiresAt: number }>();
+    private connectionPool: WahaConnectionPool;
 
     constructor() {
         // Ensure baseUrl doesn't have a trailing slash
         this.baseUrl = WAHA_URL.endsWith('/') ? WAHA_URL.slice(0, -1) : WAHA_URL;
         this.apiKey = WAHA_API_KEY;
         this.sessionId = WAHA_SESSION_ID;
+        
+        // Initialize connection pool
+        this.connectionPool = new WahaConnectionPool({
+            maxConnections: WAHA_MAX_CONNECTIONS,
+            idleTimeoutMs: 30000,
+            connectionTimeoutMs: WAHA_REQUEST_TIMEOUT_MS,
+        });
     }
 
     private async request<T>(path: string, options: RequestInit = {}, retries = 2): Promise<T> {
-        const url = `${this.baseUrl}${path}`;
-        const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-        };
-
-        if (this.apiKey) {
-            headers['X-Api-Key'] = this.apiKey;
-            headers['Authorization'] = `Bearer ${this.apiKey}`;
-        }
-
-        if (options.headers) {
-            Object.assign(headers, options.headers);
-        }
-
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), WAHA_REQUEST_TIMEOUT_MS);
-
+        const connection = await this.connectionPool.acquireConnection();
+        
         try {
-            const response = await fetch(url, { ...options, headers, signal: controller.signal });
-            
-            if (!response.ok && [502, 503, 504].includes(response.status) && retries > 0) {
-                console.warn(`[WAHA Client] Transient error ${response.status} on ${path}. Retrying... (${retries} left)`);
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                return this.request<T>(path, options, retries - 1);
+            const url = `${this.baseUrl}${path}`;
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+            };
+
+            if (this.apiKey) {
+                headers['X-Api-Key'] = this.apiKey;
+                headers['Authorization'] = `Bearer ${this.apiKey}`;
             }
 
-            if (!response.ok) {
-                let errorMessage = `WAHA request failed: ${response.status}`;
-                try {
-                    const errorData = await response.json();
-                    errorMessage = errorData.message || errorData.error || errorMessage;
-                } catch {
-                    try {
-                        const text = await response.text();
-                        errorMessage = text || errorMessage;
-                    } catch {}
+            if (options.headers) {
+                Object.assign(headers, options.headers);
+            }
+
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), WAHA_REQUEST_TIMEOUT_MS);
+
+            try {
+                const response = await fetch(url, { ...options, headers, signal: controller.signal });
+                
+                if (!response.ok && [502, 503, 504].includes(response.status) && retries > 0) {
+                    console.warn(`[WAHA Client] Transient error ${response.status} on ${path}. Retrying... (${retries} left)`);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    return this.request<T>(path, options, retries - 1);
                 }
-                throw new Error(errorMessage);
-            }
 
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                return response.json() as Promise<T>;
+                if (!response.ok) {
+                    let errorMessage = `WAHA request failed: ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.message || errorData.error || errorMessage;
+                    } catch {
+                        try {
+                            const text = await response.text();
+                            errorMessage = text || errorMessage;
+                        } catch {}
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    return response.json() as Promise<T>;
+                }
+                
+                return response.text() as T;
+            } catch (error: unknown) {
+                const isTimeout = error instanceof DOMException && error.name === 'AbortError';
+                const isNetworkError =
+                    error instanceof Error &&
+                    (error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network'));
+                if (retries > 0 && (isTimeout || isNetworkError)) {
+                    console.warn(`[WAHA Client] Timeout/network error on ${path}. Retrying... (${retries} left)`);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    return this.request<T>(path, options, retries - 1);
+                }
+                throw error;
+            } finally {
+                clearTimeout(timeout);
             }
-            
-            return response.text() as T;
-        } catch (error: unknown) {
-            const isTimeout = error instanceof DOMException && error.name === 'AbortError';
-            const isNetworkError =
-                error instanceof Error &&
-                (error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network'));
-            if (retries > 0 && (isTimeout || isNetworkError)) {
-                console.warn(`[WAHA Client] Timeout/network error on ${path}. Retrying... (${retries} left)`);
-                await new Promise(resolve => setTimeout(resolve, 1500));
-                return this.request<T>(path, options, retries - 1);
-            }
-            throw error;
         } finally {
-            clearTimeout(timeout);
+            this.connectionPool.releaseConnection();
         }
     }
 
@@ -618,6 +683,21 @@ export class WahaClient {
 
     async deleteWebhook(id: string) {
         return this.request<Record<string, unknown>>(`/api/webhooks/${id}`, { method: 'DELETE' });
+    }
+
+    /**
+     * Cleanup connection pool and resources
+     * Should be called when the client is no longer needed
+     */
+    async destroy(): Promise<void> {
+        try {
+            await this.connectionPool.destroy();
+            this.groupCache.clear();
+            this.lastKnownSession = null;
+            console.log('[WAHA Client] Connection pool and resources cleaned up');
+        } catch (error) {
+            console.error('[WAHA Client] Error during cleanup:', error);
+        }
     }
 }
 

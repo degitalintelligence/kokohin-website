@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { getSubscriptionManager } from '@/lib/subscription-manager';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import { Toaster, toast } from 'sonner';
@@ -169,7 +170,8 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
             setLoadingMessages(true);
         }
         try {
-            const result = await getPaginatedMessagesAction(contactId, page, MESSAGES_PER_PAGE);
+            const cursor = append && messages.length > 0 ? messages[0].sent_at : undefined;
+            const result = await getPaginatedMessagesAction(contactId, page, MESSAGES_PER_PAGE, cursor);
             const messagesData = (result as { messages?: Message[] }).messages;
             if (result.success && messagesData) {
                 if (append) {
@@ -211,48 +213,84 @@ export default function OptimizedWhatsAppClient({ onContactsFetchFailure }: Opti
         return () => clearTimeout(timeoutId);
     }, [searchQuery, fetchContacts, isInitialLoading]);
 
-    // Real-time updates
+    // Real-time updates dengan memory leak prevention
     useEffect(() => {
-        const channel = supabase
+        const subscriptionManager = getSubscriptionManager();
+        
+        // Throttled contact refresh untuk mencegah excessive API calls
+        const throttledContactRefresh = subscriptionManager.createThrottledFunction(
+            () => {
+                fetchContacts(1, searchQuery, false);
+            },
+            'contact_refresh',
+            { maxCallsPerSecond: 2, maxCallsPerMinute: 20 }
+        );
+
+        // Debounced message fetch untuk mencegah N+1 queries
+        const debouncedMessageFetch = subscriptionManager.createDebouncedFunction(
+            (messageId: string) => {
+                getMessageAction(messageId).then((res) => {
+                    if (res.success && res.message) {
+                        setMessages((prev) => {
+                            if (prev.some(m => m.id === res.message!.id)) return prev;
+                            return [...prev, res.message as Message];
+                        });
+                    }
+                });
+            },
+            'message_fetch',
+            500
+        );
+
+        // Create separate channels for different events to avoid conflicts
+        const chatChannel = supabase
             .channel('wa_chats_changes')
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'whatsapp_chats' },
-                (payload) => {
-                    fetchContacts(1, searchQuery, false);
-                }
-            )
+                throttledContactRefresh
+            );
+
+        const messageChannel = supabase
+            .channel('wa_messages_changes')
             .on(
                 'postgres_changes',
-                { event: '*', schema: 'public', table: 'whatsapp_messages' },
+                { event: 'INSERT', schema: 'public', table: 'whatsapp_messages' },
                 (payload) => {
-                    if (!selectedContactId || !selectedWaId) return;
-
-                    if (payload.eventType === 'INSERT') {
-                        const newMessageId = (payload.new as { id: string }).id;
-                        const chatId = (payload.new as { chat_id: string }).chat_id;
-                        
-                        if (chatId === selectedContactId) {
-                            // Fetch full enriched message (with sender_contact)
-                            getMessageAction(newMessageId).then((res) => {
-                                if (res.success && res.message) {
-                                    setMessages((prev) => {
-                                        if (prev.some(m => m.id === res.message!.id)) return prev;
-                                        return [...prev, res.message as Message];
-                                    });
-                                }
-                            });
-                            fetchContacts(1, searchQuery, false);
-                        }
-                    } 
+                    const newMessage = payload.new as { id: string; chat_id: string };
+                    // Only process messages for the currently selected chat
+                    if (newMessage.chat_id === selectedContactId) {
+                        debouncedMessageFetch(newMessage.id);
+                        throttledContactRefresh();
+                    }
                 }
-            )
-            .subscribe();
+            );
+
+        // Subscribe to channels
+        chatChannel.subscribe();
+        if (selectedContactId) {
+            messageChannel.subscribe();
+        }
+
+        // Register subscriptions untuk proper cleanup
+        subscriptionManager.registerSubscription('wa_chats', () => {
+            supabase.removeChannel(chatChannel);
+        });
+
+        if (selectedContactId) {
+            subscriptionManager.registerSubscription('wa_messages', () => {
+                supabase.removeChannel(messageChannel);
+            });
+        }
 
         return () => {
-            supabase.removeChannel(channel);
+            // Cancel throttled functions
+            throttledContactRefresh.cancel();
+            // Unregister all subscriptions
+            subscriptionManager.unregisterSubscription('wa_chats');
+            subscriptionManager.unregisterSubscription('wa_messages');
         };
-    }, [fetchContacts, searchQuery, selectedContactId, selectedWaId, supabase]);
+    }, [fetchContacts, searchQuery, selectedContactId, supabase]);
 
     const handleSelectContact = useCallback((contact: Contact) => {
         setSelectedContact(contact);

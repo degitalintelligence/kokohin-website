@@ -171,8 +171,12 @@ export default function WhatsAppWebClient({ onContactsFetchFailure }: WhatsAppWe
         ]);
 
         const idempotencyKey = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+        const mediaUrl = previewUrl || '';
         const result = await sendMediaMessageAction(selectedWaId, {
-            file,
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType: file.type,
+            mediaUrl,
             caption: messageInput || undefined,
             idempotencyKey,
         });
@@ -243,7 +247,8 @@ export default function WhatsAppWebClient({ onContactsFetchFailure }: WhatsAppWe
     const fetchMessages = useCallback(async (contactId: string, waId: string, page = 1, append = false) => {
         if (!append) setLoadingMessages(true);
         try {
-            const result = await getPaginatedMessagesAction(contactId, page, MESSAGES_PER_PAGE);
+            const cursor = append && messages.length > 0 ? messages[0].sent_at : undefined;
+            const result = await getPaginatedMessagesAction(contactId, page, MESSAGES_PER_PAGE, cursor);
             const messagesData = (result as { messages?: Message[] }).messages;
             if (result.success && messagesData) {
                 if (append) {
@@ -400,9 +405,42 @@ export default function WhatsAppWebClient({ onContactsFetchFailure }: WhatsAppWe
                 { event: 'INSERT', schema: 'public', table: 'whatsapp_messages' },
                 (payload) => {
                     const newMessage = payload.new as Message;
+
+                    setContacts((prevContacts) => {
+                        if (!prevContacts || prevContacts.length === 0) return prevContacts;
+
+                        let touched = false;
+                        const updated = prevContacts.map((contact) => {
+                            if (contact.id !== newMessage.chat_id) return contact;
+
+                            touched = true;
+                            const isActive = selectedContactId === newMessage.chat_id;
+                            const isInbound = newMessage.direction === 'inbound';
+                            const currentUnread = contact.unread_count || 0;
+
+                            return {
+                                ...contact,
+                                last_message_at: newMessage.sent_at,
+                                unread_count: isActive
+                                    ? currentUnread
+                                    : isInbound
+                                    ? currentUnread + 1
+                                    : currentUnread,
+                            };
+                        });
+
+                        if (!touched) return prevContacts;
+
+                        return [...updated].sort((a, b) => {
+                            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+                            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+                            return bTime - aTime;
+                        });
+                    });
+
                     if (selectedContactId && newMessage.chat_id === selectedContactId) {
-                        setMessages(prev => {
-                            if (prev.some(m => m.id === newMessage.id)) return prev;
+                        setMessages((prev) => {
+                            if (prev.some((m) => m.id === newMessage.id)) return prev;
                             return [...prev, newMessage];
                         });
                         if (selectedContact && selectedContact.wa_id) {
@@ -443,6 +481,11 @@ export default function WhatsAppWebClient({ onContactsFetchFailure }: WhatsAppWe
         setMessagesPage(1);
         setHasMoreMessages(true);
         fetchMessages(contact.id, contact.wa_id, 1, false);
+        setContacts((prevContacts) =>
+            prevContacts.map((c) =>
+                c.id === contact.id ? { ...c, unread_count: 0 } : c
+            )
+        );
         // On mobile/tablet, hide sidebar when chat is selected
         if (window.innerWidth <= 768) {
             setSidebarVisible(false);

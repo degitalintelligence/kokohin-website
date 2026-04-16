@@ -76,6 +76,14 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "ui-avatars.com",
       },
+      {
+        protocol: "https",
+        hostname: "pps.whatsapp.net",
+      },
+      {
+        protocol: "https",
+        hostname: "mmg.whatsapp.net",
+      },
       { protocol: "http", hostname: "localhost" },
       { protocol: "http", hostname: "127.0.0.1" },
     ],

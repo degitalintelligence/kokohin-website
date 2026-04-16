@@ -2,16 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { createClient } from '@/lib/supabase/client';
 import {
     getChatsAction,
     getMessagesAction,
+    getContactsByJidsAction,
 } from '@/app/actions/whatsapp';
 import ChatList from './ChatList';
 import ChatWindow from './ChatWindow';
 import SessionControl from './SessionControl';
 import BroadcastModal from './BroadcastModal';
 import { MessageSquare, Users, MoreVertical, Loader2, ChevronLeft, User } from 'lucide-react';
+import type { WahaChatPayload, WahaMessagePayload } from '@/app/actions/whatsapp';
 
 // Import types from the optimized component
 import type { Contact, Message } from './OptimizedWhatsAppClient';
@@ -25,8 +26,6 @@ export default function SimpleWhatsAppClient() {
     const [loadingMessages, setLoadingMessages] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [showBroadcast, setShowBroadcast] = useState(false);
-    const [contactsError, setContactsError] = useState<string | null>(null);
-    const [supabase] = useState(() => createClient());
     const [searchQuery, setSearchQuery] = useState('');
 
     // Fetch contacts
@@ -35,11 +34,30 @@ export default function SimpleWhatsAppClient() {
             try {
                 setLoading(true);
                 const result = await getChatsAction();
-                if (result.success && Array.isArray(result.chats)) {
-                    const mappedContacts: Contact[] = result.chats.map((chat) => ({
+                if ('success' in result && result.success && Array.isArray(result.chats)) {
+                    // Enrich with Supabase data for correct names
+                    const jids = result.chats.map(c => c.id);
+                    const enrichmentMap = new Map<string, string>();
+                    
+                    if (jids.length > 0) {
+                        try {
+                            const enrichment = await getContactsByJidsAction(jids);
+                            if (enrichment.success && enrichment.contacts) {
+                                enrichment.contacts.forEach((c) => {
+                                    if (c && c.wa_id && c.name) {
+                                        enrichmentMap.set(c.wa_id, c.name);
+                                    }
+                                });
+                            }
+                        } catch (err) {
+                            console.error('Error enriching contacts:', err);
+                        }
+                    }
+
+                    const mappedContacts: Contact[] = result.chats.map((chat: WahaChatPayload) => ({
                         id: chat.id,
                         wa_id: chat.id,
-                        name: chat.name || chat.pushname,
+                        name: enrichmentMap.get(chat.id) || chat.name || chat.pushname || chat.id,
                         avatar_url: null,
                         last_message_at: chat.timestamp,
                         unread_count: 0,
@@ -47,12 +65,12 @@ export default function SimpleWhatsAppClient() {
                         erp_project_id: null,
                     }));
                     setContacts(mappedContacts);
-                } else if (!result.success) {
-                    setContactsError(result.error || 'Failed to load chats');
+                } else if ('success' in result && !result.success) {
+                    const errorMessage = 'error' in result && result.error ? String(result.error) : 'Failed to load chats';
+                    console.error('Error loading chats:', errorMessage);
                 }
             } catch (error) {
                 console.error('Error fetching data:', error);
-                setContactsError('An error occurred while loading data');
             } finally {
                 setLoading(false);
             }
@@ -64,30 +82,51 @@ export default function SimpleWhatsAppClient() {
     // Fetch messages when contact selected
     useEffect(() => {
         if (selectedContact) {
-            fetchMessages(selectedContact.id, selectedContact.wa_id);
+            fetchMessages(selectedContact.id);
         }
     }, [selectedContact]);
 
-    const fetchMessages = async (contactId: string, waId: string) => {
+    const fetchMessages = async (contactId: string) => {
         try {
             setLoadingMessages(true);
             const result = await getMessagesAction(contactId);
             if (result.success && Array.isArray(result.messages)) {
+                // Collect authors for group messages
+                const authors = new Set<string>();
+                result.messages.forEach((msg: WahaMessagePayload) => {
+                    if (msg.author) authors.add(msg.author);
+                });
+
+                // Fetch contact details for authors
+                const contactMap = new Map<string, Contact>();
+                if (authors.size > 0) {
+                    const contactsResult = await getContactsByJidsAction(Array.from(authors));
+                    if (contactsResult.success && contactsResult.contacts) {
+                        contactsResult.contacts.forEach((c) => {
+                            if (c && c.wa_id) {
+                                contactMap.set(c.wa_id, c);
+                            }
+                        });
+                    }
+                }
+
                 const mappedMessages: Message[] = result.messages.map((msg) => ({
-                    id: msg.id,
-                    external_message_id: msg.id,
-                    chat_id: msg.chatId,
-                    body: msg.body,
-                    type: msg.type,
+                    id: msg.id || '',
+                    external_message_id: msg.id || '',
+                    chat_id: msg.chatId || '',
+                    body: msg.body || null,
+                    type: msg.type || 'text',
                     direction: msg.fromMe ? 'outbound' : 'inbound',
                     sender_type: msg.fromMe ? 'agent' : 'customer',
-                    status: msg.status,
-                    sent_at: msg.timestamp,
-                    quoted_message_id: msg.quotedMessageId,
-                    is_forwarded: msg.isForwarded,
-                    is_deleted: msg.isDeleted,
-                    mediaUrl: msg.mediaUrl,
-                    mediaCaption: msg.mediaCaption,
+                    status: msg.status || 'sent',
+                    sent_at: msg.timestamp || new Date().toISOString(),
+                    quoted_message_id: msg.quotedMessageId || null,
+                    is_forwarded: msg.isForwarded || null,
+                    is_deleted: msg.isDeleted || null,
+                    mediaUrl: msg.mediaUrl || null,
+                    mediaCaption: msg.mediaCaption || null,
+                    sender_contact: msg.author ? contactMap.get(msg.author) || null : null,
+                    raw_payload: msg.raw_payload,
                 }));
                 setMessages(mappedMessages.reverse());
             } else {
@@ -207,7 +246,7 @@ export default function SimpleWhatsAppClient() {
                                 key={selectedContact.id}
                                 contact={selectedContact} 
                                 messages={messages} 
-                                onSendMessage={() => fetchMessages(selectedContact.id, selectedContact.wa_id)}
+                                onSendMessage={() => fetchMessages(selectedContact.id)}
                                 onLoadMore={() => {}} 
                                 hasMore={false}
                                 isLoading={loadingMessages}

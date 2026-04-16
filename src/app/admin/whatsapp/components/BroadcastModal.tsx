@@ -113,12 +113,11 @@ export default function BroadcastModal({ onClose }: BroadcastModalProps) {
                 return;
             }
 
-            // 2. Send broadcast (if not scheduled)
             const broadcastResult = await sendBroadcastAction(campaignResult.campaign.id, template);
             if (broadcastResult.success) {
-                setResult({ 
-                    success: broadcastResult.successCount || 0, 
-                    failed: broadcastResult.failedCount || 0 
+                setResult({
+                    success: recipientCount || 0,
+                    failed: 0,
                 });
             } else {
                 setError(broadcastResult.error || 'Gagal mengirim broadcast');

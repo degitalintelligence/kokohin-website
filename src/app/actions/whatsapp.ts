@@ -4,6 +4,17 @@ import { waha } from '@/lib/waha';
 import type { WahaSession } from '@/lib/waha';
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { getWhatsAppCache } from '@/lib/redis-client';
+import {
+  errorHandler,
+  WhatsAppError,
+  ErrorCode,
+  ErrorSeverity,
+  createNotFoundError,
+  createDatabaseError,
+  createWhatsAppError,
+  type ErrorContext,
+} from '@/lib/error-handler';
 
 type SessionQrCarrier = WahaSession & {
     qr?: string;
@@ -14,26 +25,11 @@ type SessionQrCarrier = WahaSession & {
     };
 };
 
-type WahaChatPayload = {
+export type WahaChatPayload = {
     id: string;
     name: string | null;
     pushname: string | null;
     timestamp: string | null;
-};
-
-type WahaMessagePayload = {
-    id: string;
-    chatId: string;
-    body: string | null;
-    type: string;
-    fromMe: boolean;
-    status: string;
-    mediaUrl: string | null;
-    mediaCaption: string | null;
-    timestamp: string;
-    quotedMessageId: string | null;
-    isForwarded: boolean;
-    isDeleted: boolean;
 };
 
 type SendMessageOptions = {
@@ -48,29 +44,14 @@ type SendMediaInput = {
     idempotencyKey?: string;
 };
 
-type CacheEntry<T> = {
-    value: T;
-    expiresAt: number;
+type SendMediaInputUrl = {
+    fileName: string;
+    fileSize: number;
+    mimeType: string;
+    mediaUrl: string;
+    caption?: string;
+    idempotencyKey?: string;
 };
-
-const CONTACTS_CACHE_TTL_MS = 5_000;
-const MESSAGES_CACHE_TTL_MS = 5_000;
-
-const contactsCache = new Map<string, CacheEntry<unknown>>();
-const messagesCache = new Map<string, CacheEntry<unknown>>();
-
-function clearContactsCache() {
-    contactsCache.clear();
-}
-
-function clearMessagesCacheForChat(chatId: string) {
-    const prefix = `${chatId}:`;
-    for (const key of messagesCache.keys()) {
-        if (key.startsWith(prefix)) {
-            messagesCache.delete(key);
-        }
-    }
-}
 
 function getErrorMessage(error: unknown, fallback = 'Unknown error'): string {
     if (error instanceof Error && error.message) return error.message;
@@ -227,50 +208,62 @@ async function syncGroupMembersForChat(
         return { chatId: chatRow.id, membersSynced: 0 };
     }
 
-    let count = 0;
-    for (const p of participants) {
-        const jid = typeof p.id === 'string' ? p.id : '';
-        if (!jid) continue;
-        const phone = jid.split('@')[0]?.replace(/\D/g, '') || null;
+    const validParticipants = participants.filter((p) => typeof p.id === 'string' && p.id);
+    const contactsData = validParticipants.map((p) => {
+        const jid = p.id as string;
+        return {
+            wa_jid: jid,
+            phone: jid.split('@')[0]?.replace(/\D/g, '') || null,
+        };
+    });
 
-        const { data: memberContact, error: memberContactError } = await supabase
-            .from('wa_contacts')
-            .upsert(
-                {
-                    wa_jid: jid,
-                    phone,
-                },
-                { onConflict: 'wa_jid' }
-            )
-            .select('id')
-            .single();
-        if (memberContactError || !memberContact) {
-            continue;
-        }
+    const { data: upsertedContacts, error: bulkContactsError } = await supabase
+        .from('wa_contacts')
+        .upsert(contactsData, { onConflict: 'wa_jid' })
+        .select('id, wa_jid');
 
-        const role =
-            p.isSuperAdmin === true
-                ? 'superadmin'
-                : p.isAdmin === true
-                    ? 'admin'
-                    : 'member';
+    if (bulkContactsError || !upsertedContacts) {
+        console.error('Bulk contacts upsert failed:', bulkContactsError);
+        return { chatId: chatRow.id, membersSynced: 0 };
+    }
 
-        const { error: memberError } = await supabase
+    const jidToContactId = new Map<string, string>(
+        upsertedContacts.map((c: { id: string; wa_jid: string }) => [c.wa_jid, c.id])
+    );
+
+    const groupMembersData = validParticipants
+        .map((p) => {
+            const jid = p.id as string;
+            const role =
+                p.isSuperAdmin === true
+                    ? 'superadmin'
+                    : p.isAdmin === true
+                        ? 'admin'
+                        : 'member';
+            const contactId = jidToContactId.get(jid);
+
+            if (!contactId) return null;
+
+            return {
+                chat_id: chatRow.id,
+                contact_id: contactId,
+                role,
+            };
+        })
+        .filter((m): m is { chat_id: string; contact_id: string; role: string } => Boolean(m));
+
+    if (groupMembersData.length > 0) {
+        const { error: bulkMembersError } = await supabase
             .from('wa_group_members')
-            .upsert(
-                {
-                    chat_id: chatRow.id,
-                    contact_id: memberContact.id,
-                    role,
-                },
-                { onConflict: 'chat_id,contact_id' }
-            );
-        if (!memberError) {
-            count += 1;
+            .upsert(groupMembersData, { onConflict: 'chat_id,contact_id' });
+
+        if (bulkMembersError) {
+            console.error('Bulk members upsert failed:', bulkMembersError);
+            return { chatId: chatRow.id, membersSynced: 0 };
         }
     }
 
-    return { chatId: chatRow.id, membersSynced: count };
+    return { chatId: chatRow.id, membersSynced: groupMembersData.length };
 }
 
 async function insertStatusLog(
@@ -328,8 +321,25 @@ export async function trackOptimizedFallbackAction(reason: string, source = 'opt
     }
 }
 
-export async function syncGroupMembersAction(waJid: string) {
+interface SyncGroupMembersResponse {
+    success: boolean;
+    chatId?: string;
+    membersSynced?: number;
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function syncGroupMembersAction(waJid: string): Promise<SyncGroupMembersResponse> {
     const supabase = await createClient();
+    const requestId = crypto.randomUUID();
+    const context: ErrorContext = {
+        operation: 'syncGroupMembers',
+        component: 'whatsapp-action',
+        requestId,
+        chatId: waJid,
+    };
+    
     try {
         const normalizedJid = waJid.includes('@') ? waJid : `${waJid}@g.us`;
         const result = await syncGroupMembersForChat(supabase, normalizedJid);
@@ -340,19 +350,71 @@ export async function syncGroupMembersAction(waJid: string) {
             membersSynced: result.membersSynced,
         };
     } catch (error: unknown) {
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal sinkronisasi anggota grup WhatsApp';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.WHATSAPP_NOT_CONNECTED:
+                    userMessage = 'WhatsApp tidak terhubung. Silakan coba lagi.';
+                    break;
+                case ErrorCode.RESOURCE_NOT_FOUND:
+                    userMessage = 'Gagal mendapatkan informasi grup WhatsApp. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat menyimpan anggota grup. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
         return {
             success: false,
-            error: getErrorMessage(error, 'Gagal sinkronisasi anggota grup dari WA'),
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity,
         };
     }
+}
+
+interface SendMessageResponse {
+    success: boolean;
+    messageId?: string;
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
 }
 
 /**
  * Server Action to send a WhatsApp message via WAHA
  */
-export async function sendMessageAction(chatId: string, text: string, options?: SendMessageOptions) {
+export async function sendMessageAction(chatId: string, text: string, options?: SendMessageOptions): Promise<SendMessageResponse> {
     const supabase = await createClient();
-    const idempotencyKey = options?.idempotencyKey ?? crypto.randomUUID();
+    const requestId = Math.random().toString(36).substring(7);
+    const context: ErrorContext = { requestId, operation: 'sendMessage', chatId };
+    
+    if (!options?.idempotencyKey) {
+        const validationError = createWhatsAppError(
+            'idempotencyKey wajib dikirim dari client',
+            ErrorCode.BAD_REQUEST,
+            ErrorSeverity.LOW,
+            { context: { chatId, textLength: text.length } },
+            context
+        );
+        return { 
+            success: false, 
+            error: validationError.message,
+            errorCode: validationError.code,
+            errorSeverity: validationError.severity
+        };
+    }
+    const idempotencyKey = options.idempotencyKey;
 
     try {
         const existingByIdempotency = await supabase
@@ -360,6 +422,11 @@ export async function sendMessageAction(chatId: string, text: string, options?: 
             .select('external_message_id')
             .eq('idempotency_key', idempotencyKey)
             .maybeSingle();
+            
+        if (existingByIdempotency.error && existingByIdempotency.error.code !== 'PGRST116') {
+            throw createDatabaseError('check idempotency key', existingByIdempotency.error, context);
+        }
+        
         if (existingByIdempotency.data?.external_message_id) {
             return { success: true, messageId: existingByIdempotency.data.external_message_id };
         }
@@ -367,7 +434,13 @@ export async function sendMessageAction(chatId: string, text: string, options?: 
         const result = await sendWithRetry(() => waha.sendMessage(chatId, text), 2);
 
         if (!result || !result.id) {
-            throw new Error('Failed to send message via WAHA');
+            throw createWhatsAppError(
+                'Failed to send message via WAHA',
+                ErrorCode.WHATSAPP_MESSAGE_FAILED,
+                ErrorSeverity.HIGH,
+                { context: { chatId, textLength: text.length } },
+                context
+            );
         }
 
         const { chat } = await upsertChatContext(supabase, chatId);
@@ -396,50 +469,174 @@ export async function sendMessageAction(chatId: string, text: string, options?: 
 
         if (messageError) {
             if (messageError.code !== '23505') {
-                throw messageError;
+                throw createDatabaseError('insert message', messageError, context);
             }
         }
 
         if (inserted?.id) {
-            await insertStatusLog(supabase, inserted.id, 'sent', 'crm_api');
-            await insertAuditLog(supabase, 'send_text', 'message', inserted.id, {
-                chat_id: chat.id,
-                external_message_id: result.id,
-                idempotency_key: idempotencyKey,
-            });
+            try {
+                await insertStatusLog(supabase, inserted.id, 'sent', 'crm_api');
+                await insertAuditLog(supabase, 'send_text', 'message', inserted.id, {
+                    chat_id: chat.id,
+                    external_message_id: result.id,
+                    idempotency_key: idempotencyKey,
+                });
+            } catch (logError: unknown) {
+                // Log error but don't fail the message send
+                console.error('Error inserting status/audit logs:', logError);
+                errorHandler.handleError(logError, { ...context, operation: 'insert logs' }, ErrorSeverity.LOW);
+            }
         }
-
-        clearMessagesCacheForChat(chatId);
-        clearContactsCache();
 
         revalidatePath('/admin/whatsapp');
         return { success: true, messageId: result.id };
     } catch (error: unknown) {
-        console.error('Error in sendMessageAction:', error);
-        return { success: false, error: getErrorMessage(error) };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal mengirim pesan WhatsApp';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.WHATSAPP_NOT_CONNECTED:
+                    userMessage = 'WhatsApp tidak terhubung. Silakan coba lagi.';
+                    break;
+                case ErrorCode.WHATSAPP_MESSAGE_FAILED:
+                    userMessage = 'Gagal mengirim pesan ke WhatsApp. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat menyimpan pesan. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
-export async function sendTypingAction(chatId: string) {
+interface SendTypingResponse {
+    success: boolean;
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function sendTypingAction(chatId: string): Promise<SendTypingResponse> {
+    const requestId = crypto.randomUUID();
+    const context: ErrorContext = {
+        operation: 'sendTyping',
+        component: 'whatsapp-action',
+        requestId,
+        chatId,
+    };
+    
     try {
         await waha.sendTyping(chatId);
         return { success: true };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal mengirim status typing') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal mengirim status typing WhatsApp';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.WHATSAPP_NOT_CONNECTED:
+                    userMessage = 'WhatsApp tidak terhubung. Silakan coba lagi.';
+                    break;
+                case ErrorCode.WHATSAPP_MESSAGE_FAILED:
+                    userMessage = 'Gagal mengirim status typing ke WhatsApp. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
-export async function sendSeenAction(chatId: string) {
+interface SendSeenResponse {
+    success: boolean;
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function sendSeenAction(chatId: string): Promise<SendSeenResponse> {
+    const requestId = crypto.randomUUID();
+    const context: ErrorContext = {
+        operation: 'sendSeen',
+        component: 'whatsapp-action',
+        requestId,
+        chatId,
+    };
+    
     try {
         await waha.sendSeen(chatId);
         return { success: true };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal mengirim status seen') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal mengirim status seen WhatsApp';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.WHATSAPP_NOT_CONNECTED:
+                    userMessage = 'WhatsApp tidak terhubung. Silakan coba lagi.';
+                    break;
+                case ErrorCode.WHATSAPP_MESSAGE_FAILED:
+                    userMessage = 'Gagal mengirim status seen ke WhatsApp. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
-export async function forwardMessageAction(targetChatId: string, sourceMessageId: string) {
+interface ForwardMessageResponse {
+    success: boolean;
+    messageId?: string;
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function forwardMessageAction(targetChatId: string, sourceMessageId: string): Promise<ForwardMessageResponse> {
     const supabase = await createClient();
+    const requestId = crypto.randomUUID();
+    const context: ErrorContext = {
+        operation: 'forwardMessage',
+        component: 'whatsapp-action',
+        requestId,
+        chatId: targetChatId,
+        sourceMessageId,
+    };
+    
     try {
         const { data: source, error: sourceError } = await supabase
             .from('wa_messages')
@@ -447,11 +644,28 @@ export async function forwardMessageAction(targetChatId: string, sourceMessageId
             .eq('id', sourceMessageId)
             .maybeSingle();
 
-        if (sourceError || !source) {
-            throw new Error('Pesan sumber tidak ditemukan');
+        if (sourceError) {
+            throw createDatabaseError('Gagal mengambil pesan sumber', sourceError, context);
         }
+        
+        if (!source) {
+            throw createWhatsAppError(
+                'Pesan sumber tidak ditemukan',
+                ErrorCode.NOT_FOUND,
+                ErrorSeverity.LOW,
+                { context: { sourceMessageId } },
+                context
+            );
+        }
+        
         if (!source.external_message_id) {
-            throw new Error('Pesan ini tidak dapat di-forward');
+            throw createWhatsAppError(
+                'Pesan ini tidak dapat di-forward',
+                ErrorCode.BAD_REQUEST,
+                ErrorSeverity.LOW,
+                { context: { sourceMessageId, messageType: source.type } },
+                context
+            );
         }
 
         const result = await sendWithRetry(
@@ -480,72 +694,148 @@ export async function forwardMessageAction(targetChatId: string, sourceMessageId
             })
             .select('id')
             .maybeSingle();
-        if (messageError || !inserted) throw messageError || new Error('Gagal menyimpan pesan forward');
+            
+        if (messageError) {
+            throw createDatabaseError('Gagal menyimpan pesan forward', messageError, context);
+        }
+        
+        if (!inserted) {
+            throw createWhatsAppError(
+                'Gagal menyimpan pesan forward',
+                ErrorCode.DATABASE_QUERY_ERROR,
+                ErrorSeverity.HIGH,
+                { context: { targetChatId, sourceMessageId } },
+                context
+            );
+        }
 
-        await insertStatusLog(supabase, inserted.id, 'sent', 'crm_api');
-        await insertAuditLog(supabase, 'forward', 'message', inserted.id, {
-            source_message_id: sourceMessageId,
-            target_chat_id: chat.id,
-        });
-
-        clearMessagesCacheForChat(targetChatId);
-        clearContactsCache();
+        try {
+            await insertStatusLog(supabase, inserted.id, 'sent', 'crm_api');
+            await insertAuditLog(supabase, 'forward', 'message', inserted.id, {
+                source_message_id: sourceMessageId,
+                target_chat_id: chat.id,
+            });
+        } catch (logError: unknown) {
+            console.error('Error inserting status/audit logs:', logError);
+            errorHandler.handleError(logError, { ...context, operation: 'insert logs' }, ErrorSeverity.LOW);
+        }
 
         revalidatePath('/admin/whatsapp');
         return { success: true, messageId: externalId };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal meneruskan pesan') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal meneruskan pesan WhatsApp';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.WHATSAPP_NOT_CONNECTED:
+                    userMessage = 'WhatsApp tidak terhubung. Silakan coba lagi.';
+                    break;
+                case ErrorCode.WHATSAPP_MESSAGE_FAILED:
+                    userMessage = 'Gagal meneruskan pesan ke WhatsApp. Silakan coba lagi.';
+                    break;
+                case ErrorCode.NOT_FOUND:
+                    userMessage = 'Pesan yang akan diteruskan tidak ditemukan.';
+                    break;
+                case ErrorCode.BAD_REQUEST:
+                    userMessage = 'Pesan ini tidak dapat diteruskan.';
+                    break;
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat menyimpan pesan. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
-export async function sendMediaMessageAction(chatId: string, payload: SendMediaInput) {
+interface SendMediaMessageResponse {
+    success: boolean;
+    messageId?: string;
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function sendMediaMessageAction(chatId: string, payload: SendMediaInputUrl): Promise<SendMediaMessageResponse> {
     const supabase = await createClient();
-    const idempotencyKey = payload.idempotencyKey ?? crypto.randomUUID();
+    const requestId = crypto.randomUUID();
+    const context: ErrorContext = {
+        operation: 'sendMediaMessage',
+        component: 'whatsapp-action',
+        requestId,
+        metadata: { chatId, fileName: payload.fileName, fileSize: payload.fileSize }
+    };
+
+    if (!payload.idempotencyKey) {
+        return { 
+            success: false, 
+            error: 'idempotencyKey wajib dikirim dari client',
+            errorCode: 'VALIDATION_ERROR',
+            errorSeverity: 'low'
+        };
+    }
+    
+    const idempotencyKey = payload.idempotencyKey;
+    
     try {
         const existingByIdempotency = await supabase
             .from('wa_messages')
             .select('external_message_id')
             .eq('idempotency_key', idempotencyKey)
             .maybeSingle();
+            
         if (existingByIdempotency.data?.external_message_id) {
             return { success: true, messageId: existingByIdempotency.data.external_message_id };
         }
 
-        const mediaType = detectMediaType(payload.file.type || '');
+        const mediaType = detectMediaType(payload.mimeType || '');
         if (!mediaType) {
-            return { success: false, error: 'Format file tidak didukung.' };
+            return { 
+                success: false, 
+                error: 'Format file tidak didukung.',
+                errorCode: 'VALIDATION_ERROR',
+                errorSeverity: 'low'
+            };
         }
 
         const maxSize = getMaxSizeBytes(mediaType);
-        if (payload.file.size > maxSize) {
-            return { success: false, error: 'Ukuran file melebihi batas spesifikasi.' };
+        if (payload.fileSize > maxSize) {
+            return { 
+                success: false, 
+                error: 'Ukuran file melebihi batas spesifikasi.',
+                errorCode: 'VALIDATION_ERROR',
+                errorSeverity: 'low'
+            };
         }
-
-        const ext = payload.file.name.includes('.') ? payload.file.name.split('.').pop() : 'bin';
-        const fileName = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
-        const filePath = `whatsapp-media/${fileName}`;
-        const arrayBuffer = await payload.file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        const upload = await supabase.storage
-            .from('images')
-            .upload(filePath, buffer, { contentType: payload.file.type, upsert: false });
-        if (upload.error) {
-            throw new Error(`Gagal upload media: ${upload.error.message}`);
-        }
-
-        const { data: publicUrlData } = supabase.storage.from('images').getPublicUrl(filePath);
-        const mediaUrl = publicUrlData.publicUrl;
 
         const result = await sendWithRetry(
             () =>
                 waha.sendMedia(chatId, {
-                    url: mediaUrl,
+                    url: payload.mediaUrl,
                     caption: payload.caption,
-                    filename: payload.file.name,
+                    filename: payload.fileName,
                 }),
             2
         );
+        
+        if (!result?.id) {
+            throw createWhatsAppError('Gagal mengirim media ke WhatsApp', ErrorCode.WHATSAPP_MESSAGE_FAILED, ErrorSeverity.HIGH, undefined, context);
+        }
+        
         const externalId = typeof result?.id === 'string' ? result.id : crypto.randomUUID();
         const { chat } = await upsertChatContext(supabase, chatId);
         const nowIso = new Date().toISOString();
@@ -555,7 +845,7 @@ export async function sendMediaMessageAction(chatId: string, payload: SendMediaI
             .insert({
                 external_message_id: externalId,
                 chat_id: chat.id,
-                body: payload.caption ?? payload.file.name,
+                body: payload.caption ?? payload.fileName,
                 type: mediaType === 'voice' ? 'audio' : mediaType,
                 direction: 'outbound',
                 sender_type: 'agent',
@@ -566,40 +856,98 @@ export async function sendMediaMessageAction(chatId: string, payload: SendMediaI
             })
             .select('id')
             .single();
-        if (messageError) throw messageError;
+            
+        if (messageError) {
+            throw createDatabaseError('Gagal menyimpan pesan media', messageError, context);
+        }
 
         const { error: mediaError } = await supabase.from('wa_message_media').insert({
             message_id: inserted.id,
             media_type: mediaType,
-            mime_type: payload.file.type,
-            size_bytes: payload.file.size,
-            storage_key: mediaUrl,
+            mime_type: payload.mimeType,
+            size_bytes: payload.fileSize,
+            storage_key: payload.mediaUrl,
         });
-        if (mediaError) throw mediaError;
+        
+        if (mediaError) {
+            throw createDatabaseError('Gagal menyimpan data media', mediaError, context);
+        }
 
-        await insertStatusLog(supabase, inserted.id, 'sent', 'crm_api');
-        await insertAuditLog(supabase, 'send_media', 'message', inserted.id, {
-            chat_id: chat.id,
-            external_message_id: externalId,
-            media_type: mediaType,
-            idempotency_key: idempotencyKey,
-        });
-
-        clearMessagesCacheForChat(chatId);
-        clearContactsCache();
+        // Insert logs with error handling but don't fail the message send
+        try {
+            await insertStatusLog(supabase, inserted.id, 'sent', 'crm_api');
+            await insertAuditLog(supabase, 'send_media', 'message', inserted.id, {
+                chat_id: chat.id,
+                external_message_id: externalId,
+                media_type: mediaType,
+                idempotency_key: idempotencyKey,
+            });
+        } catch (logError: unknown) {
+            // Log error but don't fail the message send
+            console.error('Error inserting status/audit logs:', logError);
+            errorHandler.handleError(logError, { ...context, operation: 'insert logs' }, ErrorSeverity.LOW);
+        }
 
         revalidatePath('/admin/whatsapp');
         return { success: true, messageId: externalId };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal mengirim media WhatsApp') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal mengirim media WhatsApp';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.WHATSAPP_NOT_CONNECTED:
+                    userMessage = 'WhatsApp tidak terhubung. Silakan coba lagi.';
+                    break;
+                case ErrorCode.WHATSAPP_MESSAGE_FAILED:
+                    userMessage = 'Gagal mengirim media ke WhatsApp. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat menyimpan media. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
-export async function sendTemplateMessageAction(chatId: string, templateName: string, variables: string[] = []) {
+interface SendTemplateMessageResponse {
+    success: boolean;
+    messageId?: string;
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function sendTemplateMessageAction(chatId: string, templateName: string, variables: string[] = []): Promise<SendTemplateMessageResponse> {
     const supabase = await createClient();
+    const requestId = crypto.randomUUID();
+    const context: ErrorContext = {
+        operation: 'sendTemplateMessage',
+        component: 'whatsapp-action',
+        requestId,
+        metadata: { chatId, templateName }
+    };
+
     try {
         const result = await sendWithRetry(() => waha.sendTemplate(chatId, templateName, variables), 2);
-        if (!result?.id) throw new Error('Gagal mengirim template');
+        if (!result?.id) {
+            throw createWhatsAppError('Gagal mengirim template ke WhatsApp', ErrorCode.WHATSAPP_MESSAGE_FAILED, ErrorSeverity.HIGH, undefined, context);
+        }
+        
         const { chat } = await upsertChatContext(supabase, chatId);
         const { data: message, error } = await supabase
             .from('wa_messages')
@@ -615,25 +963,85 @@ export async function sendTemplateMessageAction(chatId: string, templateName: st
             })
             .select('id')
             .single();
-        if (error) throw error;
-        await insertStatusLog(supabase, message.id, 'sent', 'crm_api');
-        await insertAuditLog(supabase, 'send_template', 'message', message.id, { templateName, variables });
+            
+        if (error) {
+            throw createDatabaseError('Gagal menyimpan pesan template', error, context);
+        }
+        
+        // Insert logs with error handling but don't fail the message send
+        try {
+            await insertStatusLog(supabase, message.id, 'sent', 'crm_api');
+            await insertAuditLog(supabase, 'send_template', 'message', message.id, { templateName, variables });
+        } catch (logError: unknown) {
+            // Log error but don't fail the message send
+            console.error('Error inserting status/audit logs:', logError);
+            errorHandler.handleError(logError, { ...context, operation: 'insert logs' }, ErrorSeverity.LOW);
+        }
+        
         revalidatePath('/admin/whatsapp');
         return { success: true, messageId: result.id };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal mengirim template WhatsApp') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal mengirim template WhatsApp';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.WHATSAPP_NOT_CONNECTED:
+                    userMessage = 'WhatsApp tidak terhubung. Silakan coba lagi.';
+                    break;
+                case ErrorCode.WHATSAPP_MESSAGE_FAILED:
+                    userMessage = 'Gagal mengirim template ke WhatsApp. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat menyimpan template. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
+}
+
+interface SendInteractiveButtonsResponse {
+    success: boolean;
+    messageId?: string;
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
 }
 
 export async function sendInteractiveButtonsAction(
     chatId: string,
     text: string,
     buttons: { id: string; title: string }[]
-) {
+): Promise<SendInteractiveButtonsResponse> {
     const supabase = await createClient();
+    const requestId = crypto.randomUUID();
+    const context: ErrorContext = {
+        operation: 'sendInteractiveButtons',
+        component: 'whatsapp-action',
+        requestId,
+        metadata: { chatId, text: text.substring(0, 50), buttonsCount: buttons.length }
+    };
+
     try {
         const result = await sendWithRetry(() => waha.sendInteractiveButtons(chatId, text, buttons), 2);
-        if (!result?.id) throw new Error('Gagal mengirim pesan interaktif');
+        if (!result?.id) {
+            throw createWhatsAppError('Gagal mengirim pesan interaktif ke WhatsApp', ErrorCode.WHATSAPP_MESSAGE_FAILED, ErrorSeverity.HIGH, undefined, context);
+        }
+        
         const { chat } = await upsertChatContext(supabase, chatId);
         const { data: message, error } = await supabase
             .from('wa_messages')
@@ -650,20 +1058,77 @@ export async function sendInteractiveButtonsAction(
             })
             .select('id')
             .single();
-        if (error) throw error;
-        await insertStatusLog(supabase, message.id, 'sent', 'crm_api');
-        await insertAuditLog(supabase, 'send_interactive', 'message', message.id, { text, buttons_count: buttons.length });
+            
+        if (error) {
+            throw createDatabaseError('Gagal menyimpan pesan interaktif', error, context);
+        }
+        
+        // Insert logs with error handling but don't fail the message send
+        try {
+            await insertStatusLog(supabase, message.id, 'sent', 'crm_api');
+            await insertAuditLog(supabase, 'send_interactive', 'message', message.id, { text, buttons_count: buttons.length });
+        } catch (logError: unknown) {
+            // Log error but don't fail the message send
+            console.error('Error inserting status/audit logs:', logError);
+            errorHandler.handleError(logError, { ...context, operation: 'insert logs' }, ErrorSeverity.LOW);
+        }
+        
         revalidatePath('/admin/whatsapp');
         return { success: true, messageId: result.id };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal mengirim tombol interaktif') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal mengirim tombol interaktif';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.WHATSAPP_NOT_CONNECTED:
+                    userMessage = 'WhatsApp tidak terhubung. Silakan coba lagi.';
+                    break;
+                case ErrorCode.WHATSAPP_MESSAGE_FAILED:
+                    userMessage = 'Gagal mengirim pesan interaktif ke WhatsApp. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat menyimpan pesan. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
 /**
  * Server Action to get session status and QR code
  */
-export async function getSessionStatusAction() {
+interface SessionStatusResult {
+    success: boolean;
+    status: WahaSession | null;
+    qrCode: string | null;
+    error: string | null;
+}
+
+export async function getSessionStatusAction(): Promise<SessionStatusResult> {
+    const context: ErrorContext = {
+        operation: 'getSessionStatus',
+        requestId: crypto.randomUUID(),
+        metadata: {
+            action: 'getSessionStatusAction',
+            timestamp: new Date().toISOString()
+        }
+    };
+
     try {
         const status = await waha.getSessionStatus();
         
@@ -683,8 +1148,13 @@ export async function getSessionStatusAction() {
                     if (currentSession) {
                         qrCode = currentSession.qr || currentSession.qrCode || currentSession.engine?.qr;
                     }
-                } catch {
-                    console.warn('[WAHA Server Debug] Failed to fetch all sessions list');
+                } catch (error: unknown) {
+                    // Log but don't throw - this is a fallback mechanism
+                    errorHandler.logError(error, {
+                        ...context,
+                        operation: 'getSessions',
+                        fallback: true
+                    });
                 }
             }
 
@@ -702,7 +1172,12 @@ export async function getSessionStatusAction() {
                         }
                     } catch (error: unknown) {
                         lastError = getErrorMessage(error);
-                        console.warn(`[WAHA Retry ${i+1}] Screenshot failed:`, lastError);
+                        errorHandler.logError(error, {
+                            ...context,
+                            operation: 'getScreenshot',
+                            retry: i + 1,
+                            maxRetries: 5
+                        });
                     }
                     // Exponential backoff
                     await new Promise(resolve => setTimeout(resolve, 1500 * (i + 1)));
@@ -713,7 +1188,7 @@ export async function getSessionStatusAction() {
         return { 
             success: true, 
             status, 
-            qrCode, 
+            qrCode: qrCode ?? null, 
             error: qrCode ? null : (
                 lastError || 
                 (status?.status === 'SCAN_QR_CODE' ? 'QR Code belum siap di server' : 
@@ -727,8 +1202,13 @@ export async function getSessionStatusAction() {
             )
         };
     } catch (error: unknown) {
-        console.error('Error in getSessionStatusAction:', error);
-        return { success: false, error: getErrorMessage(error) };
+        const structuredError = errorHandler.handleError(error, context);
+        return {
+            success: false,
+            status: null,
+            qrCode: null,
+            error: structuredError.message
+        };
     }
 }
 
@@ -736,11 +1216,20 @@ export async function getSessionStatusAction() {
  * Server Action to start session
  */
 export async function startSessionAction() {
+    const context: ErrorContext = {
+        operation: 'startSession',
+        requestId: crypto.randomUUID(),
+        metadata: {
+            action: 'startSessionAction',
+            timestamp: new Date().toISOString()
+        }
+    };
+
     try {
         await waha.startSession();
-        return { success: true };
+        return { success: true, message: 'Session berhasil dimulai' };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error) };
+        return errorHandler.handleError(error, context);
     }
 }
 
@@ -748,6 +1237,15 @@ export async function startSessionAction() {
  * Server Action to register webhook to kokohin.com
  */
 export async function registerWebhookAction() {
+    const context: ErrorContext = {
+        operation: 'registerWebhook',
+        requestId: crypto.randomUUID(),
+        metadata: {
+            action: 'registerWebhookAction',
+            timestamp: new Date().toISOString()
+        }
+    };
+
     try {
         const explicitWebhookUrl = (process.env.WAHA_WEBHOOK_URL || '').replace(/[`"']/g, '').trim();
         let baseUrl = (process.env.NEXT_PUBLIC_BASE_URL || 'https://kokohin.com').replace(/[`"']/g, '').trim();
@@ -756,7 +1254,13 @@ export async function registerWebhookAction() {
         const secret = process.env.WAHA_WEBHOOK_SECRET || '';
 
         if (!secret) {
-            throw new Error('WAHA_WEBHOOK_SECRET is not configured in environment variables.');
+            throw new WhatsAppError(
+                ErrorCode.CONFIGURATION_ERROR,
+                'WAHA_WEBHOOK_SECRET is not configured in environment variables',
+                ErrorSeverity.ERROR,
+                null,
+                context
+            );
         }
 
         // 1. Get existing webhooks to avoid duplicates (best-effort; older WAHA may not support listing)
@@ -774,7 +1278,12 @@ export async function registerWebhookAction() {
                 message.includes('404') ||
                 message.includes('not found');
             if (!listingUnsupported) {
-                throw error;
+                // Log but don't throw - this is a fallback mechanism
+                errorHandler.logError(error, {
+                    ...context,
+                    operation: 'getWebhooks',
+                    fallback: true
+                });
             }
             // If WAHA doesn't support GET /api/webhooks, skip duplicate detection and continue.
             existing = [];
@@ -837,9 +1346,12 @@ export async function registerWebhookAction() {
                 message.includes('not found');
 
             if (unsupportedWebhookApi) {
-                console.warn(
-                    'WAHA instance does not support /api/webhooks register API. Please configure webhook URL manually in WAHA dashboard if needed.'
-                );
+                errorHandler.logError(new Error('WAHA instance does not support /api/webhooks register API'), {
+                    ...context,
+                    operation: 'registerWebhook',
+                    unsupportedApi: true,
+                    webhookUrl
+                });
                 return {
                     success: true,
                     message:
@@ -852,8 +1364,7 @@ export async function registerWebhookAction() {
             throw error;
         }
     } catch (error: unknown) {
-        console.error('Error in registerWebhookAction:', error);
-        return { success: false, error: getErrorMessage(error, 'Gagal mendaftarkan webhook') };
+        return errorHandler.handleError(error, context);
     }
 }
 
@@ -861,11 +1372,20 @@ export async function registerWebhookAction() {
  * Server Action to stop session
  */
 export async function stopSessionAction() {
+    const context: ErrorContext = {
+        operation: 'stopSession',
+        requestId: crypto.randomUUID(),
+        metadata: {
+            action: 'stopSessionAction',
+            timestamp: new Date().toISOString()
+        }
+    };
+
     try {
         await waha.stopSession();
-        return { success: true };
+        return { success: true, message: 'Session berhasil dihentikan' };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error) };
+        return errorHandler.handleError(error, context);
     }
 }
 
@@ -873,15 +1393,33 @@ export async function stopSessionAction() {
  * Server Action to logout session
  */
 export async function logoutSessionAction() {
+    const context: ErrorContext = {
+        operation: 'logoutSession',
+        requestId: crypto.randomUUID(),
+        metadata: {
+            action: 'logoutSessionAction',
+            timestamp: new Date().toISOString()
+        }
+    };
+
     try {
         await waha.logoutSession();
-        return { success: true };
+        return { success: true, message: 'Session berhasil logout' };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error) };
+        return errorHandler.handleError(error, context);
     }
 }
 
 export async function getChatsAction() {
+    const context: ErrorContext = {
+        operation: 'getChats',
+        requestId: crypto.randomUUID(),
+        metadata: {
+            action: 'getChatsAction',
+            timestamp: new Date().toISOString()
+        }
+    };
+
     try {
         const chats = await waha.getChats();
         const mapped = (Array.isArray(chats) ? chats : []).map((chat): WahaChatPayload => {
@@ -902,7 +1440,7 @@ export async function getChatsAction() {
 
         return { success: true, chats: mapped };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error) };
+        return errorHandler.handleError(error, context);
     }
 }
 
@@ -915,6 +1453,10 @@ export async function getMessagesAction(chatId: string) {
             const media = toRecord(row.media);
             const isoTimestamp = toIsoTimestamp(row.timestamp ?? rowData.t ?? rowData.timestamp) || new Date().toISOString();
             const messageId = toSerializedId(row.id) || `${chatId}-${isoTimestamp}`;
+            const author = typeof row.author === 'string' ? row.author : 
+                           (typeof rowData.author === 'string' ? rowData.author : 
+                           (typeof row.participant === 'string' ? row.participant : null));
+            
             return {
                 id: messageId,
                 chatId,
@@ -938,12 +1480,83 @@ export async function getMessagesAction(chatId: string) {
                 quotedMessageId: null,
                 isForwarded: false,
                 isDeleted: false,
+                author,
+                raw_payload: row,
             };
         });
 
         return { success: true, messages: mapped };
     } catch (error: unknown) {
         return { success: false, error: getErrorMessage(error) };
+    }
+}
+
+export async function getContactsByJidsAction(jids: string[]) {
+    const supabase = await createClient();
+    try {
+        if (!jids || jids.length === 0) {
+            return { success: true, contacts: [] };
+        }
+
+        const uniqueJids = Array.from(new Set(jids));
+        
+        // Fetch contacts from Supabase
+        const { data: contacts, error } = await supabase
+            .from('wa_contacts')
+            .select('id, wa_jid, display_name, phone, avatar_url, last_message_at')
+            .in('wa_jid', uniqueJids);
+
+        if (error) throw error;
+
+        // Fetch ERP data for found contacts (optional, but good for completeness)
+        // We only fetch for contacts that have a phone number or JID we can parse
+        const phonesToSearch = (contacts || []).map(c => c.phone || c.wa_jid.split('@')[0].replace(/\D/g, '')).filter(Boolean);
+        
+        let erpData: { id: string; phone: string; status: string; customer_name: string }[] = [];
+        if (phonesToSearch.length > 0) {
+            try {
+                // Limit ERP search to avoid massive query if too many contacts
+                const chunks = [];
+                for (let i = 0; i < phonesToSearch.length; i += 20) {
+                    chunks.push(phonesToSearch.slice(i, i + 20));
+                }
+                
+                for (const chunk of chunks) {
+                    const orQuery = chunk.map(p => `phone.ilike.%${p}%`).join(',');
+                    const { data: erpProjects } = await supabase
+                        .from('erp_projects')
+                        .select('id, phone, status, customer_name')
+                        .or(orQuery);
+                    if (erpProjects) {
+                        erpData = [...erpData, ...erpProjects];
+                    }
+                }
+            } catch (erpError) {
+                console.error('Error fetching ERP projects for contacts:', erpError);
+            }
+        }
+
+        // Map and merge data
+        const mappedContacts = (contacts || []).map(contact => {
+            const cleanPhone = contact.phone || contact.wa_jid.split('@')[0].replace(/\D/g, '');
+            const erpInfo = erpData.find(lead => lead.phone.includes(cleanPhone));
+            
+            return {
+                id: contact.id,
+                wa_id: contact.wa_jid,
+                name: contact.display_name || erpInfo?.customer_name || contact.wa_jid.split('@')[0],
+                phone: contact.phone, // This will have the corrected phone number if present
+                avatar_url: contact.avatar_url,
+                last_message_at: contact.last_message_at,
+                unread_count: 0,
+                erp_project_id: erpInfo?.id || null,
+                erp_project_status: erpInfo?.status || null,
+            };
+        });
+
+        return { success: true, contacts: mappedContacts };
+    } catch (error: unknown) {
+        return { success: false, error: getErrorMessage(error, 'Gagal memuat detail kontak') };
     }
 }
 
@@ -995,16 +1608,6 @@ export async function deleteMessageForSenderAction(messageId: string) {
         }
 
         await insertAuditLog(supabase, 'delete_for_sender', 'message', messageId, { is_deleted: true });
-
-        const { data: messageRow } = await supabase
-            .from('wa_messages')
-            .select('chat_id')
-            .eq('id', messageId)
-            .maybeSingle();
-
-        if (messageRow?.chat_id) {
-            clearMessagesCacheForChat(messageRow.chat_id as string);
-        }
 
         revalidatePath('/admin/whatsapp');
         return { success: true };
@@ -1180,29 +1783,126 @@ export async function syncChatsFromWahaAction(limit = 200) {
     }
 }
 
-export async function getPaginatedContactsAction(page = 1, limit = 20, search = '') {
+interface Contact {
+    id: string;
+    wa_id?: string;
+    name?: string;
+    phone?: string | null;
+    avatar_url?: string | null;
+    last_message_at?: string | null;
+    wa_jid?: string;
+    display_name?: string;
+    profile_picture_url?: string;
+    is_active?: boolean;
+    created_at?: string;
+    updated_at?: string;
+    contact_id?: string;
+    unread_count?: number | null;
+    erp_project_id?: string;
+    erp_project_status?: string;
+}
+
+interface Message {
+    id: string;
+    chat_id: string;
+    wa_id?: string;
+    content?: string;
+    sender_id?: string;
+    timestamp?: string;
+    body?: string | null;
+    type?: string;
+    direction?: 'inbound' | 'outbound';
+    sender_type?: 'user' | 'agent' | 'customer' | 'system';
+    status?: string;
+    created_at?: string;
+    updated_at?: string;
+    sent_at?: string;
+    delivered_at?: string;
+    read_at?: string;
+    quoted_message_id?: string | null;
+    is_forwarded?: boolean;
+    is_deleted?: boolean;
+    mediaUrl?: string | null;
+    mediaCaption?: string | null;
+    raw_payload?: unknown;
+    sender_contact?: Contact | null;
+    external_message_id?: string;
+}
+
+export interface WahaMessagePayload {
+    author?: string | null;
+    participant?: string | null;
+    _data?: {
+        author?: string | null;
+        participant?: string | null;
+    };
+    id?: string;
+    chatId?: string;
+    body?: string | null;
+    type?: string;
+    fromMe?: boolean;
+    status?: string;
+    mediaUrl?: string | null;
+    mediaCaption?: string | null;
+    timestamp?: string;
+    quotedMessageId?: string | null;
+    isForwarded?: boolean;
+    isDeleted?: boolean;
+    raw_payload?: unknown;
+}
+
+interface DeliveryAnomaly {
+    id: string;
+    anomaly_type: string;
+    severity: string;
+    detected_at: string;
+    details: Record<string, unknown>;
+}
+
+interface GetPaginatedContactsResponse {
+    success: boolean;
+    contacts?: Contact[];
+    pagination?: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+        hasNext: boolean;
+    };
+    warning?: string | null;
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function getPaginatedContactsAction(page = 1, limit = 20, search = ''): Promise<GetPaginatedContactsResponse> {
     const supabase = await createClient();
+    const cache = getWhatsAppCache();
+    const requestId = Math.random().toString(36).substring(7);
+    const context: ErrorContext = { requestId, operation: 'getPaginatedContacts' };
+    
     try {
+        // Check cache first
+        const cacheKey = `contacts:${page}:${limit}:${search}`;
+        const cached = await cache.getContactsList(page, search);
+        if (cached && cached.length > 0) {
+            console.log(`[Cache Hit] Returning cached contacts for page ${page}, search: "${search}"`);
+            return {
+                success: true,
+                contacts: cached,
+                pagination: {
+                    page,
+                    limit,
+                    total: cached.length,
+                    totalPages: Math.ceil(cached.length / limit),
+                    hasNext: page < Math.ceil(cached.length / limit),
+                },
+            };
+        }
+        
         const offset = (page - 1) * limit;
         let warning: string | null = null;
         const normalizedSearch = search.trim();
-        const cacheKey = `${page}:${limit}:${normalizedSearch.toLowerCase()}`;
-        const now = Date.now();
-        const cached = contactsCache.get(cacheKey);
-        if (cached && cached.expiresAt > now) {
-            return cached.value as {
-                success: boolean;
-                contacts?: unknown[];
-                pagination?: {
-                    page: number;
-                    limit: number;
-                    total: number;
-                    totalPages: number;
-                };
-                warning?: string | null;
-                error?: string;
-            };
-        }
 
         const baseQuery = () =>
             supabase
@@ -1231,7 +1931,7 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
                 .or(`display_name.ilike.%${normalizedSearch}%,wa_jid.ilike.%${normalizedSearch}%,phone.ilike.%${normalizedSearch}%`)
                 .limit(300);
             if (contactSearchError) {
-                throw contactSearchError;
+                throw createDatabaseError('contact search', contactSearchError, context);
             }
             filteredContactIds = (matchedContacts ?? []).map((item) => item.id).filter(Boolean);
             if (filteredContactIds.length === 0) {
@@ -1243,6 +1943,7 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
                         limit,
                         total: 0,
                         totalPages: 0,
+                        hasNext: false,
                     },
                 };
             }
@@ -1256,7 +1957,7 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
 
         if (error) {
             console.error('Error fetching chats:', error);
-            throw error;
+            throw createDatabaseError('fetch chats', error, context);
         }
 
         const shouldBootstrap = (!data || data.length === 0) && !normalizedSearch && page === 1;
@@ -1271,46 +1972,81 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
                     count = refreshed.count;
                     error = refreshed.error;
                     if (error) {
-                        throw error;
+                        throw createDatabaseError('refresh chats after bootstrap', error, context);
                     }
                 }
             } catch (bootstrapError: unknown) {
                 if (isWahaUnavailableError(bootstrapError)) {
                     warning = 'Layanan WAHA sedang tidak tersedia (503). Menampilkan data lokal terakhir.';
+                    // Log the WAHA unavailability as a medium severity error
+                    errorHandler.handleError(
+                        createWhatsAppError(
+                            'WAHA service unavailable during bootstrap',
+                            ErrorCode.WHATSAPP_NOT_CONNECTED,
+                            ErrorSeverity.MEDIUM,
+                            { context: { operation: 'bootstrap', page, limit } },
+                            context
+                        ),
+                        context
+                    );
                 } else {
+                    // Re-throw other errors to be handled by main catch block
                     throw bootstrapError;
                 }
             }
         }
 
         const rows = ((data ?? []) as unknown[]).map((entry) => entry as ContactJoinRow);
-        const waJids = rows
-            .map((chat) => {
-                const contact = Array.isArray(chat.wa_contacts) ? chat.wa_contacts[0] : chat.wa_contacts;
-                return contact?.wa_jid || '';
-            })
-            .filter(Boolean)
-            .map((waJid) => waJid.split('@')[0].replace(/\D/g, ''));
+        
+        // Optimized batch processing untuk ERP data - menghilangkan N+1 query problem
+        const uniquePhones = new Set<string>();
+        rows.forEach(row => {
+            const contact = Array.isArray(row.wa_contacts) ? row.wa_contacts[0] : row.wa_contacts;
+            if (contact) {
+                const phone = contact.phone || contact.wa_jid.split('@')[0].replace(/\D/g, '');
+                if (phone) uniquePhones.add(phone);
+            }
+        });
+        
         let erpData: { id: string; phone: string; status: string; customer_name: string }[] = [];
         
-        if (waJids.length > 0) {
+        // Batch query untuk ERP data dengan chunking untuk performa optimal
+        if (uniquePhones.size > 0) {
             try {
-                const orQuery = waJids.map(phone => `phone.ilike.%${phone}%`).join(',');
-                const { data: erpProjects } = await supabase
-                    .from('erp_projects')
-                    .select('id, phone, status, customer_name')
-                    .or(orQuery);
+                const phoneArray = Array.from(uniquePhones);
+                const chunks = [];
+                for (let i = 0; i < phoneArray.length; i += 50) {
+                    chunks.push(phoneArray.slice(i, i + 50));
+                }
                 
-                erpData = erpProjects || [];
+                const erpPromises = chunks.map(chunk => {
+                    const orQuery = chunk.map(phone => `phone.ilike.%${phone}%`).join(',');
+                    return supabase
+                        .from('erp_projects')
+                        .select('id, phone, status, customer_name')
+                        .or(orQuery)
+                        .limit(100);
+                });
+                
+                const erpResults = await Promise.all(erpPromises);
+                erpData = erpResults.flatMap(result => result.data || []);
+                
             } catch (erpError) {
                 console.error('Error fetching ERP projects:', erpError);
+                // Log but don't throw - ERP data is optional
+                errorHandler.handleError(erpError, { ...context, operation: 'fetch ERP projects' }, ErrorSeverity.LOW);
             }
         }
+        
         const chatsWithDetails = rows.map(chat => {
             const contact = Array.isArray(chat.wa_contacts) ? chat.wa_contacts[0] : chat.wa_contacts;
             if (!contact) return null;
+            
             const cleanPhone = contact.phone || contact.wa_jid.split('@')[0].replace(/\D/g, '');
-            const erpInfo = erpData.find(lead => lead.phone.includes(cleanPhone));
+            const erpInfo = erpData.find(lead => 
+                lead.phone.includes(cleanPhone) || 
+                (contact.phone && lead.phone.includes(contact.phone))
+            );
             
             return {
                 id: chat.id,
@@ -1334,41 +2070,98 @@ export async function getPaginatedContactsAction(page = 1, limit = 20, search = 
                 limit,
                 total: count || 0,
                 totalPages: Math.ceil((count || 0) / limit),
+                hasNext: page < Math.ceil((count || 0) / limit),
             },
             warning,
         };
-        contactsCache.set(cacheKey, {
-            value: result,
-            expiresAt: now + CONTACTS_CACHE_TTL_MS,
-        });
+
+        // Cache the result for future requests
+        if (chatsWithDetails.length > 0) {
+            await cache.setContactsList(page, search, chatsWithDetails, 60); // Cache for 1 minute
+            console.log(`[Cache Set] Cached ${chatsWithDetails.length} contacts for page ${page}, search: "${search}"`);
+        }
+
         return result;
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal memuat kontak WhatsApp') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal memuat kontak WhatsApp';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat mengambil data. Silakan coba lagi.';
+                    break;
+                case ErrorCode.CACHE_CONNECTION_ERROR:
+                    userMessage = 'Sistem cache sedang bermasalah. Data akan dimuat tanpa cache.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
-export async function getPaginatedMessagesAction(chatId: string, page = 1, limit = 50) {
+interface GetPaginatedMessagesResponse {
+    success: boolean;
+    messages?: Message[];
+    pagination?: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+        hasNext: boolean;
+        nextCursor?: string | null;
+    };
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function getPaginatedMessagesAction(
+    chatId: string,
+    page = 1,
+    limit = 50,
+    cursor?: string | null
+): Promise<GetPaginatedMessagesResponse> {
     const supabase = await createClient();
+    const cache = getWhatsAppCache();
+    const requestId = Math.random().toString(36).substring(7);
+    const context: ErrorContext = { requestId, operation: 'getPaginatedMessages', chatId };
+    
     try {
-        const offset = (page - 1) * limit;
-        const cacheKey = `${chatId}:${page}:${limit}`;
-        const now = Date.now();
-        const cached = messagesCache.get(cacheKey);
-        if (cached && cached.expiresAt > now) {
-            return cached.value as {
-                success: boolean;
-                messages?: unknown[];
-                pagination?: {
-                    page: number;
-                    limit: number;
-                    total: number;
-                    totalPages: number;
-                };
-                error?: string;
+        // Check cache first
+        const cacheKey = `messages:${chatId}:${page}:${limit}:${cursor || 'none'}`;
+        const cached = await cache.getMessages(chatId, page);
+        if (cached && cached.length > 0) {
+            console.log(`[Cache Hit] Returning cached messages for chat ${chatId}, page ${page}`);
+            return {
+                success: true,
+                messages: cached,
+                pagination: {
+                    page,
+                    limit,
+                    total: cached.length,
+                    totalPages: Math.ceil(cached.length / limit),
+                    hasNext: page < Math.ceil(cached.length / limit),
+                },
             };
         }
-        
-        const { data, count, error } = await supabase
+
+        const offset = (page - 1) * limit;
+
+        const baseQuery = supabase
             .from('wa_messages')
             .select(
                 `
@@ -1381,6 +2174,8 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
                 sender_type,
                 status,
                 sent_at,
+                created_at,
+                updated_at,
                 quoted_message_id,
                 is_forwarded,
                 is_deleted,
@@ -1392,7 +2187,13 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
                 `,
                 { count: 'exact' }
             )
-            .eq('chat_id', chatId)
+            .eq('chat_id', chatId);
+
+        const filteredQuery = cursor
+            ? baseQuery.lt('sent_at', cursor)
+            : baseQuery;
+
+        const { data, count, error } = await filteredQuery
             .order('sent_at', { ascending: false })
             .range(offset, offset + limit - 1);
 
@@ -1408,6 +2209,8 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
             sender_type: string;
             status: string;
             sent_at: string;
+            created_at: string;
+            updated_at: string;
             quoted_message_id?: string | null;
             is_forwarded?: boolean | null;
             is_deleted?: boolean | null;
@@ -1420,8 +2223,7 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
         rows.forEach(row => {
             // Check if message has author info in payload (typical for groups)
             if (row.raw_payload) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const payload = row.raw_payload as Record<string, any>;
+                const payload = row.raw_payload as WahaMessagePayload;
                 const author = payload.author || payload._data?.author || payload.participant;
                 if (typeof author === 'string') {
                     authorIds.add(author);
@@ -1430,13 +2232,16 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
         });
 
         // Fetch contacts if any
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const contactMap = new Map<string, any>();
+        const contactMap = new Map<string, Contact>();
         if (authorIds.size > 0) {
-            const { data: contacts } = await supabase
+            const { data: contacts, error: contactsError } = await supabase
                 .from('wa_contacts')
                 .select('id, wa_id:wa_jid, name:display_name, phone, avatar_url, last_message_at')
                 .in('wa_jid', Array.from(authorIds));
+            
+            if (contactsError) {
+                throw createDatabaseError('fetch contacts for messages', contactsError, context);
+            }
             
             if (contacts) {
                 contacts.forEach(c => contactMap.set(c.wa_id, c));
@@ -1450,8 +2255,7 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
 
             let senderContact = null;
             if (row.raw_payload) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const payload = row.raw_payload as Record<string, any>;
+                const payload = row.raw_payload as WahaMessagePayload;
                 const author = payload.author || payload._data?.author || payload.participant;
                 if (typeof author === 'string') {
                     senderContact = contactMap.get(author) || null;
@@ -1467,6 +2271,8 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
                 direction: row.direction as 'inbound' | 'outbound',
                 sender_type: row.sender_type as 'customer' | 'agent' | 'system',
                 status: row.status,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
                 sent_at: row.sent_at,
                 quoted_message_id: row.quoted_message_id ?? null,
                 is_forwarded: row.is_forwarded ?? false,
@@ -1478,7 +2284,13 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
             };
         });
 
-        const result = {
+        // Cache the result for future requests
+        if (messages.length > 0) {
+            await cache.setMessages(chatId, page, messages, 120); // Cache for 2 minutes
+            console.log(`[Cache Set] Cached ${messages.length} messages for chat ${chatId}, page ${page}`);
+        }
+
+        return {
             success: true,
             messages,
             pagination: {
@@ -1486,20 +2298,53 @@ export async function getPaginatedMessagesAction(chatId: string, page = 1, limit
                 limit,
                 total: count || 0,
                 totalPages: Math.ceil((count || 0) / limit),
+                hasNext: page < Math.ceil((count || 0) / limit),
             },
         };
-        messagesCache.set(cacheKey, {
-            value: result,
-            expiresAt: now + MESSAGES_CACHE_TTL_MS,
-        });
-        return result;
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal memuat pesan WhatsApp') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal memuat pesan WhatsApp';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat mengambil pesan. Silakan coba lagi.';
+                    break;
+                case ErrorCode.CACHE_CONNECTION_ERROR:
+                    userMessage = 'Sistem cache sedang bermasalah. Pesan akan dimuat tanpa cache.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
-export async function getMessageAction(messageId: string) {
+interface GetMessageResponse {
+    success: boolean;
+    message?: Message;
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function getMessageAction(messageId: string): Promise<GetMessageResponse> {
     const supabase = await createClient();
+    const requestId = Math.random().toString(36).substring(7);
+    const context: ErrorContext = { requestId, operation: 'getMessage', messageId };
+    
     try {
         const { data, error } = await supabase
             .from('wa_messages')
@@ -1548,17 +2393,19 @@ export async function getMessageAction(messageId: string) {
 
         let senderContact = null;
         if (row.chat_id.endsWith('@g.us') && row.raw_payload) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const payload = row.raw_payload as Record<string, any>;
+            const payload = row.raw_payload as WahaMessagePayload;
             const author = payload.author || payload._data?.author || payload.participant;
             if (typeof author === 'string') {
-                const { data: contact } = await supabase
+                const { data: contact, error: contactError } = await supabase
                     .from('wa_contacts')
                     .select('id, wa_id:wa_jid, name:display_name, phone, avatar_url, last_message_at')
                     .eq('wa_jid', author)
                     .single();
                 
-                if (contact) {
+                if (contactError) {
+                    // Log but don't throw - sender contact is optional
+                    errorHandler.handleError(contactError, { ...context, operation: 'fetch sender contact' }, ErrorSeverity.LOW);
+                } else if (contact) {
                     senderContact = contact;
                 }
             }
@@ -1589,18 +2436,74 @@ export async function getMessageAction(messageId: string) {
 
         return { success: true, message };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal memuat pesan') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal memuat pesan';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.NOT_FOUND:
+                    userMessage = 'Pesan tidak ditemukan';
+                    break;
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat mengambil pesan. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
-export async function getChatMetricsAction() {
+interface GetChatMetricsResponse {
+    success: boolean;
+    metrics?: {
+        totalChats: number;
+        responseRate: number;
+        conversionRate: number;
+    };
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function getChatMetricsAction(): Promise<GetChatMetricsResponse> {
     const supabase = await createClient();
+    const requestId = Math.random().toString(36).substring(7);
+    const context: ErrorContext = { requestId, operation: 'getChatMetrics' };
+    
     try {
-        const [{ count: totalChats }, { count: inboundMessages }, { count: outboundMessages }] = await Promise.all([
+        const [
+            { count: totalChats, error: totalChatsError },
+            { count: inboundMessages, error: inboundMessagesError },
+            { count: outboundMessages, error: outboundMessagesError }
+        ] = await Promise.all([
             supabase.from('wa_chats').select('id', { count: 'exact', head: true }),
             supabase.from('wa_messages').select('id', { count: 'exact', head: true }).eq('direction', 'inbound'),
             supabase.from('wa_messages').select('id', { count: 'exact', head: true }).eq('direction', 'outbound'),
         ]);
+
+        // Check for errors
+        if (totalChatsError) {
+            throw createDatabaseError('fetch total chats count', totalChatsError, context);
+        }
+        if (inboundMessagesError) {
+            throw createDatabaseError('fetch inbound messages count', inboundMessagesError, context);
+        }
+        if (outboundMessagesError) {
+            throw createDatabaseError('fetch outbound messages count', outboundMessagesError, context);
+        }
 
         const responseRate = inboundMessages && inboundMessages > 0
             ? Math.min(100, Math.round(((outboundMessages ?? 0) / inboundMessages) * 100))
@@ -1618,12 +2521,56 @@ export async function getChatMetricsAction() {
             },
         };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal memuat metrik chat') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal memuat metrik chat';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat menghitung metrik. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
-export async function getWhatsAppMonitoringMetricsAction() {
+interface GetWhatsAppMonitoringMetricsResponse {
+    success: boolean;
+    monitoring?: {
+        connectionStatus: string;
+        isHealthy: boolean;
+        sentCount: number;
+        failedCount: number;
+        delayedCount: number;
+        errorRate: number;
+        alerts: DeliveryAnomaly[];
+        fallbackCount24h: number;
+        fallbackTopReasons: Array<{ reason: string; count: number }>;
+    };
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function getWhatsAppMonitoringMetricsAction(): Promise<GetWhatsAppMonitoringMetricsResponse> {
     const supabase = await createClient();
+    const requestId = Math.random().toString(36).substring(7);
+    const context: ErrorContext = { requestId, operation: 'getWhatsAppMonitoringMetrics' };
+    
     try {
         const now = Date.now();
         const last15Min = new Date(now - 15 * 60 * 1000).toISOString();
@@ -1661,6 +2608,21 @@ export async function getWhatsAppMonitoringMetricsAction() {
                 .limit(300),
         ]);
 
+        // Check for database errors in results
+        const errors = [
+            { result: sentResult, name: 'sent messages count' },
+            { result: failedResult, name: 'failed messages count' },
+            { result: delayedResult, name: 'delayed messages' },
+            { result: anomalyResult, name: 'delivery anomalies' },
+            { result: fallbackResult, name: 'fallback logs' }
+        ];
+
+        for (const { result, name } of errors) {
+            if (result.error) {
+                throw createDatabaseError(`fetch ${name}`, result.error, context);
+            }
+        }
+
         const delayedCount =
             delayedResult.data?.filter((item) => {
                 const createdAt = new Date((item.created_at as string) || 0).getTime();
@@ -1673,7 +2635,12 @@ export async function getWhatsAppMonitoringMetricsAction() {
         const failedCount = failedResult.count ?? 0;
         const totalCount = sentCount + failedCount;
         const errorRate = totalCount > 0 ? Number(((failedCount / totalCount) * 100).toFixed(2)) : 0;
-        const connectionStatus = sessionResult.success ? sessionResult.status?.status || 'UNKNOWN' : 'UNKNOWN';
+        
+        // Handle sessionResult which could be StructuredError or success object
+        let connectionStatus = 'UNKNOWN';
+        if ('success' in sessionResult && sessionResult.success) {
+            connectionStatus = sessionResult.status?.status || 'UNKNOWN';
+        }
         const isHealthy = connectionStatus === 'WORKING' && errorRate === 0 && delayedCount === 0;
         const fallbackCount24h = fallbackResult.count ?? 0;
         const fallbackReasonMap = new Map<string, number>();
@@ -1704,7 +2671,30 @@ export async function getWhatsAppMonitoringMetricsAction() {
             },
         };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal memuat monitoring WhatsApp') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal memuat monitoring WhatsApp';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat mengambil data monitoring. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
@@ -1714,8 +2704,18 @@ export interface SegmentFilter {
     projectStatus?: string;
 }
 
-export async function countBroadcastRecipientsAction(filters: SegmentFilter) {
+interface CountBroadcastRecipientsResponse {
+    count: number;
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function countBroadcastRecipientsAction(filters: SegmentFilter): Promise<CountBroadcastRecipientsResponse> {
     const supabase = await createClient();
+    const requestId = Math.random().toString(36).substring(7);
+    const context: ErrorContext = { requestId, operation: 'countBroadcastRecipients', filters };
+    
     try {
         let query = supabase
             .from('wa_contacts')
@@ -1735,18 +2735,26 @@ export async function countBroadcastRecipientsAction(filters: SegmentFilter) {
             // Complex filtering on many-to-many is hard with simple query builder
             // We'll use a subquery approach for labels:
             // Get chat_ids that have these labels first
-            const { data: chatsWithLabels } = await supabase
+            const { data: chatsWithLabels, error: chatsWithLabelsError } = await supabase
                 .from('wa_chat_labels')
                 .select('chat_id')
                 .in('label_id', filters.labelIds);
             
+            if (chatsWithLabelsError) {
+                throw createDatabaseError('fetch chats with labels', chatsWithLabelsError, context);
+            }
+            
             if (chatsWithLabels && chatsWithLabels.length > 0) {
                 const chatIds = chatsWithLabels.map(c => c.chat_id);
                 // Now find contacts associated with these chats
-                const { data: contactsWithChats } = await supabase
+                const { data: contactsWithChats, error: contactsWithChatsError } = await supabase
                     .from('wa_chats')
                     .select('contact_id')
                     .in('id', chatIds);
+                
+                if (contactsWithChatsError) {
+                    throw createDatabaseError('fetch contacts with chats', contactsWithChatsError, context);
+                }
                 
                 if (contactsWithChats && contactsWithChats.length > 0) {
                     const contactIds = contactsWithChats.map(c => c.contact_id);
@@ -1761,26 +2769,98 @@ export async function countBroadcastRecipientsAction(filters: SegmentFilter) {
 
         const { count, error } = await query;
         
-        if (error) throw error;
+        if (error) {
+            throw createDatabaseError('count broadcast recipients', error, context);
+        }
         return { count: count || 0 };
     } catch (error: unknown) {
-        return { count: 0, error: getErrorMessage(error) };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal menghitung jumlah penerima broadcast';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat menghitung penerima. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            count: 0, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
-export async function getQuickRepliesAction() {
+interface QuickReply {
+    id: string;
+    title: string;
+    body_template: string;
+    shortcut?: string;
+    message?: string;
+    is_active?: boolean;
+    created_at?: string;
+    updated_at?: string;
+}
+
+interface GetQuickRepliesResponse {
+    success: boolean;
+    replies?: QuickReply[];
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function getQuickRepliesAction(): Promise<GetQuickRepliesResponse> {
     const supabase = await createClient();
+    const requestId = Math.random().toString(36).substring(7);
+    const context: ErrorContext = { requestId, operation: 'getQuickReplies' };
+    
     try {
         const { data: replies, error } = await supabase
             .from('wa_quick_replies')
-            .select('*')
+            .select('id, title, body_template, shortcut, message, is_active, created_at, updated_at')
             .eq('is_active', true)
             .order('title');
             
-        if (error) throw error;
-        return { success: true, replies };
+        if (error) {
+            throw createDatabaseError('fetch quick replies', error, context);
+        }
+        
+        return { success: true, replies: replies || [] };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error) };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        let userMessage = 'Gagal memuat quick replies';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat mengambil quick replies. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
@@ -1792,8 +2872,19 @@ export type AutoReplyTemplate = {
     is_active?: boolean;
 };
 
-export async function getAutoReplyTemplatesAction() {
+interface GetAutoReplyTemplatesResponse {
+    success: boolean;
+    templates?: AutoReplyTemplate[];
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function getAutoReplyTemplatesAction(): Promise<GetAutoReplyTemplatesResponse> {
     const supabase = await createClient();
+    const requestId = Math.random().toString(36).substring(7);
+    const context: ErrorContext = { requestId, operation: 'getAutoReplyTemplates' };
+    
     try {
         const { data, error } = await supabase
             .from('wa_quick_replies')
@@ -1801,10 +2892,35 @@ export async function getAutoReplyTemplatesAction() {
             .ilike('code', 'AUTO_%')
             .order('code', { ascending: true });
 
-        if (error) throw error;
+        if (error) {
+            throw createDatabaseError('fetch auto-reply templates', error, context);
+        }
+        
         return { success: true, templates: data as AutoReplyTemplate[] };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal memuat auto-reply templates') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        let userMessage = 'Gagal memuat auto-reply templates';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat mengambil templates. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
@@ -1891,93 +3007,86 @@ export async function createBroadcastCampaignAction(name: string, template: stri
     }
 }
 
-export async function sendBroadcastAction(campaignId: string, template: string) {
+interface SendBroadcastResponse {
+    success: boolean;
+    error?: string;
+    errorCode?: string;
+    errorSeverity?: string;
+}
+
+export async function sendBroadcastAction(campaignId: string, template: string): Promise<SendBroadcastResponse> {
     const supabase = await createClient();
+    const requestId = crypto.randomUUID();
+    const context: ErrorContext = {
+        operation: 'sendBroadcast',
+        component: 'whatsapp-action',
+        requestId,
+        metadata: { campaignId, template }
+    };
+
     try {
-        // 1. Get campaign to read filters
         const { data: campaign, error: fetchError } = await supabase
             .from('wa_broadcast_campaigns')
             .select('*')
             .eq('id', campaignId)
             .single();
             
-        if (fetchError || !campaign) throw new Error('Kampanye tidak ditemukan');
+        if (fetchError || !campaign) {
+            throw createNotFoundError('Kampanye tidak ditemukan', undefined, context);
+        }
 
         const filters = campaign.segment_filter_json as SegmentFilter;
 
         const { error: campaignError } = await supabase
             .from('wa_broadcast_campaigns')
-            .update({ status: 'processing', updated_at: new Date().toISOString() })
+            .update({ status: 'queued', updated_at: new Date().toISOString() })
             .eq('id', campaignId);
 
-        if (campaignError) throw campaignError;
-
-        // 2. Fetch recipients based on filters
-        let query = supabase
-            .from('wa_contacts')
-            .select('wa_jid, display_name, id');
-
-        // Apply filters (duplicate logic from count - refactor if possible but keeping simple for now)
-        if (filters?.region) {
-            query = query.eq('region', filters.region);
+        if (campaignError) {
+            throw createDatabaseError('Gagal update status kampanye', campaignError, context);
         }
 
-        if (filters?.labelIds && filters.labelIds.length > 0) {
-             const { data: chatsWithLabels } = await supabase
-                .from('wa_chat_labels')
-                .select('chat_id')
-                .in('label_id', filters.labelIds);
-            
-            if (chatsWithLabels && chatsWithLabels.length > 0) {
-                const chatIds = chatsWithLabels.map(c => c.chat_id);
-                const { data: contacts } = await supabase
-                    .from('wa_chats')
-                    .select('contact_id')
-                    .in('id', chatIds);
-                
-                if (contacts && contacts.length > 0) {
-                    const contactIds = contacts.map(c => c.contact_id);
-                    query = query.in('id', contactIds);
-                } else {
-                    query = query.in('id', []); // No matches
-                }
-            } else {
-                query = query.in('id', []); // No matches
-            }
+        const { error: jobError } = await supabase.from('wa_broadcast_jobs').insert({
+            campaign_id: campaign.id,
+            template,
+            filters,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+        });
+
+        if (jobError) {
+            throw createDatabaseError('Gagal membuat job broadcast', jobError, context);
         }
 
-        const { data: contacts } = await query;
-
-
-        const recipients = contacts || [];
-        let successCount = 0;
-        let failedCount = 0;
-
-        // Send messages
-        for (const contact of recipients) {
-            try {
-                const message = template.replace('{{name}}', contact.display_name || 'Pelanggan');
-                const result = await waha.sendMessage(contact.wa_jid, message);
-                if (result?.id) {
-                    successCount++;
-                } else {
-                    failedCount++;
-                }
-                // Rate limiting
-                await new Promise(resolve => setTimeout(resolve, 500));
-            } catch {
-                failedCount++;
-            }
-        }
-
-        await supabase
-            .from('wa_broadcast_campaigns')
-            .update({ status: 'completed', updated_at: new Date().toISOString() })
-            .eq('id', campaignId);
-
-        return { success: true, successCount, failedCount };
+        return { success: true };
     } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error, 'Gagal mengirim broadcast') };
+        const structuredError = errorHandler.handleError(error, context);
+        
+        // Return user-friendly error message based on error type
+        let userMessage = 'Gagal mengirim broadcast WhatsApp';
+        
+        if (error instanceof WhatsAppError) {
+            switch (error.code) {
+                case ErrorCode.NOT_FOUND:
+                    userMessage = 'Kampanye tidak ditemukan';
+                    break;
+                case ErrorCode.DATABASE_CONNECTION_ERROR:
+                    userMessage = 'Koneksi database bermasalah. Silakan coba lagi.';
+                    break;
+                case ErrorCode.DATABASE_QUERY_ERROR:
+                    userMessage = 'Terjadi kesalahan saat memproses broadcast. Silakan coba lagi.';
+                    break;
+                default:
+                    userMessage = error.message;
+            }
+        }
+        
+        return { 
+            success: false, 
+            error: userMessage,
+            errorCode: structuredError.code,
+            errorSeverity: structuredError.severity
+        };
     }
 }
 
