@@ -2175,7 +2175,6 @@ export async function getPaginatedMessagesAction(
                 status,
                 sent_at,
                 created_at,
-                updated_at,
                 quoted_message_id,
                 is_forwarded,
                 is_deleted,
@@ -2210,7 +2209,6 @@ export async function getPaginatedMessagesAction(
             status: string;
             sent_at: string;
             created_at: string;
-            updated_at: string;
             quoted_message_id?: string | null;
             is_forwarded?: boolean | null;
             is_deleted?: boolean | null;
@@ -2272,7 +2270,6 @@ export async function getPaginatedMessagesAction(
                 sender_type: row.sender_type as 'customer' | 'agent' | 'system',
                 status: row.status,
                 created_at: row.created_at,
-                updated_at: row.updated_at,
                 sent_at: row.sent_at,
                 quoted_message_id: row.quoted_message_id ?? null,
                 is_forwarded: row.is_forwarded ?? false,
@@ -2828,7 +2825,7 @@ export async function getQuickRepliesAction(): Promise<GetQuickRepliesResponse> 
     try {
         const { data: replies, error } = await supabase
             .from('wa_quick_replies')
-            .select('id, title, body_template, shortcut, message, is_active, created_at, updated_at')
+            .select('id, title, body_template, is_active, created_at, updated_at')
             .eq('is_active', true)
             .order('title');
             

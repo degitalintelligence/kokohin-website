@@ -169,8 +169,10 @@ class RedisClient {
         this.isConnected = true;
       });
 
-      this.client.on('error', (err: Error) => {
-        console.error('[Redis] Connection error:', err.message);
+      this.client.on('error', (...args: unknown[]) => {
+        const err = args[0];
+        const message = err instanceof Error ? err.message : String(err ?? 'Unknown error');
+        console.error('[Redis] Connection error:', message);
         this.isConnected = false;
       });
 
