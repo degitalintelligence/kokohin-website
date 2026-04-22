@@ -165,7 +165,7 @@ export async function getBasicSettings() {
     const { data } = await supabase
         .from('site_settings')
         .select('key,value')
-        .in('key', ['site_name','support_email','support_phone','contact_address','contact_hours','company_website','instagram_url','facebook_url','tiktok_url','youtube_url'])
+        .in('key', ['site_name','support_email','support_phone','contact_address','contact_hours','company_website','instagram_url','facebook_url','tiktok_url','youtube_url','map_latitude','map_longitude','map_embed_url'])
     const map: Record<string, string> = {}
     const rows = (data as Array<{ key?: string; value?: string }> | null) ?? []
     rows.forEach((row) => { if (row && row.key) map[row.key] = row.value ?? '' })
@@ -179,11 +179,14 @@ export async function getBasicSettings() {
         instagramUrl: map['instagram_url'] ?? '',
         facebookUrl: map['facebook_url'] ?? '',
         tiktokUrl: map['tiktok_url'] ?? '',
-        youtubeUrl: map['youtube_url'] ?? ''
+        youtubeUrl: map['youtube_url'] ?? '',
+        mapLatitude: map['map_latitude'] ?? '',
+        mapLongitude: map['map_longitude'] ?? '',
+        mapEmbedUrl: map['map_embed_url'] ?? ''
     }
 }
 
-export async function updateBasicSettings(payload: { siteName?: string; supportEmail?: string; supportPhone?: string; contactAddress?: string; contactHours?: string; companyWebsite?: string; instagramUrl?: string; facebookUrl?: string; tiktokUrl?: string; youtubeUrl?: string }) {
+export async function updateBasicSettings(payload: { siteName?: string; supportEmail?: string; supportPhone?: string; contactAddress?: string; contactHours?: string; companyWebsite?: string; instagramUrl?: string; facebookUrl?: string; tiktokUrl?: string; youtubeUrl?: string; mapLatitude?: string; mapLongitude?: string; mapEmbedUrl?: string }) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { error: 'Unauthorized' }
@@ -207,6 +210,9 @@ export async function updateBasicSettings(payload: { siteName?: string; supportE
     const facebookUrl = String(payload.facebookUrl ?? '').trim()
     const tiktokUrl = String(payload.tiktokUrl ?? '').trim()
     const youtubeUrl = String(payload.youtubeUrl ?? '').trim()
+    const mapLatitude = String(payload.mapLatitude ?? '').trim()
+    const mapLongitude = String(payload.mapLongitude ?? '').trim()
+    const mapEmbedUrl = String(payload.mapEmbedUrl ?? '').trim()
     if (siteName && siteName.length < 2) return { error: 'Nama situs terlalu pendek' }
     if (supportEmail && !/^\S+@\S+\.\S+$/.test(supportEmail)) return { error: 'Format email tidak valid' }
     if (supportPhone && !/^\+?\d{6,20}$/.test(supportPhone)) return { error: 'Format nomor telepon tidak valid' }
@@ -215,6 +221,9 @@ export async function updateBasicSettings(payload: { siteName?: string; supportE
     if (facebookUrl && !/^https?:\/\/(www\.)?facebook\.com\/[A-Za-z0-9._%-/]+\/?$/.test(facebookUrl)) return { error: 'Format URL Facebook tidak valid' }
     if (tiktokUrl && !/^https?:\/\/(www\.)?tiktok\.com\/.+/.test(tiktokUrl)) return { error: 'Format URL TikTok tidak valid' }
     if (youtubeUrl && !/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/.+/.test(youtubeUrl)) return { error: 'Format URL YouTube tidak valid' }
+    if (mapLatitude && !/^-?\d+(\.\d+)?$/.test(mapLatitude)) return { error: 'Format latitude tidak valid' }
+    if (mapLongitude && !/^-?\d+(\.\d+)?$/.test(mapLongitude)) return { error: 'Format longitude tidak valid' }
+    if (mapEmbedUrl && !/^https:\/\/(www\.)?google\.[^/]+\/maps\/embed\?/.test(mapEmbedUrl)) return { error: 'Gunakan URL Google Maps Embed yang valid (https://www.google.../maps/embed?...).' }
     const rows: Array<{ key: string; value: string; updated_at: string }> = []
     if (siteName) rows.push({ key: 'site_name', value: siteName, updated_at: new Date().toISOString() })
     if (supportEmail) rows.push({ key: 'support_email', value: supportEmail, updated_at: new Date().toISOString() })
@@ -226,6 +235,9 @@ export async function updateBasicSettings(payload: { siteName?: string; supportE
     if (facebookUrl) rows.push({ key: 'facebook_url', value: facebookUrl, updated_at: new Date().toISOString() })
     if (tiktokUrl) rows.push({ key: 'tiktok_url', value: tiktokUrl, updated_at: new Date().toISOString() })
     if (youtubeUrl) rows.push({ key: 'youtube_url', value: youtubeUrl, updated_at: new Date().toISOString() })
+    if (mapLatitude) rows.push({ key: 'map_latitude', value: mapLatitude, updated_at: new Date().toISOString() })
+    if (mapLongitude) rows.push({ key: 'map_longitude', value: mapLongitude, updated_at: new Date().toISOString() })
+    if (mapEmbedUrl) rows.push({ key: 'map_embed_url', value: mapEmbedUrl, updated_at: new Date().toISOString() })
     if (rows.length === 0) return { error: 'Tidak ada perubahan' }
     const { error } = await supabase.from('site_settings').upsert(rows, { onConflict: 'key' })
     if (error) return { error: error.message }

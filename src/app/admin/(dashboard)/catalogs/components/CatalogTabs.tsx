@@ -25,9 +25,11 @@ export default function CatalogTabs({
   useEffect(() => {
     if (typeof window === 'undefined') return
     const saved = window.sessionStorage.getItem('catalog-tabs-active') as TabId | null
-    if (saved && tabs.some((t) => t.id === saved)) {
+    if (!saved || !tabs.some((t) => t.id === saved) || saved === 'info') return
+    const timerId = window.setTimeout(() => {
       setActiveTab(saved)
-    }
+    }, 0)
+    return () => window.clearTimeout(timerId)
   }, [])
 
   useEffect(() => {
@@ -42,29 +44,31 @@ export default function CatalogTabs({
   return (
     <div>
       <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-6" aria-label="Tabs" role="tablist">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              id={`tab-${tab.id}`}
-              type="button"
-              role="tab"
-              aria-controls={`panel-${tab.id}`}
-              aria-selected={activeTab === tab.id}
-              onClick={() => {
-                setActiveTab(tab.id as TabId)
-              }}
-              className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-                activeTab === tab.id
-                  ? 'border-[#E30613] text-[#E30613]'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <tab.icon className="w-4 h-4" />
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+        <div className="overflow-x-auto">
+          <nav className="-mb-px flex space-x-4 md:space-x-6 min-w-max" aria-label="Tabs" role="tablist">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                id={`tab-${tab.id}`}
+                type="button"
+                role="tab"
+                aria-controls={`panel-${tab.id}`}
+                aria-selected={activeTab === tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id as TabId)
+                }}
+                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+                  activeTab === tab.id
+                    ? 'border-[#E30613] text-[#E30613]'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <tab.icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
       </div>
       {saveBar && (
         <div className="mt-3 flex justify-end">

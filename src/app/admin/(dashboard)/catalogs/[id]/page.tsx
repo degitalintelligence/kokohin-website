@@ -11,6 +11,7 @@ import CatalogSaveButton from '../components/CatalogSaveButton'
 import CatalogEditUXController from '../components/CatalogEditUXController'
 import CatalogTitleField from '../components/CatalogTitleField'
 import ImageUpload from '../components/ImageUpload'
+import CatalogBasePriceUnitField from '../components/CatalogBasePriceUnitField'
 
 // import styles from '../../page.module.css'
 import { updateCatalog } from '@/app/actions/catalogs'
@@ -70,19 +71,39 @@ export default async function AdminCatalogDetailPage({
   const finishingList = withPriority(['finishing', 'coating', 'cat'])
   const isianList = withPriority(['isian', 'infill'])
 
-  // Fetch catalog-specific data
-  const [{ data: addons }, { data: hppComponentRows }] = await Promise.all([
+  const hasHppNoteColumn = async () => {
+    const { data } = await supabase
+      .from('information_schema.columns')
+      .select('column_name')
+      .eq('table_schema', 'public')
+      .eq('table_name', 'catalog_hpp_components')
+      .eq('column_name', 'note')
+      .maybeSingle()
+    return !!data
+  }
+
+  const [hasNoteColumn, addonsResult] = await Promise.all([
+    hasHppNoteColumn(),
     supabase
       .from('catalog_addons')
       .select('id, material_id, basis, qty_per_basis, is_optional, material:material_id(id, name, base_price_per_unit, unit, category)')
       .eq('catalog_id', id)
       .order('created_at', { ascending: true }),
-    supabase
-      .from('catalog_hpp_components')
-      .select('id, material_id, source_catalog_id, quantity, section')
-      .eq('catalog_id', id)
-      .order('created_at', { ascending: true })
-  ]);
+  ])
+
+  const { data: hppComponentRows } = hasNoteColumn
+    ? await supabase
+        .from('catalog_hpp_components')
+        .select('id, material_id, source_catalog_id, quantity, section, note')
+        .eq('catalog_id', id)
+        .order('created_at', { ascending: true })
+    : await supabase
+        .from('catalog_hpp_components')
+        .select('id, material_id, source_catalog_id, quantity, section')
+        .eq('catalog_id', id)
+        .order('created_at', { ascending: true })
+
+  const addons = addonsResult.data
 
   const hppMaterialIds = (hppComponentRows ?? [])
     .map((c) => c.material_id)
@@ -113,6 +134,13 @@ export default async function AdminCatalogDetailPage({
   const { data: catalogCategories } = await supabase
     .from('catalog_categories')
     .select('code, name, sort_order, require_atap, require_rangka, require_isian, require_finishing')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true })
+
+  const { data: materialCategories } = await supabase
+    .from('material_categories')
+    .select('code, name, sort_order')
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true })
@@ -192,14 +220,14 @@ export default async function AdminCatalogDetailPage({
 
   return (
     <div className="flex-1 h-full pb-56 md:pb-44 scroll-smooth">
-      <div className="bg-white shadow-md rounded-lg p-6 flex justify-between items-center">
-        <div>
+      <div className="bg-white shadow-md rounded-lg p-6 flex flex-wrap gap-4 justify-between items-start">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-800">Edit Katalog</h1>
-          <p className="text-gray-500 mt-1">Ubah detail paket {catalog.title}</p>
-          <p className="mt-1 text-xs text-gray-500">Katalog &raquo; {catalog.title}</p>
+          <p className="text-gray-500 mt-1 break-words">Ubah detail paket {catalog.title}</p>
+          <p className="mt-1 text-xs text-gray-500 break-words">Katalog &raquo; {catalog.title}</p>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex gap-2">
+        <div className="flex flex-col items-stretch sm:items-end gap-1 w-full sm:w-auto">
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <Link href="/admin/catalogs" className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors flex items-center">
             ← Kembali
           </Link>
@@ -361,6 +389,10 @@ export default async function AdminCatalogDetailPage({
                     initialComponents={hppComponents ?? []}
                     copySourceCatalogs={copySourceCatalogs ?? []}
                     sections={hppSections ?? []}
+                    materialCategories={(materialCategories ?? []).map((item) => ({
+                      code: String((item as { code?: string }).code ?? ''),
+                      name: String((item as { name?: string }).name ?? ''),
+                    }))}
                   />
                 </div>
               </div>
@@ -402,15 +434,7 @@ export default async function AdminCatalogDetailPage({
                         <p className="text-xs text-gray-500 mb-2">
                           Unit perhitungan harga.
                         </p>
-                        <select
-                          name="base_price_unit"
-                          defaultValue={catalog.base_price_unit || 'm2'}
-                          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#E30613]/20 focus:border-[#E30613] transition-all"
-                        >
-                          <option value="m2">m² (Per Meter Persegi)</option>
-                          <option value="m1">m¹ (Per Meter Lari)</option>
-                          <option value="unit">unit (Per Unit/Pcs)</option>
-                        </select>
+                        <CatalogBasePriceUnitField initialValue={catalog.base_price_unit || 'm2'} />
                       </div>
                   </div>
 
@@ -540,6 +564,10 @@ export default async function AdminCatalogDetailPage({
 
                   <CatalogAddonsEditor
                     materials={allMaterials}
+                    materialCategories={(materialCategories ?? []).map((item) => ({
+                      code: String((item as { code?: string }).code ?? ''),
+                      name: String((item as { name?: string }).name ?? ''),
+                    }))}
                     initialAddons={(addons ?? []).map((a) => {
                       type AddonMaterial = {
                         id: string;
@@ -574,7 +602,7 @@ export default async function AdminCatalogDetailPage({
       <div aria-hidden className="h-52 md:h-40 lg:h-32" />
 
       {/* Sticky Save Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 md:left-64">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 md:left-[var(--admin-sidebar-width,16rem)]">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="hidden md:block">
             <p className="text-sm font-medium text-gray-500">Katalog: <span className="text-gray-900 font-bold">{catalog.title}</span></p>

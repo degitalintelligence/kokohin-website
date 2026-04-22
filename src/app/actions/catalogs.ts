@@ -69,6 +69,17 @@ async function getCatalogCategoryRules(
   }
 }
 
+async function hasCatalogHppNoteColumn(supabase: SupabaseClient): Promise<boolean> {
+  const { data } = await supabase
+    .from('information_schema.columns')
+    .select('column_name')
+    .eq('table_schema', 'public')
+    .eq('table_name', 'catalog_hpp_components')
+    .eq('column_name', 'note')
+    .maybeSingle()
+  return !!data
+}
+
 export async function updateHppPerUnit(catalogId: string, userId?: string) {
   const supabase = await createClient()
 
@@ -203,11 +214,14 @@ export async function fetchCatalogHppComponents(catalogId: string) {
     throw new Error('ID katalog sumber tidak valid')
   }
 
+  const includeNote = await hasCatalogHppNoteColumn(supabase)
+  const selectFields = includeNote
+    ? 'id, material_id, source_catalog_id, quantity, section, note, material:material_id(id, name, base_price_per_unit, unit, category), source_catalog:source_catalog_id(id, title, hpp_per_unit)'
+    : 'id, material_id, source_catalog_id, quantity, section, material:material_id(id, name, base_price_per_unit, unit, category), source_catalog:source_catalog_id(id, title, hpp_per_unit)'
+
   const { data, error } = await supabase
     .from('catalog_hpp_components')
-    .select(
-      'id, material_id, source_catalog_id, quantity, section, material:material_id(id, name, base_price_per_unit, unit, category), source_catalog:source_catalog_id(id, title, hpp_per_unit)',
-    )
+    .select(selectFields)
     .eq('catalog_id', catalogId)
     .order('created_at', { ascending: true })
 
@@ -422,7 +436,9 @@ export async function updateCatalog(formData: FormData) {
       source_catalog_id?: string | null
       quantity: number
       section?: string
+      note?: string
     }> = JSON.parse(hppComponentsJson) ?? []
+    const includeHppNote = await hasCatalogHppNoteColumn(supabase)
 
     let imageUrl = currentImageUrl
     const newImageUrl = await uploadImage(imageFile, supabase)
@@ -476,6 +492,7 @@ export async function updateCatalog(formData: FormData) {
           source_catalog_id: validSourceCatalogId,
           quantity: typeof c.quantity === 'number' ? c.quantity : 0,
           section: c.section || 'lainnya',
+          ...(includeHppNote ? { note: String(c.note || '') } : {}),
         })
         .eq('id', c.id as string)
       if (uErr) throw new Error(`Gagal mengupdate komponen HPP: ${uErr.message}`)
@@ -490,6 +507,7 @@ export async function updateCatalog(formData: FormData) {
           c.source_catalog_id && String(c.source_catalog_id).length > 0 ? c.source_catalog_id : null,
         quantity: Number(c.quantity) > 0 ? Number(c.quantity) : 1,
         section: c.section || 'lainnya',
+        ...(includeHppNote ? { note: String(c.note || '') } : {}),
       }))
       const { error: insErr } = await supabase.from('catalog_hpp_components').insert(rows)
       if (insErr) throw new Error(`Gagal menambah komponen HPP: ${insErr.message}`)
@@ -702,8 +720,10 @@ export async function saveCatalogHpp(formData: FormData) {
     source_catalog_id?: string | null
     quantity: number
     section?: string
+    note?: string
   }> =
     JSON.parse(hppComponentsJson) ?? []
+  const includeHppNote = await hasCatalogHppNoteColumn(supabase)
 
   const payload = {
     std_calculation: stdCalculation,
@@ -740,6 +760,7 @@ export async function saveCatalogHpp(formData: FormData) {
         source_catalog_id: validSourceCatalogId,
         quantity: typeof c.quantity === 'number' ? c.quantity : 0,
         section: c.section || 'lainnya',
+        ...(includeHppNote ? { note: String(c.note || '') } : {}),
       })
       .eq('id', c.id as string)
     if (uErr) throw new Error(`Gagal mengupdate komponen HPP: ${uErr.message}`)
@@ -754,6 +775,7 @@ export async function saveCatalogHpp(formData: FormData) {
         c.source_catalog_id && String(c.source_catalog_id).length > 0 ? c.source_catalog_id : null,
       quantity: Number(c.quantity) > 0 ? Number(c.quantity) : 1,
       section: c.section || 'lainnya',
+      ...(includeHppNote ? { note: String(c.note || '') } : {}),
     }))
     const { error: insErr } = await supabase.from('catalog_hpp_components').insert(rows)
     if (insErr) throw new Error(`Gagal menambah komponen HPP: ${insErr.message}`)

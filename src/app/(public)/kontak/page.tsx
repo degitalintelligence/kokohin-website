@@ -10,6 +10,41 @@ export const metadata: Metadata = {
 }
 export const revalidate = 600
 const ContactForm = dynamic(() => import('@/components/contact/ContactForm'))
+const DEFAULT_MAP_EMBED_URL = 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3965.257642676839!2d106.86296737586948!3d-6.360699993629342!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2e69ec6555555555%3A0x2e69ec6555555555!2sCimanggis%2C%20Depok%20City%2C%20West%20Java!5e0!3m2!1sen!2sid!4v1708490000000!5m2!1sen!2sid'
+
+function resolveMapEmbedUrl(
+    mapEmbedUrl: string | undefined,
+    latitude: string | undefined,
+    longitude: string | undefined,
+) {
+    const lat = Number(latitude || '')
+    const lng = Number(longitude || '')
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        return `https://www.google.com/maps?q=${lat},${lng}&z=16&output=embed`
+    }
+    const embed = String(mapEmbedUrl || '').trim()
+    if (/^https:\/\/(www\.)?google\.[^/]+\/maps\/embed\?/.test(embed)) {
+        return embed
+    }
+    return DEFAULT_MAP_EMBED_URL
+}
+
+function resolveMapExternalUrl(
+    mapEmbedUrl: string | undefined,
+    latitude: string | undefined,
+    longitude: string | undefined,
+) {
+    const lat = Number(latitude || '')
+    const lng = Number(longitude || '')
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+    }
+    const embed = String(mapEmbedUrl || '').trim()
+    if (/^https:\/\/(www\.)?google\.[^/]+\/maps\/embed\?/.test(embed)) {
+        return embed.replace('/maps/embed', '/maps')
+    }
+    return 'https://www.google.com/maps'
+}
 
 export default async function KontakPage() {
     const supabase = await createClient()
@@ -17,7 +52,10 @@ export default async function KontakPage() {
         .from('services')
         .select('id, name')
         .order('name', { ascending: true })
-    const { data: contactRows } = await supabase.from('site_settings').select('key,value').in('key',['support_email','support_phone','contact_address','contact_hours'])
+    const { data: contactRows } = await supabase
+        .from('site_settings')
+        .select('key,value')
+        .in('key',['support_email','support_phone','contact_address','contact_hours','map_latitude','map_longitude','map_embed_url'])
     const contactMap: Record<string,string> = {}
     ;((contactRows as Array<{ key?: string; value?: string }> | null) ?? []).forEach((row) => { if (row && row.key) contactMap[row.key] = row.value ?? '' })
 
@@ -53,6 +91,16 @@ export default async function KontakPage() {
             desc: contactMap['contact_hours'] || 'Senin - Sabtu: 08:00 - 17:00 WIB' 
         },
     ]
+    const mapEmbedUrl = resolveMapEmbedUrl(
+        contactMap['map_embed_url'],
+        contactMap['map_latitude'],
+        contactMap['map_longitude'],
+    )
+    const mapExternalUrl = resolveMapExternalUrl(
+        contactMap['map_embed_url'],
+        contactMap['map_latitude'],
+        contactMap['map_longitude'],
+    )
 
     return (
         <>
@@ -98,7 +146,7 @@ export default async function KontakPage() {
 
                             <div className="w-full aspect-video rounded-xl overflow-hidden shadow-md h-[300px]">
                                 <iframe
-                                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3965.257642676839!2d106.86296737586948!3d-6.360699993629342!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2e69ec6555555555%3A0x2e69ec6555555555!2sCimanggis%2C%20Depok%20City%2C%20West%20Java!5e0!3m2!1sen!2sid!4v1708490000000!5m2!1sen!2sid"
+                                    src={mapEmbedUrl}
                                     width="100%"
                                     height="100%"
                                     className="border-0"
@@ -106,6 +154,16 @@ export default async function KontakPage() {
                                     loading="lazy"
                                     referrerPolicy="no-referrer-when-downgrade"
                                 ></iframe>
+                            </div>
+                            <div className="mt-3">
+                                <a
+                                    href={mapExternalUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center rounded-lg border border-[#E30613]/30 px-4 py-2 text-sm font-semibold text-[#E30613] hover:bg-[#E30613]/5 transition-colors"
+                                >
+                                    Buka di Google Maps
+                                </a>
                             </div>
                         </div>
 

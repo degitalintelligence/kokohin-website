@@ -136,7 +136,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                         <h2 className={styles.sectionTitle}>Informasi Umum</h2>
                     </div>
                     <div className="p-5">
-                        <BasicSettingsForm siteName={basic.siteName} supportEmail={basic.supportEmail} supportPhone={basic.supportPhone} contactAddress={basic.contactAddress} contactHours={basic.contactHours} companyWebsite={basic.companyWebsite} instagramUrl={basic.instagramUrl} facebookUrl={basic.facebookUrl} tiktokUrl={basic.tiktokUrl} youtubeUrl={basic.youtubeUrl} />
+                        <BasicSettingsForm siteName={basic.siteName} supportEmail={basic.supportEmail} supportPhone={basic.supportPhone} contactAddress={basic.contactAddress} contactHours={basic.contactHours} companyWebsite={basic.companyWebsite} instagramUrl={basic.instagramUrl} facebookUrl={basic.facebookUrl} tiktokUrl={basic.tiktokUrl} youtubeUrl={basic.youtubeUrl} mapLatitude={basic.mapLatitude} mapLongitude={basic.mapLongitude} mapEmbedUrl={basic.mapEmbedUrl} />
                     </div>
                 </div>
             )}

@@ -3,27 +3,37 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Material } from '@/lib/types'
 import { Plus, Trash2, Package, Ruler, CheckSquare, DollarSign, Wrench } from 'lucide-react'
+import SearchDropdown, { type SearchDropdownOption } from './SearchDropdown'
 
 type AddonRow = {
   id?: string
   material_id: string
+  material_category?: string
   is_optional: boolean
   material?: Pick<Material, 'id' | 'name' | 'base_price_per_unit' | 'unit' | 'category'>
   basis?: 'm2' | 'm1' | 'unit'
   qty_per_basis?: number
 }
 
+type MaterialCategoryOption = {
+  code: string
+  name: string
+}
+
 export default function CatalogAddonsEditor({
   materials,
+  materialCategories = [],
   initialAddons = [],
 }: {
   materials: (Pick<Material, 'id' | 'name' | 'category' | 'base_price_per_unit' | 'unit'>)[]
+  materialCategories?: MaterialCategoryOption[]
   initialAddons?: AddonRow[]
 }) {
   const [rows, setRows] = useState<AddonRow[]>(
     initialAddons.map((a: AddonRow) => ({
       id: a.id,
       material_id: a.material_id,
+      material_category: a.material?.category ?? '',
       is_optional: a.is_optional,
       material: a.material,
       basis: a.basis ?? 'm2',
@@ -32,21 +42,34 @@ export default function CatalogAddonsEditor({
   )
 
   const materialMap = useMemo(() => new Map(materials.map((x) => [x.id, x])), [materials])
+  const materialCategoryNameMap = useMemo(
+    () => new Map(materialCategories.map((item) => [item.code.toLowerCase(), item.name])),
+    [materialCategories],
+  )
   const groupedMaterials = useMemo(() => {
-    const groups: Record<string, typeof materials> = { 
-      atap: [], 
-      frame: [], 
-      finishing: [],
-      isian: [],
-      aksesoris: [], 
-      lainnya: [] 
-    }
+    const groups: Record<string, typeof materials> = {}
     for (const m of materials) {
-      if (groups[m.category]) groups[m.category].push(m)
-      else groups.lainnya.push(m)
+      const key = String(m.category ?? 'lainnya').toLowerCase()
+      if (!groups[key]) groups[key] = []
+      groups[key].push(m)
     }
     return groups
   }, [materials])
+  const materialCategoryOptions = useMemo<SearchDropdownOption[]>(
+    () =>
+      Object.keys(groupedMaterials)
+        .sort((a, b) => a.localeCompare(b))
+        .map((category) => ({
+          value: category,
+          label: materialCategoryNameMap.get(category) ?? category,
+        })),
+    [groupedMaterials, materialCategoryNameMap],
+  )
+  const basisOptions: SearchDropdownOption[] = [
+    { value: 'm2', label: 'm²' },
+    { value: 'm1', label: 'm¹' },
+    { value: 'unit', label: 'unit' },
+  ]
 
   useEffect(() => {
     if (initialAddons.length > 0 && rows.length === 0) {
@@ -54,6 +77,7 @@ export default function CatalogAddonsEditor({
         initialAddons.map((a: AddonRow) => ({
           id: a.id,
           material_id: a.material_id,
+          material_category: a.material?.category ?? '',
           is_optional: a.is_optional,
           material: a.material,
           basis: a.basis ?? 'm2',
@@ -71,6 +95,7 @@ export default function CatalogAddonsEditor({
       ...prev,
       {
         material_id: firstMaterial.id,
+        material_category: firstMaterial.category ?? '',
         is_optional: true,
         basis: 'm2',
         qty_per_basis: 1,
@@ -115,7 +140,7 @@ export default function CatalogAddonsEditor({
         <button
           type="button"
           onClick={addRow}
-          className="flex items-center gap-2 px-4 py-2 bg-[#E30613] text-white rounded-lg hover:bg-[#c50511] transition-all text-sm font-semibold shadow-sm active:scale-95"
+          className="h-10 flex items-center gap-2 px-4 bg-[#E30613] text-white rounded-lg hover:bg-[#c50511] transition-all text-sm font-semibold shadow-sm active:scale-95"
         >
           <Plus className="w-4 h-4" />
           Tambah Baris
@@ -138,6 +163,16 @@ export default function CatalogAddonsEditor({
         ) : (
           rows.map((row, idx) => {
             const mat = materialMap.get(row.material_id)
+            const selectedCategory = String(
+              row.material_category || mat?.category || materialCategoryOptions[0]?.value || '',
+            ).toLowerCase()
+            const materialOptions: SearchDropdownOption[] = (
+              groupedMaterials[selectedCategory] ?? []
+            ).map((item) => ({
+              value: item.id,
+              label: `${item.name}${item.unit ? ` (${item.unit})` : ''}`,
+              keywords: `${item.name} ${item.category ?? ''} ${item.unit ?? ''}`,
+            }))
             return (
               <div 
                 key={idx} 
@@ -151,23 +186,34 @@ export default function CatalogAddonsEditor({
                       <Package className="w-3 h-3 text-gray-400" /> Material
                     </label>
                     <div className="relative">
-                      <select
-                        className="w-full pl-3 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#E30613]/20 focus:border-[#E30613] transition-all appearance-none cursor-pointer"
-                        value={row.material_id}
-                        onChange={(e) => updateRow(idx, { material_id: e.target.value })}
-                      >
-                        {(['atap','frame','aksesoris','lainnya'] as const).map((cat) => (
-                          <optgroup key={cat} label={cat.toUpperCase()} className="font-bold">
-                            {groupedMaterials[cat].map((m) => (
-                              <option key={m.id} value={m.id} className="font-normal text-gray-600">
-                                {m.name}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
-                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                      <div className="space-y-2">
+                        <SearchDropdown
+                          options={materialCategoryOptions}
+                          value={selectedCategory}
+                          onChange={(nextCategory) => {
+                            const firstInCategory = (groupedMaterials[nextCategory] ?? [])[0]
+                            updateRow(idx, {
+                              material_category: nextCategory,
+                              material_id: firstInCategory?.id ?? '',
+                            })
+                          }}
+                          placeholder="Pilih kategori material..."
+                          searchPlaceholder="Cari kategori material..."
+                        />
+                        <SearchDropdown
+                          options={materialOptions}
+                          value={row.material_id}
+                          onChange={(nextMaterialId) =>
+                            updateRow(idx, {
+                              material_id: nextMaterialId,
+                              material_category:
+                                materialMap.get(nextMaterialId)?.category ?? selectedCategory,
+                            })
+                          }
+                          placeholder="Pilih material..."
+                          searchPlaceholder="Cari material..."
+                          disabled={materialOptions.length === 0}
+                        />
                       </div>
                     </div>
                   </div>
@@ -178,15 +224,17 @@ export default function CatalogAddonsEditor({
                       <Ruler className="w-3 h-3 text-gray-400" /> Basis & Qty
                     </label>
                     <div className="flex gap-2">
-                      <select
-                        className="w-24 px-2 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#E30613]/20 focus:border-[#E30613] transition-all"
-                        value={row.basis ?? 'm2'}
-                        onChange={(e) => updateRow(idx, { basis: e.target.value as 'm2' | 'm1' | 'unit' })}
-                      >
-                        <option value="m2">m²</option>
-                        <option value="m1">m¹</option>
-                        <option value="unit">unit</option>
-                      </select>
+                      <div className="w-28">
+                        <SearchDropdown
+                          options={basisOptions}
+                          value={row.basis ?? 'm2'}
+                          onChange={(nextValue) =>
+                            updateRow(idx, { basis: nextValue as 'm2' | 'm1' | 'unit' })
+                          }
+                          placeholder="Basis"
+                          searchPlaceholder="Cari basis..."
+                        />
+                      </div>
                       <input
                         type="number"
                         min={0}
@@ -217,7 +265,7 @@ export default function CatalogAddonsEditor({
                   </div>
 
                   {/* Subtotal Display */}
-                  <div className="lg:col-span-2 relative">
+                  <div className="lg:col-span-2">
                     <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1">
                       <DollarSign className="w-3 h-3 text-gray-400" /> Est. Harga
                     </label>
@@ -232,10 +280,13 @@ export default function CatalogAddonsEditor({
                     <button
                       type="button"
                       onClick={() => removeRow(idx)}
-                      className="absolute -top-1 -right-1 lg:-right-4 lg:top-8 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all lg:opacity-0 lg:group-hover:opacity-100"
+                      className="mt-2 w-full lg:w-auto px-3 py-2 text-xs font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
                       title="Hapus Baris"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <span className="inline-flex items-center gap-1">
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Hapus
+                      </span>
                     </button>
                   </div>
 

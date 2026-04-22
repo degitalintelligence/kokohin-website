@@ -1,12 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Material } from '@/lib/types'
 import {
   Plus,
   Trash2,
   Package,
-  Layers,
   Box,
   DollarSign,
   Calculator,
@@ -16,13 +15,16 @@ import {
   MoveVertical,
 } from 'lucide-react'
 import { fetchCatalogHppComponents } from '@/app/actions/catalogs'
+import SearchDropdown, { type SearchDropdownOption } from './SearchDropdown'
 
 type HppComponentRow = {
   id?: string
   material_id?: string | null
+  material_category?: string
   source_catalog_id?: string | null
   quantity: number
   section?: string
+  note?: string
   material?: Pick<Material, 'id' | 'name' | 'base_price_per_unit' | 'unit' | 'category'>
   source_catalog?: { id: string; title: string; hpp_per_unit?: number | null } | null
 }
@@ -39,6 +41,11 @@ type HppSection = {
   name: string
   sort_order?: number | null
   is_active?: boolean | null
+}
+
+type MaterialCategoryOption = {
+  code: string
+  name: string
 }
 
 type UiRow = {
@@ -60,16 +67,26 @@ const toLegacyNormalized = (value?: string | null): string => {
   return lowered
 }
 
+const formatCategoryLabel = (value: string): string =>
+  value
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+
 export default function CatalogHppEditor({
   materials,
   initialComponents = [],
   copySourceCatalogs = [],
   sections = [],
+  materialCategories = [],
 }: {
-  materials: (Pick<Material, 'id' | 'name' | 'category' | 'base_price_per_unit' | 'unit'>)[]
+  materials: (Pick<Material, 'id' | 'name' | 'category' | 'base_price_per_unit' | 'unit'> & {
+    variant_name?: string | null
+  })[]
   initialComponents?: HppComponentRow[]
   copySourceCatalogs?: CopySourceCatalog[]
   sections?: HppSection[]
+  materialCategories?: MaterialCategoryOption[]
 }) {
   const sectionDefs = useMemo(() => {
     const active = (sections ?? []).filter((item) => item.is_active !== false && !!item.code)
@@ -100,20 +117,25 @@ export default function CatalogHppEditor({
     [sectionDefs],
   )
 
-  const normalizeSection = (value?: string | null): string => {
-    const normalized = toLegacyNormalized(value)
-    if (sectionCodes.includes(normalized)) return normalized
-    if (sectionCodes.includes('lainnya')) return 'lainnya'
-    return sectionCodes[0] ?? 'lainnya'
-  }
+  const normalizeSection = useCallback(
+    (value?: string | null): string => {
+      const normalized = toLegacyNormalized(value)
+      if (sectionCodes.includes(normalized)) return normalized
+      if (sectionCodes.includes('lainnya')) return 'lainnya'
+      return sectionCodes[0] ?? 'lainnya'
+    },
+    [sectionCodes],
+  )
 
   const [rows, setRows] = useState<HppComponentRow[]>(
     initialComponents.map((c: HppComponentRow) => ({
       id: c.id,
       material_id: c.material_id ?? null,
+      material_category: c.material?.category ?? undefined,
       source_catalog_id: c.source_catalog_id ?? null,
       quantity: typeof c.quantity === 'number' ? c.quantity : 0,
       section: toLegacyNormalized(c.section),
+      note: String(c.note ?? ''),
       material: c.material,
       source_catalog: c.source_catalog ?? null,
     })),
@@ -140,18 +162,54 @@ export default function CatalogHppEditor({
   }, [sectionCodes])
 
   const materialMap = useMemo(() => new Map(materials.map((x) => [x.id, x])), [materials])
+  const materialCategoryNameMap = useMemo(
+    () => new Map(materialCategories.map((item) => [item.code.toLowerCase(), item.name])),
+    [materialCategories],
+  )
   const catalogMap = useMemo(() => new Map(copySourceCatalogs.map((x) => [x.id, x])), [copySourceCatalogs])
+  const sectionFilterOptions = useMemo<SearchDropdownOption[]>(
+    () => [
+      { value: 'all', label: 'Semua Segmen' },
+      ...sectionCodes.map((section) => ({
+        value: section,
+        label: sectionNameMap.get(section) ?? section,
+      })),
+    ],
+    [sectionCodes, sectionNameMap],
+  )
+  const rowTypeOptions: SearchDropdownOption[] = [
+    { value: 'material', label: 'Material' },
+    { value: 'catalog', label: 'Katalog' },
+  ]
   const groupedMaterials = useMemo(() => {
     const groups = new Map<string, typeof materials[number][]>()
-    for (const section of sectionCodes) groups.set(section, [])
-    for (const m of materials) {
-      const section = normalizeSection(m.category)
-      const current = groups.get(section) ?? []
-      current.push(m)
-      groups.set(section, current)
+    for (const material of materials) {
+      const categoryKey = String(material.category ?? 'lainnya').toLowerCase()
+      const current = groups.get(categoryKey) ?? []
+      current.push(material)
+      groups.set(categoryKey, current)
     }
     return groups
-  }, [materials, sectionCodes])
+  }, [materials])
+  const materialCategoryOptions = useMemo<SearchDropdownOption[]>(
+    () => {
+      const categories = Array.from(groupedMaterials.keys()).sort((a, b) => a.localeCompare(b))
+      return categories.map((category) => ({
+        value: category,
+        label: materialCategoryNameMap.get(category) ?? formatCategoryLabel(category),
+      }))
+    },
+    [groupedMaterials, materialCategoryNameMap],
+  )
+  const sourceCatalogOptions = useMemo<SearchDropdownOption[]>(
+    () =>
+      copySourceCatalogs.map((catalog) => ({
+        value: catalog.id,
+        label: `${catalog.title} (${catalog.category || 'lainnya'})`,
+        keywords: `${catalog.title} ${catalog.category || ''}`,
+      })),
+    [copySourceCatalogs],
+  )
 
   const addRow = () => {
     const firstMaterial = materials[0]
@@ -160,11 +218,41 @@ export default function CatalogHppEditor({
       ...prev,
       {
         material_id: firstMaterial.id,
+        material_category: String(firstMaterial.category ?? 'lainnya').toLowerCase(),
         source_catalog_id: null,
         quantity: 1,
         section: normalizeSection(firstMaterial.category),
+        note: '',
       },
     ])
+  }
+
+  const addRowToSection = (targetSection: string) => {
+    const firstMaterialInSection =
+      materials.find((material) => normalizeSection(material.category) === targetSection) ?? materials[0]
+    if (!firstMaterialInSection) return
+
+    const newRow: HppComponentRow = {
+      material_id: firstMaterialInSection.id,
+      material_category: String(firstMaterialInSection.category ?? 'lainnya').toLowerCase(),
+      source_catalog_id: null,
+      quantity: 1,
+      section: targetSection,
+      note: '',
+    }
+
+    setRows((prev) => {
+      const next = [...prev]
+      let insertAt = next.length
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (normalizeSection(next[i].section) === targetSection) {
+          insertAt = i + 1
+          break
+        }
+      }
+      next.splice(insertAt, 0, newRow)
+      return next
+    })
   }
 
   const addCatalogRow = () => {
@@ -177,6 +265,7 @@ export default function CatalogHppEditor({
         source_catalog_id: firstCatalog.id,
         quantity: 1,
         section: normalizeSection('lainnya'),
+        note: '',
       },
     ])
   }
@@ -239,9 +328,10 @@ export default function CatalogHppEditor({
         source_catalog_id: r.source_catalog_id ?? null,
         quantity: typeof r.quantity === 'number' ? r.quantity : 0,
         section: normalizeSection(r.section),
+        note: String(r.note ?? ''),
       })),
     )
-  }, [rows])
+  }, [rows, normalizeSection])
 
   const visibleRows = useMemo<UiRow[]>(() => {
     const q = search.trim().toLowerCase()
@@ -258,7 +348,7 @@ export default function CatalogHppEditor({
       })
       .filter((item) => (sectionFilter === 'all' ? true : item.section === sectionFilter))
       .filter((item) => (q ? `${item.name} ${item.section}`.toLowerCase().includes(q) : true))
-  }, [rows, search, sectionFilter, materialMap, catalogMap])
+  }, [rows, search, sectionFilter, materialMap, catalogMap, normalizeSection])
 
   const rowsBySection = useMemo(() => {
     const mapped = new Map<string, UiRow[]>()
@@ -300,7 +390,7 @@ export default function CatalogHppEditor({
                 setCopyModalOpen(true)
                 setCopyError(null)
               }}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 bg-white rounded-lg hover:bg-gray-50 transition-all text-sm font-semibold shadow-sm active:scale-95"
+              className="h-10 flex items-center gap-2 px-4 border border-gray-300 text-gray-700 bg-white rounded-lg hover:bg-gray-50 transition-all text-sm font-semibold shadow-sm active:scale-95"
             >
               <Copy className="w-4 h-4" />
               Copy Komponen dari Katalog
@@ -309,7 +399,7 @@ export default function CatalogHppEditor({
           <button
             type="button"
             onClick={addCatalogRow}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 bg-white rounded-lg hover:bg-gray-50 transition-all text-sm font-semibold shadow-sm active:scale-95"
+            className="h-10 flex items-center gap-2 px-4 border border-gray-300 text-gray-700 bg-white rounded-lg hover:bg-gray-50 transition-all text-sm font-semibold shadow-sm active:scale-95"
           >
             <Plus className="w-4 h-4" />
             Tambah Katalog
@@ -317,7 +407,7 @@ export default function CatalogHppEditor({
           <button
             type="button"
             onClick={addRow}
-            className="flex items-center gap-2 px-4 py-2 bg-[#E30613] text-white rounded-lg hover:bg-[#c50511] transition-all text-sm font-semibold shadow-sm active:scale-95"
+            className="h-10 flex items-center gap-2 px-4 bg-[#E30613] text-white rounded-lg hover:bg-[#c50511] transition-all text-sm font-semibold shadow-sm active:scale-95"
           >
             <Plus className="w-4 h-4" />
             Tambah Komponen
@@ -333,21 +423,16 @@ export default function CatalogHppEditor({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Cari komponen..."
-          className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+          className="w-full h-11 px-3 border border-gray-200 rounded-lg text-sm bg-white"
         />
-        <select
+        <SearchDropdown
+          options={sectionFilterOptions}
           value={sectionFilter}
-          onChange={(e) => setSectionFilter(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
-        >
-          <option value="all">Semua Segmen</option>
-          {sectionCodes.map((section) => (
-            <option key={section} value={section}>
-              {sectionNameMap.get(section) ?? section}
-            </option>
-          ))}
-        </select>
-        <div className="px-3 py-2 bg-white rounded-md border border-gray-200 text-sm font-semibold text-gray-700">
+          onChange={setSectionFilter}
+          placeholder="Pilih segmen..."
+          searchPlaceholder="Cari segmen..."
+        />
+        <div className="h-11 px-3 bg-white rounded-lg border border-gray-200 text-sm font-semibold text-gray-700 flex items-center">
           Menampilkan {visibleRows.length} dari {rows.length} komponen
         </div>
       </div>
@@ -391,12 +476,12 @@ export default function CatalogHppEditor({
                   setDraggingIndex(null)
                 }}
               >
-                <button
-                  type="button"
-                  className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50 rounded-t-xl"
-                  onClick={() => setCollapsedSections((prev) => ({ ...prev, [section]: !prev[section] }))}
-                >
-                  <div className="flex items-center gap-3">
+                <div className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-gray-50 rounded-t-xl">
+                  <button
+                    type="button"
+                    className="flex items-center gap-3 text-left min-w-0"
+                    onClick={() => setCollapsedSections((prev) => ({ ...prev, [section]: !prev[section] }))}
+                  >
                     <ChevronDown
                       className={`w-4 h-4 text-gray-500 transition-transform ${isCollapsed ? '-rotate-90' : 'rotate-0'}`}
                     />
@@ -404,28 +489,56 @@ export default function CatalogHppEditor({
                       <p className="text-sm font-bold text-gray-800 uppercase tracking-wide">{sectionNameMap.get(section) ?? section}</p>
                       <p className="text-xs text-gray-500">{stats?.count ?? 0} item</p>
                     </div>
+                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => addRowToSection(section)}
+                      className="h-9 px-3 rounded-lg border border-[#E30613]/30 text-[#E30613] text-xs font-semibold hover:bg-[#E30613]/5 transition-colors"
+                    >
+                      + Tambah Komponen
+                    </button>
+                    <div className="text-right">
+                      <p className="text-[11px] text-gray-500">Subtotal Segmen</p>
+                      <p className="text-sm font-black text-[#1D1D1B]">Rp {(stats?.subtotal ?? 0).toLocaleString('id-ID')}</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-[11px] text-gray-500">Subtotal Segmen</p>
-                    <p className="text-sm font-black text-[#1D1D1B]">Rp {(stats?.subtotal ?? 0).toLocaleString('id-ID')}</p>
-                  </div>
-                </button>
+                </div>
 
                 {!isCollapsed && (
                   <div className="px-4 pb-4 space-y-3 border-t border-gray-100">
-                    <div className="sticky top-20 z-[1] bg-white/95 backdrop-blur rounded-lg border border-gray-100 px-3 py-2 mt-3 flex items-center justify-between text-xs">
-                      <span className="font-semibold text-gray-700">Ringkasan {section}</span>
-                      <span className="font-bold text-[#E30613]">
-                        {stats?.count ?? 0} item | Rp {(stats?.subtotal ?? 0).toLocaleString('id-ID')}
-                      </span>
-                    </div>
-
                     {items.length === 0 ? (
                       <div className="text-xs text-gray-400 border border-dashed border-gray-200 rounded-lg p-4 text-center">
                         Belum ada komponen di segmen ini.
                       </div>
                     ) : (
-                      items.map(({ row, idx, mat, sourceCatalog, subtotal }) => (
+                      items.map(({ row, idx, mat, sourceCatalog, subtotal }) => {
+                        const selectedMaterialCategory = String(
+                          row.material_category ||
+                            mat?.category ||
+                            materialCategoryOptions[0]?.value ||
+                            'lainnya',
+                        ).toLowerCase()
+                        const materialOptions: SearchDropdownOption[] = (
+                          groupedMaterials.get(selectedMaterialCategory) ?? []
+                        ).map((materialOption) => ({
+                          value: materialOption.id,
+                          label: (() => {
+                            const variant =
+                              materialOption.variant_name &&
+                              materialOption.variant_name.toLowerCase() !== 'default'
+                                ? ` - ${materialOption.variant_name}`
+                                : ''
+                            const unit = materialOption.unit ? ` (${materialOption.unit})` : ''
+                            return `${materialOption.name}${variant}${unit}`
+                          })(),
+                          keywords: `${materialOption.name} ${materialOption.category ?? ''} ${
+                            materialOption.unit ?? ''
+                          } ${
+                            materialOption.variant_name ?? ''
+                          }`,
+                        }))
+                        return (
                         <div
                           key={row.id ? `${row.id}-${idx}` : `new-${idx}`}
                           draggable
@@ -441,33 +554,34 @@ export default function CatalogHppEditor({
                             moveRow(draggingIndex, idx, section)
                             setDraggingIndex(null)
                           }}
-                          className={`group relative bg-white p-5 rounded-xl border shadow-sm transition-all duration-200 ${
+                          className={`group relative bg-white p-5 rounded-xl border shadow-sm transition-all duration-200 2xl:max-w-[1500px] 2xl:mx-auto ${
                             draggingIndex === idx
                               ? 'border-[#E30613] opacity-70'
                               : 'border-gray-200 hover:shadow-md hover:border-[#E30613]/30'
                           }`}
                         >
-                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-end">
-                            <div className="lg:col-span-1">
+                          <div className="grid grid-cols-1 md:grid-cols-6 xl:grid-cols-12 gap-4 md:gap-5 items-end">
+                            <div className="md:col-span-1 xl:col-span-1">
                               <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Move</label>
                               <div className="h-[42px] border border-dashed border-gray-200 rounded-lg flex items-center justify-center text-gray-400 bg-gray-50">
                                 <GripVertical className="w-4 h-4" />
                               </div>
                             </div>
 
-                            <div className="lg:col-span-4">
+                            <div className="md:col-span-5 xl:col-span-7">
                               <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1">
                                 <Package className="w-3 h-3 text-gray-400" /> Komponen
                               </label>
                               <div className="space-y-2">
-                                <select
-                                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-semibold"
+                                <SearchDropdown
+                                  options={rowTypeOptions}
                                   value={row.material_id ? 'material' : 'catalog'}
-                                  onChange={(e) => {
-                                    if (e.target.value === 'catalog') {
+                                  onChange={(nextType) => {
+                                    if (nextType === 'catalog') {
                                       const firstCatalog = copySourceCatalogs[0]
                                       updateRow(idx, {
                                         material_id: null,
+                                        material_category: undefined,
                                         source_catalog_id: firstCatalog?.id ?? null,
                                         section,
                                       })
@@ -476,72 +590,70 @@ export default function CatalogHppEditor({
                                     const firstMaterial = materials[0]
                                     updateRow(idx, {
                                       material_id: firstMaterial?.id ?? null,
+                                      material_category: String(
+                                        firstMaterial?.category ?? 'lainnya',
+                                      ).toLowerCase(),
                                       source_catalog_id: null,
-                                      section: normalizeSection(firstMaterial?.category),
+                                      section,
                                     })
                                   }}
-                                >
-                                  <option value="material">Material</option>
-                                  <option value="catalog">Katalog</option>
-                                </select>
+                                  placeholder="Tipe komponen..."
+                                  searchPlaceholder="Cari tipe..."
+                                />
                                 {row.material_id ? (
-                                  <select
-                                    className="w-full pl-3 pr-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-800"
-                                    value={row.material_id}
-                                    onChange={(e) => {
-                                      const selected = materialMap.get(e.target.value)
-                                      updateRow(idx, {
-                                        material_id: e.target.value,
-                                        source_catalog_id: null,
-                                        section: normalizeSection(selected?.category),
-                                      })
-                                    }}
-                                  >
-                                    {sectionCodes.map((cat) => (
-                                      <optgroup key={cat} label={cat.toUpperCase()}>
-                                        {(groupedMaterials.get(cat) ?? []).map((m) => (
-                                          <option key={m.id} value={m.id}>
-                                            {m.name}
-                                          </option>
-                                        ))}
-                                      </optgroup>
-                                    ))}
-                                  </select>
+                                  <div className="space-y-2">
+                                    <SearchDropdown
+                                      options={materialCategoryOptions}
+                                      value={selectedMaterialCategory}
+                                      onChange={(nextCategory) => {
+                                        const firstMaterialInCategory =
+                                          (groupedMaterials.get(nextCategory) ?? [])[0]
+                                        updateRow(idx, {
+                                          material_category: nextCategory,
+                                          material_id: firstMaterialInCategory?.id ?? null,
+                                          source_catalog_id: null,
+                                        })
+                                      }}
+                                      placeholder="Pilih Kategori Material..."
+                                      searchPlaceholder="Cari Kategori Material..."
+                                    />
+                                    <SearchDropdown
+                                      options={materialOptions}
+                                      value={row.material_id ?? ''}
+                                      onChange={(nextMaterialId) => {
+                                        const selected = materialMap.get(nextMaterialId)
+                                        updateRow(idx, {
+                                          material_id: nextMaterialId,
+                                          material_category: String(
+                                            selected?.category ?? 'lainnya',
+                                          ).toLowerCase(),
+                                          source_catalog_id: null,
+                                        })
+                                      }}
+                                      placeholder="Pilih material..."
+                                      searchPlaceholder="Cari material..."
+                                      disabled={materialOptions.length === 0}
+                                    />
+                                  </div>
                                 ) : (
-                                  <select
-                                    className="w-full pl-3 pr-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-800"
+                                  <SearchDropdown
+                                    options={sourceCatalogOptions}
                                     value={row.source_catalog_id ?? ''}
-                                    onChange={(e) => updateRow(idx, { source_catalog_id: e.target.value, material_id: null })}
-                                  >
-                                    <option value="">Pilih katalog sumber...</option>
-                                    {copySourceCatalogs.map((catalog) => (
-                                      <option key={catalog.id} value={catalog.id}>
-                                        {catalog.title} ({catalog.category || 'lainnya'})
-                                      </option>
-                                    ))}
-                                  </select>
+                                    onChange={(nextCatalogId) =>
+                                      updateRow(idx, {
+                                        source_catalog_id: nextCatalogId,
+                                        material_id: null,
+                                        material_category: undefined,
+                                      })
+                                    }
+                                    placeholder="Pilih katalog sumber..."
+                                    searchPlaceholder="Cari katalog sumber..."
+                                  />
                                 )}
                               </div>
                             </div>
 
-                            <div className="lg:col-span-3">
-                              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1">
-                                <Layers className="w-3 h-3 text-gray-400" /> Segmen
-                              </label>
-                              <select
-                                className="w-full pl-3 pr-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-800"
-                                value={normalizeSection(row.section)}
-                                onChange={(e) => updateRow(idx, { section: normalizeSection(e.target.value) })}
-                              >
-                                {sectionCodes.map((opt) => (
-                                  <option key={opt} value={opt}>
-                                    {sectionNameMap.get(opt) ?? opt}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="lg:col-span-2">
+                            <div className="md:col-span-3 xl:col-span-2">
                               <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1">
                                 <Box className="w-3 h-3 text-gray-400" /> Qty
                               </label>
@@ -562,7 +674,7 @@ export default function CatalogHppEditor({
                               </div>
                             </div>
 
-                            <div className="lg:col-span-2 relative">
+                            <div className="md:col-span-3 xl:col-span-2">
                               <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-1">
                                 <DollarSign className="w-3 h-3 text-gray-400" /> Subtotal
                               </label>
@@ -572,11 +684,26 @@ export default function CatalogHppEditor({
                               <button
                                 type="button"
                                 onClick={() => removeRow(idx)}
-                                className="absolute -top-1 -right-1 lg:-right-4 lg:top-8 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all lg:opacity-0 lg:group-hover:opacity-100"
+                                className="mt-2 w-full md:w-auto px-3 py-2 text-xs font-semibold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
                                 title="Hapus Komponen"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <span className="inline-flex items-center gap-1">
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Hapus
+                                </span>
                               </button>
+                            </div>
+
+                            <div className="md:col-span-6 xl:col-span-12">
+                              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                                Catatan BOM
+                              </label>
+                              <textarea
+                                value={String(row.note ?? '')}
+                                onChange={(e) => updateRow(idx, { note: e.target.value })}
+                                placeholder="Contoh: wajib pakai bracket L tiap 1m, sambungan overlap 15 cm, dll."
+                                className="w-full min-h-[70px] px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+                              />
                             </div>
                           </div>
                           {!row.material_id && (
@@ -585,7 +712,8 @@ export default function CatalogHppEditor({
                             </p>
                           )}
                         </div>
-                      ))
+                        )
+                      })
                     )}
                   </div>
                 )}
@@ -619,18 +747,13 @@ export default function CatalogHppEditor({
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
                     Pilih Katalog Sumber
                   </label>
-                  <select
-                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E30613]/20 focus:border-[#E30613]"
+                  <SearchDropdown
+                    options={sourceCatalogOptions}
                     value={copyCatalogId}
-                    onChange={(e) => setCopyCatalogId(e.target.value)}
-                  >
-                    <option value="">-- Pilih Katalog --</option>
-                    {copySourceCatalogs.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.title} {c.category ? `(${c.category})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setCopyCatalogId}
+                    placeholder="-- Pilih Katalog --"
+                    searchPlaceholder="Cari katalog..."
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
@@ -678,8 +801,30 @@ export default function CatalogHppEditor({
                           source_catalog_id?: string | null
                           quantity: number
                           section?: string | null
+                          note?: string | null
                         }
-                        const normalized: HppComponentRow[] = (raw as RawHpp[]).map((c) => {
+                        const rawRows: RawHpp[] = (Array.isArray(raw) ? (raw as unknown[]) : [])
+                          .map((item) => {
+                            const safe = typeof item === 'object' && item !== null
+                              ? (item as Record<string, unknown>)
+                              : {}
+                            return {
+                              material_id:
+                                typeof safe.material_id === 'string' ? safe.material_id : null,
+                              source_catalog_id:
+                                typeof safe.source_catalog_id === 'string'
+                                  ? safe.source_catalog_id
+                                  : null,
+                              quantity:
+                                typeof safe.quantity === 'number'
+                                  ? safe.quantity
+                                  : Number(safe.quantity || 0),
+                              section:
+                                typeof safe.section === 'string' ? safe.section : null,
+                              note: typeof safe.note === 'string' ? safe.note : null,
+                            }
+                          })
+                        const normalized: HppComponentRow[] = rawRows.map((c) => {
                           const mat = c.material_id ? materialMap.get(c.material_id) : undefined
                           const sourceCatalog = c.source_catalog_id
                             ? catalogMap.get(c.source_catalog_id)
@@ -693,6 +838,7 @@ export default function CatalogHppEditor({
                                 ? Number(c.quantity) * (copyFactor || 1)
                                 : 0,
                             section: normalizeSection(c.section || mat?.category),
+                            note: String(c.note ?? ''),
                             material: mat,
                             source_catalog: sourceCatalog ?? null,
                           }

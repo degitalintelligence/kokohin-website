@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import SearchDropdown, { type SearchDropdownOption } from './SearchDropdown'
 
 type Option = {
   id: string
@@ -74,101 +75,222 @@ export default function CatalogBaseFields({
     return `${option.name}${variant}${unit}`
   }
 
+  const categoryDropdownOptions = useMemo<SearchDropdownOption[]>(
+    () =>
+      categoryOptions.map((item) => ({
+        value: item.code,
+        label: item.name,
+        keywords: item.code,
+      })),
+    [categoryOptions],
+  )
+
+  const buildMaterialCategories = (list: Option[]) => {
+    const unique = new Set(
+      list
+        .map((item) => String(item.category ?? '').trim())
+        .filter((item) => item.length > 0),
+    )
+    return Array.from(unique).sort((a, b) => a.localeCompare(b))
+  }
+
+  const buildMaterialOptions = (list: Option[], materialCategory: string): SearchDropdownOption[] => {
+    const normalizedCategory = materialCategory.toLowerCase()
+    return list
+      .filter((item) => {
+        if (!normalizedCategory) return true
+        return String(item.category ?? '').toLowerCase() === normalizedCategory
+      })
+      .map((item) => ({
+        value: item.id,
+        label: toOptionLabel(item),
+        group: item.category ?? 'lainnya',
+        keywords: `${item.name} ${item.variant_name ?? ''} ${item.unit ?? ''} ${item.category ?? ''}`,
+      }))
+  }
+
+  const initialAtapCategory = useMemo(
+    () => atapList.find((item) => item.id === initialAtapId)?.category ?? '',
+    [atapList, initialAtapId],
+  )
+  const initialRangkaCategory = useMemo(
+    () => rangkaList.find((item) => item.id === initialRangkaId)?.category ?? '',
+    [rangkaList, initialRangkaId],
+  )
+  const initialIsianCategory = useMemo(
+    () => isianList.find((item) => item.id === initialIsianId)?.category ?? '',
+    [isianList, initialIsianId],
+  )
+  const initialFinishingCategory = useMemo(
+    () => finishingList.find((item) => item.id === initialFinishingId)?.category ?? '',
+    [finishingList, initialFinishingId],
+  )
+
+  const [atapCategory, setAtapCategory] = useState(initialAtapCategory)
+  const [rangkaCategory, setRangkaCategory] = useState(initialRangkaCategory)
+  const [isianCategory, setIsianCategory] = useState(initialIsianCategory)
+  const [finishingCategory, setFinishingCategory] = useState(initialFinishingCategory)
+
+  const atapCategoryOptions = useMemo<SearchDropdownOption[]>(
+    () =>
+      buildMaterialCategories(atapList).map((item) => ({
+        value: item,
+        label: item,
+      })),
+    [atapList],
+  )
+  const rangkaCategoryOptions = useMemo<SearchDropdownOption[]>(
+    () =>
+      buildMaterialCategories(rangkaList).map((item) => ({
+        value: item,
+        label: item,
+      })),
+    [rangkaList],
+  )
+  const isianCategoryOptions = useMemo<SearchDropdownOption[]>(
+    () =>
+      buildMaterialCategories(isianList).map((item) => ({
+        value: item,
+        label: item,
+      })),
+    [isianList],
+  )
+  const finishingCategoryOptions = useMemo<SearchDropdownOption[]>(
+    () =>
+      buildMaterialCategories(finishingList).map((item) => ({
+        value: item,
+        label: item,
+      })),
+    [finishingList],
+  )
+
+  const atapMaterialOptions = buildMaterialOptions(atapList, atapCategory)
+  const rangkaMaterialOptions = buildMaterialOptions(rangkaList, rangkaCategory)
+  const isianMaterialOptions = buildMaterialOptions(isianList, isianCategory)
+  const finishingMaterialOptions = buildMaterialOptions(finishingList, finishingCategory)
+
   return (
     <>
       <div>
         <label className="block text-sm font-medium mb-2">Kategori *</label>
-        <select
+        <SearchDropdown
           name="category"
-          className="w-full px-4 py-2 border rounded-md"
           required
+          options={categoryDropdownOptions}
           value={category}
-          onChange={(e) => onCategoryChange(e.target.value)}
-        >
-          <option value="">Pilih Kategori...</option>
-          {categoryOptions.map((item) => (
-            <option key={item.code} value={item.code}>
-              {item.name}
-            </option>
-          ))}
-        </select>
+          onChange={onCategoryChange}
+          placeholder="Pilih Kategori..."
+          searchPlaceholder="Cari kategori..."
+        />
       </div>
 
       {showAtap ? (
-        <div>
+        <div className="space-y-2">
           <label className="block text-sm font-medium mb-2">Material Atap</label>
-          <select
+          <SearchDropdown
+            options={atapCategoryOptions}
+            value={atapCategory}
+            onChange={(value) => {
+              setAtapCategory(value)
+              setAtapId('')
+            }}
+            placeholder="Pilih Kategori Material Atap..."
+            searchPlaceholder="Cari kategori material..."
+          />
+          <SearchDropdown
             name="atap_id"
-            className="w-full px-4 py-2 border rounded-md"
-            value={atapId}
-            onChange={(e) => setAtapId(e.target.value)}
             required={showAtap}
-          >
-            <option value="">Pilih Atap...</option>
-            {atapList?.map((m) => (
-              <option key={m.id} value={m.id}>{toOptionLabel(m)}</option>
-            ))}
-          </select>
+            options={atapMaterialOptions}
+            value={atapId}
+            onChange={setAtapId}
+            placeholder="Pilih Atap..."
+            searchPlaceholder="Cari material atap..."
+            disabled={atapMaterialOptions.length === 0}
+          />
         </div>
       ) : (
         <input type="hidden" name="atap_id" value="" />
       )}
 
       {showRangka ? (
-        <div>
+        <div className="space-y-2">
           <label className="block text-sm font-medium mb-2">Material Rangka *</label>
-          <select
+          <SearchDropdown
+            options={rangkaCategoryOptions}
+            value={rangkaCategory}
+            onChange={(value) => {
+              setRangkaCategory(value)
+              setRangkaId('')
+            }}
+            placeholder="Pilih Kategori Material Rangka..."
+            searchPlaceholder="Cari kategori material..."
+          />
+          <SearchDropdown
             name="rangka_id"
-            className="w-full px-4 py-2 border rounded-md"
-            value={rangkaId}
-            onChange={(e) => setRangkaId(e.target.value)}
             required={showRangka}
-          >
-            <option value="">Pilih Rangka...</option>
-            {rangkaList?.map((m) => (
-              <option key={m.id} value={m.id}>{toOptionLabel(m)}</option>
-            ))}
-          </select>
+            options={rangkaMaterialOptions}
+            value={rangkaId}
+            onChange={setRangkaId}
+            placeholder="Pilih Rangka..."
+            searchPlaceholder="Cari material rangka..."
+            disabled={rangkaMaterialOptions.length === 0}
+          />
         </div>
       ) : (
         <input type="hidden" name="rangka_id" value="" />
       )}
 
       {showIsian ? (
-        <div>
+        <div className="space-y-2">
           <label className="block text-sm font-medium mb-2">Material Isian *</label>
-          <select
+          <SearchDropdown
+            options={isianCategoryOptions}
+            value={isianCategory}
+            onChange={(value) => {
+              setIsianCategory(value)
+              setIsianId('')
+            }}
+            placeholder="Pilih Kategori Material Isian..."
+            searchPlaceholder="Cari kategori material..."
+          />
+          <SearchDropdown
             name="isian_id"
-            className="w-full px-4 py-2 border rounded-md"
-            value={isianId}
-            onChange={(e) => setIsianId(e.target.value)}
             required={showIsian}
-          >
-            <option value="">Pilih Isian...</option>
-            {isianList?.map((m) => (
-              <option key={m.id} value={m.id}>{toOptionLabel(m)}</option>
-            ))}
-          </select>
+            options={isianMaterialOptions}
+            value={isianId}
+            onChange={setIsianId}
+            placeholder="Pilih Isian..."
+            searchPlaceholder="Cari material isian..."
+            disabled={isianMaterialOptions.length === 0}
+          />
         </div>
       ) : (
         <input type="hidden" name="isian_id" value="" />
       )}
 
       {showFinishing ? (
-        <div>
+        <div className="space-y-2">
           <label className="block text-sm font-medium mb-2">Jenis Finishing *</label>
-          <select
+          <SearchDropdown
+            options={finishingCategoryOptions}
+            value={finishingCategory}
+            onChange={(value) => {
+              setFinishingCategory(value)
+              setFinishingId('')
+            }}
+            placeholder="Pilih Kategori Material Finishing..."
+            searchPlaceholder="Cari kategori material..."
+          />
+          <SearchDropdown
             name="finishing_id"
-            className="w-full px-4 py-2 border rounded-md"
-            value={finishingId}
-            onChange={(e) => setFinishingId(e.target.value)}
             required={showFinishing}
-          >
-            <option value="">Pilih Finishing...</option>
-            {finishingList?.map((m) => (
-              <option key={m.id} value={m.id}>{toOptionLabel(m)}</option>
-            ))}
-          </select>
+            options={finishingMaterialOptions}
+            value={finishingId}
+            onChange={setFinishingId}
+            placeholder="Pilih Finishing..."
+            searchPlaceholder="Cari material finishing..."
+            disabled={finishingMaterialOptions.length === 0}
+          />
         </div>
       ) : (
         <input type="hidden" name="finishing_id" value="" />

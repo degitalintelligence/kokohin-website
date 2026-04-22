@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { updateBasicSettings } from '@/app/actions/settings'
 import { Save, Loader2 } from 'lucide-react'
 
-export default function BasicSettingsForm(props: { siteName: string; supportEmail: string; supportPhone: string; contactAddress: string; contactHours: string; companyWebsite: string; instagramUrl?: string; facebookUrl?: string; tiktokUrl?: string; youtubeUrl?: string }) {
+export default function BasicSettingsForm(props: { siteName: string; supportEmail: string; supportPhone: string; contactAddress: string; contactHours: string; companyWebsite: string; instagramUrl?: string; facebookUrl?: string; tiktokUrl?: string; youtubeUrl?: string; mapLatitude?: string; mapLongitude?: string; mapEmbedUrl?: string }) {
   const [siteName, setSiteName] = useState(props.siteName || '')
   const [supportEmail, setSupportEmail] = useState(props.supportEmail || '')
   const [supportPhone, setSupportPhone] = useState(props.supportPhone || '')
@@ -15,6 +15,9 @@ export default function BasicSettingsForm(props: { siteName: string; supportEmai
   const [facebookUrl, setFacebookUrl] = useState(props.facebookUrl || '')
   const [tiktokUrl, setTiktokUrl] = useState(props.tiktokUrl || '')
   const [youtubeUrl, setYoutubeUrl] = useState(props.youtubeUrl || '')
+  const [mapLatitude, setMapLatitude] = useState(props.mapLatitude || '')
+  const [mapLongitude, setMapLongitude] = useState(props.mapLongitude || '')
+  const [mapEmbedUrl, setMapEmbedUrl] = useState(props.mapEmbedUrl || '')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -22,7 +25,7 @@ export default function BasicSettingsForm(props: { siteName: string; supportEmai
     e.preventDefault()
     setLoading(true)
     setMessage(null)
-    const res = await updateBasicSettings({ siteName, supportEmail, supportPhone, contactAddress, contactHours, companyWebsite, instagramUrl, facebookUrl, tiktokUrl, youtubeUrl })
+    const res = await updateBasicSettings({ siteName, supportEmail, supportPhone, contactAddress, contactHours, companyWebsite, instagramUrl, facebookUrl, tiktokUrl, youtubeUrl, mapLatitude, mapLongitude, mapEmbedUrl })
     if ('error' in res && res.error) setMessage({ type: 'error', text: res.error })
     else setMessage({ type: 'success', text: 'Pengaturan berhasil disimpan' })
     setLoading(false)
@@ -138,6 +141,42 @@ export default function BasicSettingsForm(props: { siteName: string; supportEmai
             placeholder="https://www.tiktok.com/@kokohin"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#E30613] focus:border-transparent"
           />
+        </div>
+        <div className="pt-2 border-t border-gray-100">
+          <h4 className="text-sm font-semibold text-gray-800 mb-3">Titik Peta Kontak</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Latitude</label>
+              <input
+                type="text"
+                value={mapLatitude}
+                onChange={(e) => setMapLatitude(e.target.value)}
+                placeholder="-6.3606999"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#E30613] focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Longitude</label>
+              <input
+                type="text"
+                value={mapLongitude}
+                onChange={(e) => setMapLongitude(e.target.value)}
+                placeholder="106.8629673"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#E30613] focus:border-transparent"
+              />
+            </div>
+          </div>
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Google Maps Embed URL (opsional)</label>
+            <input
+              type="text"
+              value={mapEmbedUrl}
+              onChange={(e) => setMapEmbedUrl(e.target.value)}
+              placeholder="https://www.google.com/maps/embed?pb=..."
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#E30613] focus:border-transparent"
+            />
+            <p className="mt-1 text-xs text-gray-500">Jika diisi, URL embed diprioritaskan. Jika kosong, peta otomatis pakai latitude + longitude.</p>
+          </div>
         </div>
 
         {message && (
