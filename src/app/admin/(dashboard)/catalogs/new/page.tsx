@@ -17,20 +17,46 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
   const bypass = await isDevBypass()
   if (!user && !bypass) redirect('/admin/login')
 
-  // Fetch materials for dropdowns
-  const [
-    { data: atapList }, 
-    { data: rangkaList }, 
-    { data: finishingList },
-    { data: isianList },
-    { data: allMaterials }
-  ] = await Promise.all([
-    supabase.from('materials').select('id, name').eq('category', 'atap').eq('is_active', true).order('name'),
-    supabase.from('materials').select('id, name').eq('category', 'frame').eq('is_active', true).order('name'),
-    supabase.from('materials').select('id, name').eq('category', 'finishing').eq('is_active', true).order('name'),
-    supabase.from('materials').select('id, name').eq('category', 'isian').eq('is_active', true).order('name'),
-    supabase.from('materials').select('id, name, category, base_price_per_unit, unit').eq('is_active', true).order('name')
+  // Hanya tampilkan material leaf (tanpa child) agar parent tidak salah dipilih untuk kalkulasi.
+  const [{ data: allActiveMaterials }, { data: childRows }] = await Promise.all([
+    supabase
+      .from('materials')
+      .select('id, name, variant_name, category, base_price_per_unit, unit')
+      .eq('is_active', true)
+      .order('name'),
+    supabase
+      .from('materials')
+      .select('parent_material_id')
+      .not('parent_material_id', 'is', null),
   ])
+  const parentIdsWithChildren = new Set(
+    (childRows ?? [])
+      .map((row) => row.parent_material_id)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0),
+  )
+  const allMaterials = (allActiveMaterials ?? []).filter((material) => !parentIdsWithChildren.has(material.id))
+
+  const withPriority = (keywords: string[]) => {
+    const match = (material: { name: string; category: string | null; variant_name?: string | null }) => {
+      const haystack = `${material.category ?? ''} ${material.name} ${material.variant_name ?? ''}`.toLowerCase()
+      return keywords.some((keyword) => haystack.includes(keyword))
+    }
+    const prioritized = allMaterials.filter(match)
+    const rest = allMaterials.filter((item) => !match(item))
+    return [...prioritized, ...rest]
+  }
+
+  // Tidak lagi strict enum category agar dropdown tetap aman meski kode kategori material berubah.
+  const atapList = withPriority(['atap', 'roof'])
+  const rangkaList = withPriority(['frame', 'rangka', 'struktur'])
+  const finishingList = withPriority(['finishing', 'coating', 'cat'])
+  const isianList = withPriority(['isian', 'infill'])
+  const { data: catalogCategories } = await supabase
+    .from('catalog_categories')
+    .select('code, name, sort_order, require_atap, require_rangka, require_isian, require_finishing')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true })
 
   return (
     <div className={`${styles.main} flex-1 h-full`}>
@@ -84,10 +110,11 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
               </div>
 
               <CatalogBaseFields 
-                atapList={atapList ?? []} 
-                rangkaList={rangkaList ?? []} 
-                finishingList={finishingList ?? []}
-                isianList={isianList ?? []}
+                atapList={atapList} 
+                rangkaList={rangkaList} 
+                finishingList={finishingList}
+                isianList={isianList}
+                categoryOptions={catalogCategories ?? []}
               />
 
               <div className="grid grid-cols-3 gap-3">
@@ -116,32 +143,6 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
 
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-1">
-                  <label className="label">Tenaga Kerja (Rp)</label>
-                  <input
-                    type="number"
-                    name="labor_cost"
-                    className="input"
-                    placeholder="0"
-                    min="0"
-                    step="1000"
-                    defaultValue={0}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Mengikuti satuan harga dasar</p>
-                </div>
-                <div className="col-span-1">
-                  <label className="label">Transport (Rp)</label>
-                  <input
-                    type="number"
-                    name="transport_cost"
-                    className="input"
-                    placeholder="0"
-                    min="0"
-                    step="1000"
-                    defaultValue={0}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Biaya flat sekali proyek</p>
-                </div>
-                <div className="col-span-1">
                   <label className="label">Margin (%)</label>
                   <input
                     type="number"
@@ -162,22 +163,36 @@ export default async function AdminCatalogNewPage({ searchParams }: { searchPara
                 </p>
               </div>
 
-              <div className="md:col-span-2 flex items-center pt-4 border-t">
-                <input
-                  type="checkbox"
-                  name="is_active"
-                  id="is_active"
-                  defaultChecked={true}
-                  className="w-4 h-4 text-[#E30613] border-gray-300 rounded focus:ring-[#E30613]"
-                />
-                <label htmlFor="is_active" className="ml-2 text-sm text-gray-700">
-                  Katalog Aktif (Tampilkan di Website)
+              <div className="md:col-span-2 pt-4 border-t space-y-2">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    name="is_active"
+                    id="is_active"
+                    defaultChecked={true}
+                    className="w-4 h-4 text-[#E30613] border-gray-300 rounded focus:ring-[#E30613]"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Status Aktif (dipakai di backend)
+                  </span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    name="is_published"
+                    id="is_published"
+                    defaultChecked={true}
+                    className="w-4 h-4 text-[#E30613] border-gray-300 rounded focus:ring-[#E30613]"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Status Publish (ditampilkan di website)
+                  </span>
                 </label>
               </div>
             </div>
 
             <div className="pt-6 border-t">
-              <CatalogAddonsEditor materials={allMaterials ?? []} />
+              <CatalogAddonsEditor materials={allMaterials} />
               <p className="text-xs text-gray-500 mt-2">
                 Item bertanda opsional dapat dicentang oleh sales/customer di kalkulator.
               </p>

@@ -241,7 +241,7 @@ export default function EnhancedCalculatorInputForm({
         setWaNumber(waRes?.wa_number ?? FALLBACK_WA)
 
         // Set initial catalog if param exists and not already set
-        const catalogParam = searchParams.get('catalog')
+        const catalogParam = searchParams.get('catalog') ?? searchParams.get('catalog_id')
         if (catalogParam && !input.catalogId) {
           const foundCatalog = safeCatalogs.find((c) => c.id === catalogParam)
           if (foundCatalog) {

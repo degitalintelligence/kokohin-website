@@ -20,6 +20,95 @@ export default async function AdminMaterialDetailPage({ params }: { params: Prom
     .eq('id', id)
     .single()
 
+  const { data: categoriesRaw } = await supabase
+    .from('material_categories')
+    .select('code, name, sort_order')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true })
+
+  const { data: parentOptionsRaw } = await supabase
+    .from('materials')
+    .select('id, name, variant_name')
+    .neq('id', id)
+    .is('parent_material_id', null)
+    .eq('category', material?.category ?? '')
+    .order('name', { ascending: true })
+
+  const categories = categoriesRaw ?? []
+  const parentOptions = parentOptionsRaw ?? []
+  const variantRootId = material?.parent_material_id ?? material?.id ?? id
+  const { data: variantRowsRaw } = await supabase
+    .from('materials')
+    .select('id, name, variant_name, base_price_per_unit, is_active, parent_material_id')
+    .or(`id.eq.${variantRootId},parent_material_id.eq.${variantRootId}`)
+    .order('created_at', { ascending: true })
+  const variantRows = variantRowsRaw ?? []
+  const variantRoot =
+    variantRows.find((row) => row.id === variantRootId) ?? null
+  const childVariants = variantRows.filter((row) => row.parent_material_id === variantRootId)
+
+  const [directCatalogRefsResult, hppCatalogRefsResult, addonCatalogRefsResult] = await Promise.all([
+    supabase
+      .from('catalogs')
+      .select('id, title, category, atap_id, rangka_id, finishing_id, isian_id')
+      .or(`atap_id.eq.${id},rangka_id.eq.${id},finishing_id.eq.${id},isian_id.eq.${id}`)
+      .order('title', { ascending: true }),
+    supabase
+      .from('catalog_hpp_components')
+      .select('catalog_id, catalog:catalog_id(id, title, category)')
+      .eq('material_id', id),
+    supabase
+      .from('catalog_addons')
+      .select('catalog_id, catalog:catalog_id(id, title, category)')
+      .eq('material_id', id),
+  ])
+
+  type CatalogUsage = {
+    id: string
+    title: string
+    category: string | null
+    usages: Set<string>
+  }
+  const catalogUsageMap = new Map<string, CatalogUsage>()
+  const ensureUsageEntry = (catalogId: string, title: string, category: string | null) => {
+    const existing = catalogUsageMap.get(catalogId)
+    if (existing) return existing
+    const created: CatalogUsage = { id: catalogId, title, category, usages: new Set<string>() }
+    catalogUsageMap.set(catalogId, created)
+    return created
+  }
+
+  ;(directCatalogRefsResult.data ?? []).forEach((catalog) => {
+    const entry = ensureUsageEntry(catalog.id, catalog.title, catalog.category ?? null)
+    if (catalog.atap_id === id) entry.usages.add('Material Atap')
+    if (catalog.rangka_id === id) entry.usages.add('Material Rangka')
+    if (catalog.finishing_id === id) entry.usages.add('Material Finishing')
+    if (catalog.isian_id === id) entry.usages.add('Material Isian')
+  })
+
+  ;(hppCatalogRefsResult.data ?? []).forEach((row) => {
+    const catalog = row.catalog as { id?: string; title?: string; category?: string | null } | null
+    const catalogId = catalog?.id ?? row.catalog_id
+    const title = catalog?.title ?? row.catalog_id
+    const category = catalog?.category ?? null
+    if (!catalogId) return
+    ensureUsageEntry(catalogId, title, category).usages.add('Komponen HPP')
+  })
+
+  ;(addonCatalogRefsResult.data ?? []).forEach((row) => {
+    const catalog = row.catalog as { id?: string; title?: string; category?: string | null } | null
+    const catalogId = catalog?.id ?? row.catalog_id
+    const title = catalog?.title ?? row.catalog_id
+    const category = catalog?.category ?? null
+    if (!catalogId) return
+    ensureUsageEntry(catalogId, title, category).usages.add('Addon')
+  })
+
+  const catalogUsages = Array.from(catalogUsageMap.values())
+    .map((item) => ({ ...item, usageList: Array.from(item.usages) }))
+    .sort((a, b) => a.title.localeCompare(b.title, 'id'))
+
   if (error) {
     console.error('Error fetching material:', error)
     return (
@@ -95,11 +184,22 @@ export default async function AdminMaterialDetailPage({ params }: { params: Prom
                 className="input"
                 required
               >
-                <option value="atap">Atap</option>
-                <option value="frame">Rangka</option>
-                <option value="aksesoris">Aksesoris</option>
-                <option value="lainnya">Lainnya</option>
+                {categories.map((category) => (
+                  <option key={category.code} value={category.code}>
+                    {category.name}
+                  </option>
+                ))}
               </select>
+            </div>
+            <div>
+              <label className="label">Nama Varian</label>
+              <input
+                type="text"
+                name="variant_name"
+                defaultValue={material.variant_name ?? 'Default'}
+                className="input"
+                required
+              />
             </div>
             <div>
               <label className="label">Satuan</label>
@@ -116,6 +216,24 @@ export default async function AdminMaterialDetailPage({ params }: { params: Prom
                 <option value="hari">Hari</option>
                 <option value="unit">Unit</option>
               </select>
+            </div>
+            <div>
+              <label className="label">Parent Material (opsional)</label>
+              <select
+                name="parent_material_id"
+                defaultValue={material.parent_material_id ?? ''}
+                className="input"
+              >
+                <option value="">Tidak ada (material utama)</option>
+                {parentOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} - {item.variant_name ?? 'Default'}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Parent hanya boleh material utama dalam kategori yang sama.
+              </p>
             </div>
             <div>
               <label className="label">Harga Dasar (Rp)</label>
@@ -171,6 +289,102 @@ export default async function AdminMaterialDetailPage({ params }: { params: Prom
             </div>
           </div>
         </form>
+      </div>
+
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Varian Material</h2>
+        </div>
+        <div className="p-6">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <p className="text-sm text-gray-600">
+              {variantRoot
+                ? `Material utama: ${variantRoot.name} (Varian: ${childVariants.length})`
+                : 'Daftar varian material'}
+            </p>
+            <Link
+              href={`/admin/materials/new?variant_of=${variantRootId}`}
+              className="btn btn-outline-dark btn-sm"
+            >
+              + Tambah Varian
+            </Link>
+          </div>
+          {childVariants.length === 0 ? (
+            <p className="text-sm text-gray-500">Belum ada varian untuk material ini.</p>
+          ) : (
+            <div className="space-y-2">
+              {childVariants.map((variant) => (
+                <div
+                  key={variant.id}
+                  className={`rounded-lg border p-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between ${
+                    variant.id === id ? 'border-[#E30613] bg-[#fff5f5]' : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <div>
+                    <p className="font-semibold text-gray-900">
+                      {variant.variant_name || 'Default'}
+                      {variant.id === id ? ' (Sedang Dibuka)' : ''}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Harga: Rp {(Number(variant.base_price_per_unit || 0)).toLocaleString('id-ID')} •{' '}
+                      {variant.is_active ? 'Aktif' : 'Nonaktif'}
+                    </p>
+                  </div>
+                  <Link href={`/admin/materials/${variant.id}`} className="btn btn-outline-dark btn-sm w-fit">
+                    Buka Varian
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Dipakai di Katalog</h2>
+        </div>
+        <div className="p-6">
+          {catalogUsages.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              Material ini belum dipakai di katalog manapun.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {catalogUsages.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-lg border border-gray-200 p-4 bg-white flex flex-col gap-2 md:flex-row md:items-center md:justify-between"
+                >
+                  <div>
+                    <p className="font-semibold text-gray-900">{item.title}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                      {item.category ? (
+                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
+                          {item.category}
+                        </span>
+                      ) : null}
+                      {item.usageList.map((usage) => (
+                        <span
+                          key={`${item.id}-${usage}`}
+                          className="inline-flex items-center rounded-full bg-[#E30613]/10 px-2 py-0.5 text-[#E30613] font-semibold"
+                        >
+                          {usage}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <Link
+                    href={`/admin/catalogs/${item.id}`}
+                    className="btn btn-outline-dark btn-sm w-fit"
+                  >
+                    Buka Katalog
+                  </Link>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

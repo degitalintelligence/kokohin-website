@@ -24,6 +24,7 @@ type CatalogRow = {
   finishing?: RawRel
   isian?: RawRel
   is_active?: boolean
+  is_published?: boolean
   is_popular?: boolean | null
 }
 
@@ -44,11 +45,15 @@ export async function GET(request: Request) {
   if (id) {
     const { data, error } = await supabase
       .from('catalogs')
-      .select('id, title, image_url, category, atap_id, rangka_id, finishing_id, isian_id, base_price_per_m2, base_price_unit, hpp_per_unit, std_calculation, use_std_calculation, atap:atap_id(name), rangka:rangka_id(name), finishing:finishing_id(name), isian:isian_id(name), is_active, is_popular')
+      .select('id, title, image_url, category, atap_id, rangka_id, finishing_id, isian_id, base_price_per_m2, base_price_unit, hpp_per_unit, std_calculation, use_std_calculation, atap:atap_id(name), rangka:rangka_id(name), finishing:finishing_id(name), isian:isian_id(name), is_active, is_published, is_popular')
       .eq('id', id)
       .maybeSingle()
     if (error) return errorResponse('INTERNAL_ERROR', 'Failed to fetch catalog', 500, error.message)
-    if (!data || (data as CatalogRow).is_active === false) return errorResponse('NOT_FOUND', 'Not found', 404)
+    if (
+      !data ||
+      (data as CatalogRow).is_active === false ||
+      (data as CatalogRow & { is_published?: boolean }).is_published === false
+    ) return errorResponse('NOT_FOUND', 'Not found', 404)
     const row = data as CatalogRow
     
     // Calculate total cost for the API response
@@ -93,6 +98,7 @@ export async function GET(request: Request) {
     .from('catalogs')
     .select('id, title, image_url, category, atap_id, rangka_id, finishing_id, isian_id, base_price_per_m2, base_price_unit, atap:atap_id(name), rangka:rangka_id(name), finishing:finishing_id(name), isian:isian_id(name), is_popular')
     .eq('is_active', true)
+    .eq('is_published', true)
     .order('created_at', { ascending: false })
   if (popular && ['1', 'true', 'yes'].includes(popular.toLowerCase())) {
     query = query.eq('is_popular', true)

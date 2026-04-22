@@ -16,6 +16,8 @@ export async function generateMetadata({ params }: CatalogPageProps): Promise<Me
     .from('catalogs')
     .select('title, category')
     .eq('id', id)
+    .eq('is_active', true)
+    .eq('is_published', true)
     .maybeSingle()
 
   if (!catalog) return { title: 'Katalog Tidak Ditemukan' }
@@ -45,12 +47,13 @@ export default async function CatalogDetailPage({ params }: CatalogPageProps) {
       finishing:finishing_id(name),
       isian:isian_id(name),
       is_active,
+      is_published,
       is_popular
     `)
     .eq('id', id)
     .maybeSingle()
 
-  if (error || !catalog || catalog.is_active === false) {
+  if (error || !catalog || catalog.is_active === false || catalog.is_published === false) {
     notFound()
   }
 

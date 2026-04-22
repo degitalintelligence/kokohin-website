@@ -39,13 +39,43 @@ async function uploadImage(file: File, supabase: SupabaseClient) {
   return publicUrl
 }
 
+type CatalogCategoryRules = {
+  code: string
+  require_atap: boolean
+  require_rangka: boolean
+  require_isian: boolean
+  require_finishing: boolean
+}
+
+async function getCatalogCategoryRules(
+  supabase: SupabaseClient,
+  categoryCode: string,
+): Promise<CatalogCategoryRules | null> {
+  const code = String(categoryCode || '').trim().toLowerCase()
+  if (!code) return null
+  const { data } = await supabase
+    .from('catalog_categories')
+    .select('code, require_atap, require_rangka, require_isian, require_finishing, is_active')
+    .eq('code', code)
+    .eq('is_active', true)
+    .maybeSingle()
+  if (!data) return null
+  return {
+    code: String((data as { code?: string }).code || code),
+    require_atap: !!(data as { require_atap?: boolean }).require_atap,
+    require_rangka: !!(data as { require_rangka?: boolean }).require_rangka,
+    require_isian: !!(data as { require_isian?: boolean }).require_isian,
+    require_finishing: !!(data as { require_finishing?: boolean }).require_finishing,
+  }
+}
+
 export async function updateHppPerUnit(catalogId: string, userId?: string) {
   const supabase = await createClient()
 
   // 1. Fetch components and catalog settings
   const { data: catalog, error: catalogError } = await supabase
     .from('catalogs')
-    .select('use_std_calculation, std_calculation, labor_cost, transport_cost, atap_id, rangka_id, finishing_id, isian_id')
+    .select('use_std_calculation, std_calculation, atap_id, rangka_id, finishing_id, isian_id')
     .eq('id', catalogId)
     .single()
 
@@ -56,7 +86,7 @@ export async function updateHppPerUnit(catalogId: string, userId?: string) {
 
   const { data: hppComponents, error: fetchError } = await supabase
     .from('catalog_hpp_components')
-    .select('quantity, material_id')
+    .select('quantity, material_id, source_catalog_id')
     .eq('catalog_id', catalogId)
 
   if (fetchError) {
@@ -65,7 +95,12 @@ export async function updateHppPerUnit(catalogId: string, userId?: string) {
   }
 
   // 2. Get unique material IDs from both HPP components AND main fields
-  const hppMaterialIds = (hppComponents ?? []).map(c => c.material_id).filter(Boolean)
+  const hppMaterialIds = (hppComponents ?? [])
+    .map((c) => c.material_id)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+  const nestedCatalogIds = (hppComponents ?? [])
+    .map((c) => c.source_catalog_id)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
   const mainMaterialIds = [
     catalog.atap_id, 
     catalog.rangka_id, 
@@ -75,20 +110,23 @@ export async function updateHppPerUnit(catalogId: string, userId?: string) {
 
   const materialIds = [...new Set([...hppMaterialIds, ...mainMaterialIds])]
   
-  if (materialIds.length === 0) {
+  if (materialIds.length === 0 && nestedCatalogIds.length === 0) {
     await supabase.from('catalogs').update({ hpp_per_unit: 0 }).eq('id', catalogId)
     return
   }
 
   // 3. Fetch materials
-  const { data: materials, error: materialsError } = await supabase
-    .from('materials')
-    .select('id, base_price_per_unit')
-    .in('id', materialIds)
-
-  if (materialsError) {
-    console.error(`[HPP Update] Error fetching materials for HPP calculation for catalog ${catalogId}:`, materialsError)
-    return
+  let materials: Array<{ id: string; base_price_per_unit: number }> = []
+  if (materialIds.length > 0) {
+    const { data: materialRows, error: materialsError } = await supabase
+      .from('materials')
+      .select('id, base_price_per_unit')
+      .in('id', materialIds)
+    if (materialsError) {
+      console.error(`[HPP Update] Error fetching materials for HPP calculation for catalog ${catalogId}:`, materialsError)
+      return
+    }
+    materials = (materialRows ?? []) as Array<{ id: string; base_price_per_unit: number }>
   }
 
   // 4. Create price map
@@ -111,16 +149,23 @@ export async function updateHppPerUnit(catalogId: string, userId?: string) {
     return sum + (1 * price) // Default 1 unit for main material
   }, 0)
 
-  const totalMaterialCost = hppComponentsCost + mainFieldsCost
-
-  interface CatalogCosts {
-    labor_cost?: number
-    transport_cost?: number
+  // Nested catalog cost uses source catalog HPP so paket dapat dipakai sebagai komponen BOM paket lain.
+  let nestedCatalogCost = 0
+  if (nestedCatalogIds.length > 0) {
+    const { data: nestedCatalogs } = await supabase
+      .from('catalogs')
+      .select('id, hpp_per_unit')
+      .in('id', [...new Set(nestedCatalogIds)])
+    const nestedMap = new Map((nestedCatalogs ?? []).map((item) => [item.id, Number(item.hpp_per_unit || 0)]))
+    nestedCatalogCost = (hppComponents ?? []).reduce((sum, component) => {
+      if (!component.source_catalog_id) return sum
+      const qty = Number(component.quantity || 0)
+      const unitCost = Number(nestedMap.get(component.source_catalog_id) || 0)
+      return sum + qty * unitCost
+    }, 0)
   }
-  const catalogCosts = catalog as unknown as CatalogCosts
-  const laborCost = Number(catalogCosts.labor_cost || 0)
-  const transportCost = Number(catalogCosts.transport_cost || 0)
-  const totalCost = totalMaterialCost + laborCost + transportCost
+
+  const totalCost = hppComponentsCost + mainFieldsCost + nestedCatalogCost
 
   // 6. Calculate HPP per unit/m2 based on use_std_calculation flag
   let finalHppPerUnit = totalCost
@@ -161,7 +206,7 @@ export async function fetchCatalogHppComponents(catalogId: string) {
   const { data, error } = await supabase
     .from('catalog_hpp_components')
     .select(
-      'id, material_id, quantity, section, material:material_id(id, name, base_price_per_unit, unit, category)',
+      'id, material_id, source_catalog_id, quantity, section, material:material_id(id, name, base_price_per_unit, unit, category), source_catalog:source_catalog_id(id, title, hpp_per_unit)',
     )
     .eq('catalog_id', catalogId)
     .order('created_at', { ascending: true })
@@ -204,8 +249,7 @@ export async function createCatalog(formData: FormData) {
     const addonsJson = (formData.get('addons_json') as string) || '[]'
     const imageFile = formData.get('image_file') as File
     const isActive = formData.get('is_active') === 'on'
-    const laborCostStr = (formData.get('labor_cost') as string) || '0'
-    const transportCostStr = (formData.get('transport_cost') as string) || '0'
+    const isPublished = formData.get('is_published') === 'on'
     const marginPercentageStr = (formData.get('margin_percentage') as string) || '0'
 
     if (!title || !basePriceStr) {
@@ -216,21 +260,17 @@ export async function createCatalog(formData: FormData) {
     if (isNaN(basePrice)) {
       throw new Error('Harga harus berupa angka')
     }
-    const laborCost = parseFloat(laborCostStr) || 0
-    const transportCost = parseFloat(transportCostStr) || 0
     const marginPercentage = Math.max(0, Math.min(100, parseFloat(marginPercentageStr) || 0))
     
     // Mandatory Components Validation
-    if (category === 'kanopi') {
-      if (!atapId) throw new Error('Kategori Kanopi wajib memilih Material Atap')
-      if (!rangkaId) throw new Error('Kategori Kanopi wajib memilih Material Rangka')
-      if (!finishingId) throw new Error('Kategori Kanopi wajib memilih Jenis Finishing')
+    const categoryRules = await getCatalogCategoryRules(supabase, category)
+    if (!categoryRules) {
+      throw new Error('Kategori katalog tidak valid atau tidak aktif')
     }
-    if (category === 'pagar' || category === 'railing') {
-      if (!rangkaId) throw new Error('Kategori Pagar/Railing wajib memilih Material Rangka')
-      if (!isianId) throw new Error('Kategori Pagar/Railing wajib memilih Material Isian')
-      if (!finishingId) throw new Error('Kategori Pagar/Railing wajib memilih Jenis Finishing')
-    }
+    if (categoryRules.require_atap && !atapId) throw new Error(`Kategori ${categoryRules.code} wajib memilih Material Atap`)
+    if (categoryRules.require_rangka && !rangkaId) throw new Error(`Kategori ${categoryRules.code} wajib memilih Material Rangka`)
+    if (categoryRules.require_isian && !isianId) throw new Error(`Kategori ${categoryRules.code} wajib memilih Material Isian`)
+    if (categoryRules.require_finishing && !finishingId) throw new Error(`Kategori ${categoryRules.code} wajib memilih Jenis Finishing`)
 
     const allowedUnits = new Set(['m2', 'm1', 'unit'])
     const safeUnit = allowedUnits.has(basePriceUnit) ? basePriceUnit : 'm2'
@@ -247,11 +287,11 @@ export async function createCatalog(formData: FormData) {
     const payload = {
       title,
       description,
-      category,
+      category: categoryRules.code,
       base_price_per_m2: basePrice,
       base_price_unit: safeUnit,
-      labor_cost: laborCost,
-      transport_cost: transportCost,
+      labor_cost: 0,
+      transport_cost: 0,
       margin_percentage: marginPercentage,
       atap_id: atapId || null,
       rangka_id: rangkaId || null,
@@ -259,6 +299,7 @@ export async function createCatalog(formData: FormData) {
       isian_id: isianId || null,
       image_url: imageUrl || null,
       is_active: isActive,
+      is_published: isPublished,
     }
 
     const { data: inserted, error: insertErr } = await supabase
@@ -343,6 +384,7 @@ export async function updateCatalog(formData: FormData) {
     const imageFile = formData.get('image_file') as File
     const currentImageUrl = (formData.get('current_image_url') as string) || ''
     const isActive = formData.get('is_active') === 'on'
+    const isPublished = formData.get('is_published') === 'on'
     const marginPercentageStr = (formData.get('margin_percentage') as string) || '0'
     const useStdCalculation = formData.get('use_std_calculation') === 'on'
     const stdCalculationStr = (formData.get('std_calculation') as string) || '1'
@@ -360,27 +402,27 @@ export async function updateCatalog(formData: FormData) {
     }
     const marginPercentage = Math.max(0, Math.min(100, parseFloat(marginPercentageStr) || 0))
     const stdCalculation = Math.max(0.01, parseFloat(stdCalculationStr) || 1)
-    const laborCostStr = formData.get('labor_cost') as string
-    const transportCostStr = formData.get('transport_cost') as string
-    const laborCost = laborCostStr ? parseFloat(laborCostStr) : 0
-    const transportCost = transportCostStr ? parseFloat(transportCostStr) : 0
 
-    if (category === 'kanopi') {
-      if (!atapId) throw new Error('Kategori Kanopi wajib memilih Material Atap')
-      if (!rangkaId) throw new Error('Kategori Kanopi wajib memilih Material Rangka')
-      if (!finishingId) throw new Error('Kategori Kanopi wajib memilih Jenis Finishing')
+    const categoryRules = await getCatalogCategoryRules(supabase, category)
+    if (!categoryRules) {
+      throw new Error('Kategori katalog tidak valid atau tidak aktif')
     }
-    if (category === 'pagar' || category === 'railing') {
-      if (!rangkaId) throw new Error('Kategori Pagar/Railing wajib memilih Material Rangka')
-      if (!isianId) throw new Error('Kategori Pagar/Railing wajib memilih Material Isian')
-      if (!finishingId) throw new Error('Kategori Pagar/Railing wajib memilih Jenis Finishing')
-    }
+    if (categoryRules.require_atap && !atapId) throw new Error(`Kategori ${categoryRules.code} wajib memilih Material Atap`)
+    if (categoryRules.require_rangka && !rangkaId) throw new Error(`Kategori ${categoryRules.code} wajib memilih Material Rangka`)
+    if (categoryRules.require_isian && !isianId) throw new Error(`Kategori ${categoryRules.code} wajib memilih Material Isian`)
+    if (categoryRules.require_finishing && !finishingId) throw new Error(`Kategori ${categoryRules.code} wajib memilih Jenis Finishing`)
 
     const allowedUnits = new Set(['m2', 'm1', 'unit'])
     const safeUnit = allowedUnits.has(basePriceUnit) ? basePriceUnit : 'm2'
 
     const addons: Array<{ id?: string; material_id: string; basis?: 'm2'|'m1'|'unit'; qty_per_basis?: number; is_optional: boolean }> = JSON.parse(addonsJson) ?? []
-    const hppComponents: Array<{ id?: string; material_id: string; quantity: number; section?: string }> = JSON.parse(hppComponentsJson) ?? []
+    const hppComponents: Array<{
+      id?: string
+      material_id?: string | null
+      source_catalog_id?: string | null
+      quantity: number
+      section?: string
+    }> = JSON.parse(hppComponentsJson) ?? []
 
     let imageUrl = currentImageUrl
     const newImageUrl = await uploadImage(imageFile, supabase)
@@ -391,20 +433,21 @@ export async function updateCatalog(formData: FormData) {
     const payload = {
       title,
       description,
-      category,
+      category: categoryRules.code,
       base_price_per_m2: basePrice,
       base_price_unit: safeUnit,
       margin_percentage: marginPercentage,
       std_calculation: stdCalculation,
       use_std_calculation: useStdCalculation,
-      labor_cost: laborCost,
-      transport_cost: transportCost,
+      labor_cost: 0,
+      transport_cost: 0,
       atap_id: atapId || null,
       rangka_id: rangkaId || null,
       finishing_id: finishingId || null,
       isian_id: isianId || null,
       image_url: imageUrl || null,
       is_active: isActive,
+      is_published: isPublished,
     }
 
     const { error: updErr } = await supabase.from('catalogs').update(payload).eq('id', id)
@@ -424,13 +467,30 @@ export async function updateCatalog(formData: FormData) {
     }
 
     for (const c of hppComponents.filter((c) => c.id)) {
-      const { error: uErr } = await supabase.from('catalog_hpp_components').update({ material_id: c.material_id, quantity: typeof c.quantity === 'number' ? c.quantity : 0, section: c.section || 'lainnya' }).eq('id', c.id as string)
+      const validMaterialId = c.material_id && String(c.material_id).length > 0 ? c.material_id : null
+      const validSourceCatalogId = c.source_catalog_id && String(c.source_catalog_id).length > 0 ? c.source_catalog_id : null
+      const { error: uErr } = await supabase
+        .from('catalog_hpp_components')
+        .update({
+          material_id: validMaterialId,
+          source_catalog_id: validSourceCatalogId,
+          quantity: typeof c.quantity === 'number' ? c.quantity : 0,
+          section: c.section || 'lainnya',
+        })
+        .eq('id', c.id as string)
       if (uErr) throw new Error(`Gagal mengupdate komponen HPP: ${uErr.message}`)
     }
 
-    const hppToInsert = hppComponents.filter((c) => !c.id && c.material_id)
+    const hppToInsert = hppComponents.filter((c) => !c.id && (c.material_id || c.source_catalog_id))
     if (hppToInsert.length > 0) {
-      const rows = hppToInsert.map((c) => ({ catalog_id: id, material_id: c.material_id, quantity: Number(c.quantity) > 0 ? Number(c.quantity) : 1, section: c.section || 'lainnya' }))
+      const rows = hppToInsert.map((c) => ({
+        catalog_id: id,
+        material_id: c.material_id && String(c.material_id).length > 0 ? c.material_id : null,
+        source_catalog_id:
+          c.source_catalog_id && String(c.source_catalog_id).length > 0 ? c.source_catalog_id : null,
+        quantity: Number(c.quantity) > 0 ? Number(c.quantity) : 1,
+        section: c.section || 'lainnya',
+      }))
       const { error: insErr } = await supabase.from('catalog_hpp_components').insert(rows)
       if (insErr) throw new Error(`Gagal menambah komponen HPP: ${insErr.message}`)
     }
@@ -505,21 +565,20 @@ export async function saveCatalogInfo(formData: FormData) {
   const imageFile = formData.get('image_file') as File
   const currentImageUrl = (formData.get('current_image_url') as string) || ''
   const isActive = formData.get('is_active') === 'on'
+  const isPublished = formData.get('is_published') === 'on'
 
   if (!title) {
     throw new Error('Nama paket wajib diisi')
   }
 
-  if (category === 'kanopi') {
-    if (!atapId) throw new Error('Kategori Kanopi wajib memilih Material Atap')
-    if (!rangkaId) throw new Error('Kategori Kanopi wajib memilih Material Rangka')
-    if (!finishingId) throw new Error('Kategori Kanopi wajib memilih Jenis Finishing')
+  const categoryRules = await getCatalogCategoryRules(supabase, category)
+  if (!categoryRules) {
+    throw new Error('Kategori katalog tidak valid atau tidak aktif')
   }
-  if (category === 'pagar' || category === 'railing') {
-    if (!rangkaId) throw new Error('Kategori Pagar/Railing wajib memilih Material Rangka')
-    if (!isianId) throw new Error('Kategori Pagar/Railing wajib memilih Material Isian')
-    if (!finishingId) throw new Error('Kategori Pagar/Railing wajib memilih Jenis Finishing')
-  }
+  if (categoryRules.require_atap && !atapId) throw new Error(`Kategori ${categoryRules.code} wajib memilih Material Atap`)
+  if (categoryRules.require_rangka && !rangkaId) throw new Error(`Kategori ${categoryRules.code} wajib memilih Material Rangka`)
+  if (categoryRules.require_isian && !isianId) throw new Error(`Kategori ${categoryRules.code} wajib memilih Material Isian`)
+  if (categoryRules.require_finishing && !finishingId) throw new Error(`Kategori ${categoryRules.code} wajib memilih Jenis Finishing`)
 
   let imageUrl = currentImageUrl
   const newImageUrl = await uploadImage(imageFile, supabase)
@@ -529,13 +588,14 @@ export async function saveCatalogInfo(formData: FormData) {
 
   const payload = {
     title,
-    category,
+    category: categoryRules.code,
     atap_id: atapId || null,
     rangka_id: rangkaId || null,
     finishing_id: finishingId || null,
     isian_id: isianId || null,
     image_url: imageUrl || null,
     is_active: isActive,
+    is_published: isPublished,
   }
 
   const { error: updErr } = await supabase.from('catalogs').update(payload).eq('id', id)
@@ -632,22 +692,24 @@ export async function saveCatalogHpp(formData: FormData) {
 
   const useStdCalculation = formData.get('use_std_calculation') === 'on'
   const stdCalculationStr = (formData.get('std_calculation') as string) || '1'
-  const laborCostStr = (formData.get('labor_cost') as string) || '0'
-  const transportCostStr = (formData.get('transport_cost') as string) || '0'
   const hppComponentsJson = (formData.get('hpp_components_json') as string) || '[]'
 
   const stdCalculation = Math.max(0.01, parseFloat(stdCalculationStr) || 1)
-  const laborCost = laborCostStr ? parseFloat(laborCostStr) : 0
-  const transportCost = transportCostStr ? parseFloat(transportCostStr) : 0
 
-  const hppComponents: Array<{ id?: string; material_id: string; quantity: number; section?: string }> =
+  const hppComponents: Array<{
+    id?: string
+    material_id?: string | null
+    source_catalog_id?: string | null
+    quantity: number
+    section?: string
+  }> =
     JSON.parse(hppComponentsJson) ?? []
 
   const payload = {
     std_calculation: stdCalculation,
     use_std_calculation: useStdCalculation,
-    labor_cost: laborCost,
-    transport_cost: transportCost,
+    labor_cost: 0,
+    transport_cost: 0,
   }
 
   const { error: updErr } = await supabase.from('catalogs').update(payload).eq('id', id)
@@ -669,10 +731,13 @@ export async function saveCatalogHpp(formData: FormData) {
   }
 
   for (const c of hppComponents.filter((c) => c.id)) {
+    const validMaterialId = c.material_id && String(c.material_id).length > 0 ? c.material_id : null
+    const validSourceCatalogId = c.source_catalog_id && String(c.source_catalog_id).length > 0 ? c.source_catalog_id : null
     const { error: uErr } = await supabase
       .from('catalog_hpp_components')
       .update({
-        material_id: c.material_id,
+        material_id: validMaterialId,
+        source_catalog_id: validSourceCatalogId,
         quantity: typeof c.quantity === 'number' ? c.quantity : 0,
         section: c.section || 'lainnya',
       })
@@ -680,11 +745,13 @@ export async function saveCatalogHpp(formData: FormData) {
     if (uErr) throw new Error(`Gagal mengupdate komponen HPP: ${uErr.message}`)
   }
 
-  const hppToInsert = hppComponents.filter((c) => !c.id && c.material_id)
+  const hppToInsert = hppComponents.filter((c) => !c.id && (c.material_id || c.source_catalog_id))
   if (hppToInsert.length > 0) {
     const rows = hppToInsert.map((c) => ({
       catalog_id: id,
-      material_id: c.material_id,
+      material_id: c.material_id && String(c.material_id).length > 0 ? c.material_id : null,
+      source_catalog_id:
+        c.source_catalog_id && String(c.source_catalog_id).length > 0 ? c.source_catalog_id : null,
       quantity: Number(c.quantity) > 0 ? Number(c.quantity) : 1,
       section: c.section || 'lainnya',
     }))
@@ -1111,6 +1178,7 @@ export async function searchCatalogs(query: string) {
     .select('id, title, base_price_per_m2, base_price_unit, image_url')
     .ilike('title', `%${query}%`)
     .eq('is_active', true)
+    .eq('is_published', true)
     .limit(10)
 
   if (error) {

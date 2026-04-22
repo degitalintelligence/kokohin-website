@@ -77,6 +77,67 @@ export default function ImportCsvForm({ importMaterials }: ImportCsvFormProps) {
     }
   }
 
+  const templateHeader = [
+    'id',
+    'code',
+    'name',
+    'category',
+    'variant_name',
+    'parent_material_id',
+    'unit',
+    'base_price_per_unit',
+    'length_per_unit',
+    'is_active',
+    'is_laser_cut',
+    'requires_sealant',
+  ]
+  const templateRows = [
+    [
+      '',
+      'AT-SPANDEK-030',
+      'Spandek Galvalum',
+      'atap',
+      '0.30 mm',
+      '',
+      'm1',
+      '65000',
+      '1',
+      'true',
+      'false',
+      'false',
+    ],
+    [
+      '',
+      'FR-HOLLOW-4040-12',
+      'Besi Hollow Galvanis 40x40',
+      'frame',
+      '1.2 mm',
+      '',
+      'batang',
+      '160000',
+      '6',
+      'true',
+      'false',
+      'false',
+    ],
+    [
+      '',
+      'AK-SEALANT-CLEAR',
+      'Sealant Kaca',
+      'aksesoris',
+      'Clear',
+      '',
+      'unit',
+      '55000',
+      '1',
+      'true',
+      'false',
+      'true',
+    ],
+  ]
+  const templateCsv = [templateHeader.join(','), ...templateRows.map((row) => row.join(','))].join('\n')
+  const templateHref = `data:text/csv;charset=utf-8,${encodeURIComponent(templateCsv)}`
+
   return (
     <div className="relative">
       <button
@@ -121,14 +182,23 @@ export default function ImportCsvForm({ importMaterials }: ImportCsvFormProps) {
                 </div>
               )}
               <div className="text-xs text-gray-500">
-                <p>Format CSV: id (opsional), code, name, category, unit, base_price_per_unit, length_per_unit, is_active</p>
+                <p>Format CSV: id (opsional), code, name, category, variant_name, parent_material_id, unit, base_price_per_unit, length_per_unit, is_active, is_laser_cut, requires_sealant</p>
                 <p>Gunakan <strong>Export CSV</strong> untuk mendapatkan template dengan ID (untuk update).</p>
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-between items-center gap-2">
+                <a
+                  href={templateHref}
+                  download="materials-template.csv"
+                  className="btn btn-outline-dark btn-sm"
+                >
+                  Download Template
+                </a>
+                <div className="flex gap-2">
                 <button type="button" className="btn btn-outline-dark btn-sm" onClick={() => setOpen(false)}>
                   Batal
                 </button>
                 <SubmitButton />
+                </div>
               </div>
             </form>
           </div>

@@ -20,7 +20,7 @@ CREATE INDEX IF NOT EXISTS idx_wa_contacts_display_name ON public.wa_contacts(di
 
 -- Index untuk status log queries (monitoring dan reporting)
 CREATE INDEX IF NOT EXISTS idx_wa_message_status_log_message_id ON public.wa_message_status_log(message_id);
-CREATE INDEX IF NOT EXISTS idx_wa_message_status_log_created_at ON public.wa_message_status_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wa_message_status_log_created_at ON public.wa_message_status_log(occurred_at DESC);
 
 -- Index untuk broadcast campaigns (mass messaging performance)
 CREATE INDEX IF NOT EXISTS idx_wa_broadcast_recipients_campaign_id ON public.wa_broadcast_recipients(campaign_id);

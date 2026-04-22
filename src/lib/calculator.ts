@@ -164,6 +164,7 @@ export async function calculateCanopyPrice(input: CalculatorInput): Promise<Calc
       .select('id, base_price_per_m2, base_price_unit, labor_cost, transport_cost, margin_percentage, hpp_per_unit, atap_id, rangka_id')
       .eq('id', input.catalogId)
       .eq('is_active', true)
+      .eq('is_published', true)
       .maybeSingle()
     if (catalogError || !catalog) {
       throw new Error('Katalog belum tersedia')

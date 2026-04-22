@@ -19,11 +19,16 @@ export default function CatalogTabs({
   children: React.ReactNode
   saveBar?: React.ReactNode
 }) {
-  const [activeTab, setActiveTab] = useState<TabId>(() => {
-    if (typeof window === 'undefined') return 'info'
+  // Keep initial render deterministic so SSR and client hydration match.
+  const [activeTab, setActiveTab] = useState<TabId>('info')
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
     const saved = window.sessionStorage.getItem('catalog-tabs-active') as TabId | null
-    return saved && tabs.some((t) => t.id === saved) ? saved : 'info'
-  })
+    if (saved && tabs.some((t) => t.id === saved)) {
+      setActiveTab(saved)
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return

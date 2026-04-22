@@ -88,7 +88,9 @@ export interface Material {
     id: string
     code: string
     name: string
-    category: 'atap' | 'frame' | 'aksesoris' | 'lainnya'
+    category: string
+    variant_name?: string
+    parent_material_id?: string | null
     unit: 'batang' | 'lembar' | 'm1' | 'm2' | 'hari' | 'unit'
     base_price_per_unit: number   // kolom DB: base_price_per_unit (bukan 'price')
     length_per_unit: number | null
@@ -128,6 +130,7 @@ export interface Catalog {
     base_price_per_m2: number
     addons?: CatalogAddon[]
     is_active: boolean
+    is_published?: boolean
     is_popular?: boolean
     created_at: string
     updated_at: string

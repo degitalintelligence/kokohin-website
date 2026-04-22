@@ -49,13 +49,28 @@ export async function GET(request: Request) {
     const { data, error } = await supabase
       .from('materials')
       .select('id,name,base_price_per_unit')
+      .eq('is_active', true)
       .ilike('name', `%${search}%`)
       .order('name')
-      .limit(1)
+      .limit(20)
     if (error) return errorResponse('INTERNAL_ERROR', 'Failed to search material', 500, error.message)
-    const row = Array.isArray(data) && data.length > 0 ? data[0] : null
+    const candidates = Array.isArray(data) ? data : []
+    if (candidates.length === 0) return NextResponse.json({ material: null })
+    const candidateIds = candidates.map((row) => row.id)
+    const { data: childRows } = await supabase
+      .from('materials')
+      .select('parent_material_id')
+      .in('parent_material_id', candidateIds)
+    const parentIdsWithChildren = new Set(
+      (childRows ?? [])
+        .map((row) => row.parent_material_id)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+    )
+    const row = candidates.find((candidate) => !parentIdsWithChildren.has(candidate.id)) ?? null
     if (!row) return NextResponse.json({ material: null })
-    return NextResponse.json({ material: { id: row.id, name: row.name, base_price_per_unit: row.base_price_per_unit } })
+    return NextResponse.json({
+      material: { id: row.id, name: row.name, base_price_per_unit: row.base_price_per_unit },
+    })
   }
 
   if (category) {
@@ -66,7 +81,20 @@ export async function GET(request: Request) {
       .eq('is_active', true)
       .order('name')
     if (error) return errorResponse('INTERNAL_ERROR', 'Failed to fetch materials by category', 500, error.message)
-    return NextResponse.json({ materials: data ?? [] })
+    const rows = data ?? []
+    if (rows.length === 0) return NextResponse.json({ materials: [] })
+    const ids = rows.map((row) => row.id)
+    const { data: childRows } = await supabase
+      .from('materials')
+      .select('parent_material_id')
+      .in('parent_material_id', ids)
+    const parentIdsWithChildren = new Set(
+      (childRows ?? [])
+        .map((row) => row.parent_material_id)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+    )
+    const filtered = rows.filter((row) => !parentIdsWithChildren.has(row.id))
+    return NextResponse.json({ materials: filtered })
   }
 
   return errorResponse('BAD_REQUEST', 'Bad Request', 400)

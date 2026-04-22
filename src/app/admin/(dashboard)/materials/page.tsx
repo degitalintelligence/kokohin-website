@@ -80,6 +80,26 @@ export async function importMaterials(formData: FormData) {
     }
   })
 
+  const importedCategories = Array.from(
+    new Set(
+      [...payloadWithId, ...payloadWithoutId]
+        .map((item) => (item.category || '').trim())
+        .filter((value) => value.length > 0),
+    ),
+  )
+
+  if (importedCategories.length > 0) {
+    const categoryPayload = importedCategories.map((code, index) => ({
+      code,
+      name: code.charAt(0).toUpperCase() + code.slice(1),
+      sort_order: 200 + index,
+      is_active: true,
+    }))
+    await supabase
+      .from('material_categories')
+      .upsert(categoryPayload, { onConflict: 'code' })
+  }
+
   // 1. Process updates by ID (allows changing code)
   if (payloadWithId.length > 0) {
     const { error } = await supabase.from('materials').upsert(payloadWithId, { onConflict: 'id' })
@@ -366,25 +386,48 @@ const buildMaterialsCsv = (materials: Array<{
   code: string
   name: string
   category: string
+  variant_name?: string | null
+  parent_material_id?: string | null
   unit: string
   base_price_per_unit: number
   length_per_unit: number | null
   is_active: boolean
   is_laser_cut?: boolean
   requires_sealant?: boolean
+  created_at?: string
+  updated_at?: string
 }>) => {
-  const header = ['id', 'code', 'name', 'category', 'unit', 'base_price_per_unit', 'length_per_unit', 'is_active', 'is_laser_cut', 'requires_sealant']
+  const header = [
+    'id',
+    'code',
+    'name',
+    'category',
+    'variant_name',
+    'parent_material_id',
+    'unit',
+    'base_price_per_unit',
+    'length_per_unit',
+    'is_active',
+    'is_laser_cut',
+    'requires_sealant',
+    'created_at',
+    'updated_at',
+  ]
   const rows = materials.map((m) => [
     escapeCsvValue(m.id),
     escapeCsvValue(m.code),
     escapeCsvValue(m.name),
     escapeCsvValue(m.category),
+    escapeCsvValue(m.variant_name ?? 'Default'),
+    escapeCsvValue(m.parent_material_id ?? ''),
     escapeCsvValue(m.unit),
     escapeCsvValue(m.base_price_per_unit),
     escapeCsvValue(m.length_per_unit),
     escapeCsvValue(m.is_active),
     escapeCsvValue(m.is_laser_cut ?? false),
-    escapeCsvValue(m.requires_sealant ?? false)
+    escapeCsvValue(m.requires_sealant ?? false),
+    escapeCsvValue(m.created_at ?? ''),
+    escapeCsvValue(m.updated_at ?? ''),
   ])
   return [header.join(','), ...rows.map((row) => row.join(','))].join('\n')
 }
@@ -430,30 +473,34 @@ const parseCsv = (text: string) => {
 }
 
 export default async function AdminMaterialsPage({ searchParams }: { searchParams: Promise<{ category?: string; import?: string; error?: string; notice?: string; page?: string }> }) {
-  const { category: rawCategory, import: importStatus, error: errorParam, notice, page: rawPage } = await searchParams
-  const allowedCategories = new Set(['atap', 'frame', 'aksesoris', 'finishing', 'isian', 'lainnya'])
-  const activeCategory = rawCategory && allowedCategories.has(rawCategory) ? rawCategory as 'atap' | 'frame' | 'aksesoris' | 'finishing' | 'isian' | 'lainnya' : null
-  const pageSize = 50
-  const currentPage = Math.max(1, Number.isFinite(Number(rawPage)) && Number(rawPage) > 0 ? Number(rawPage) : 1)
-  const from = (currentPage - 1) * pageSize
-  const to = from + pageSize - 1
+  const { category: rawCategory, import: importStatus, error: errorParam, notice } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
   if (!user && !bypass) redirect('/admin/login')
 
+  const { data: categoriesRaw } = await supabase
+    .from('material_categories')
+    .select('code, name, sort_order, is_active')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true })
+
+  const categories = categoriesRaw ?? []
+  const allowedCategories = new Set(categories.map((item) => item.code))
+  const activeCategory = rawCategory && allowedCategories.has(rawCategory) ? rawCategory : null
+
   // Fetch materials from Supabase
   let query = supabase
     .from('materials')
-    .select('*', { count: 'exact' })
+    .select('*, parent:parent_material_id(id, name, variant_name)')
     .order('created_at', { ascending: false })
   if (activeCategory) {
     query = query.eq('category', activeCategory)
   }
-  const { data: materialsRaw, error, count } = await query.range(from, to)
+  const { data: materialsRaw, error } = await query
   const materials = materialsRaw || []
-  const totalMaterials = count ?? materials.length
-  const totalPages = Math.max(1, Math.ceil(totalMaterials / pageSize))
+  const totalMaterials = materials.length
 
   if (error) {
     console.error('Error fetching materials:', {
@@ -472,7 +519,34 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
       maximumFractionDigits: 0
     }).format(amount)
   }
-  const csvContent = buildMaterialsCsv(materials ?? [])
+  let exportQuery = supabase
+    .from('materials')
+    .select(
+      'id, code, name, category, variant_name, parent_material_id, unit, base_price_per_unit, length_per_unit, is_active, is_laser_cut, requires_sealant, created_at, updated_at',
+    )
+    .order('created_at', { ascending: false })
+
+  if (activeCategory) {
+    exportQuery = exportQuery.eq('category', activeCategory)
+  }
+
+  const { data: exportRows } = await exportQuery
+  const csvContent = buildMaterialsCsv((exportRows as Array<{
+    id: string
+    code: string
+    name: string
+    category: string
+    variant_name?: string | null
+    parent_material_id?: string | null
+    unit: string
+    base_price_per_unit: number
+    length_per_unit: number | null
+    is_active: boolean
+    is_laser_cut?: boolean
+    requires_sealant?: boolean
+    created_at?: string
+    updated_at?: string
+  }> | null) ?? [])
   const csvHref = `data:text/csv;charset=utf-8,${encodeURIComponent(csvContent)}`
 
   return (
@@ -484,6 +558,9 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
             <p className={styles.sub}>Daftar material yang digunakan untuk perhitungan harga kanopi</p>
           </div>
           <div className="flex gap-2">
+            <Link href="/admin/material-categories" className="btn btn-outline-dark">
+              Kelola Kategori
+            </Link>
             <Link href="/admin/materials/new" className="btn btn-primary">
               + Tambah Material
             </Link>
@@ -552,6 +629,9 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
             <h2 className={styles.sectionTitle}>
               {activeCategory ? `Material — ${activeCategory.toUpperCase()}` : 'Semua Material'} ({totalMaterials})
             </h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Aturan varian: hanya material utama yang boleh punya varian. Varian tidak bisa menjadi parent varian lain.
+            </p>
             <div className="flex flex-wrap items-center gap-2">
               <ImportCsvForm importMaterials={importMaterials} />
               <a href={csvHref} download="materials.csv" className="btn btn-outline-dark btn-sm">Export CSV</a>
@@ -561,42 +641,15 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
               >
                 Semua
               </Link>
-              <Link
-                href="/admin/materials?category=atap"
-                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'atap' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
-              >
-                Atap
-              </Link>
-              <Link
-                href="/admin/materials?category=frame"
-                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'frame' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
-              >
-                Rangka
-              </Link>
-              <Link
-                href="/admin/materials?category=aksesoris"
-                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'aksesoris' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
-              >
-                Aksesoris
-              </Link>
-              <Link
-                href="/admin/materials?category=finishing"
-                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'finishing' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
-              >
-                Finishing
-              </Link>
-              <Link
-                href="/admin/materials?category=isian"
-                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'isian' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
-              >
-                Isian
-              </Link>
-              <Link
-                href="/admin/materials?category=lainnya"
-                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === 'lainnya' ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
-              >
-                Lainnya
-              </Link>
+              {categories.map((category) => (
+                <Link
+                  key={category.code}
+                  href={`/admin/materials?category=${encodeURIComponent(category.code)}`}
+                  className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors border ${activeCategory === category.code ? 'bg-[#E30613] text-white border-[#E30613]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+                >
+                  {category.name}
+                </Link>
+              ))}
             </div>
           </div>
           {importStatus && (
@@ -606,47 +659,20 @@ export default async function AdminMaterialsPage({ searchParams }: { searchParam
               </div>
             </div>
           )}
-          <MaterialsListClient materials={materials ?? []} />
+          <MaterialsListClient
+            materials={materials ?? []}
+            categories={categories.map((category) => ({ code: category.code, name: category.name }))}
+            activeCategory={activeCategory}
+          />
           <div className="mt-4 flex items-center justify-between text-xs text-gray-600 px-5">
             <span>
               Menampilkan{' '}
               <span className="font-semibold">
-                {materials.length > 0 ? from + 1 : 0}–{from + materials.length}
+                {materials.length > 0 ? 1 : 0}–{materials.length}
               </span>{' '}
               dari <span className="font-semibold">{totalMaterials}</span> material
             </span>
-            <div className="flex items-center gap-2">
-              <Link
-                href={{
-                  pathname: '/admin/materials',
-                  query: {
-                    ...(activeCategory ? { category: activeCategory } : {}),
-                    page: Math.max(1, currentPage - 1),
-                  },
-                }}
-                className="px-2 py-1 rounded-md border border-gray-300 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
-                aria-disabled={currentPage === 1}
-              >
-                Sebelumnya
-              </Link>
-              <span>
-                Halaman <span className="font-semibold">{currentPage}</span> dari{' '}
-                <span className="font-semibold">{totalPages}</span>
-              </span>
-              <Link
-                href={{
-                  pathname: '/admin/materials',
-                  query: {
-                    ...(activeCategory ? { category: activeCategory } : {}),
-                    page: Math.min(totalPages, currentPage + 1),
-                  },
-                }}
-                className="px-2 py-1 rounded-md border border-gray-300 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
-                aria-disabled={currentPage === totalPages}
-              >
-                Berikutnya
-              </Link>
-            </div>
+            <span className="font-medium text-gray-500">Hierarki dihitung dari seluruh data kategori saat ini</span>
           </div>
         </div>
 

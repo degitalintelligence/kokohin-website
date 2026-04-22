@@ -27,6 +27,11 @@ export async function GET(
       return errorResponse('NOT_FOUND', 'Catalog not found', 404)
     }
 
+    if ((catalog as { is_active?: boolean; is_published?: boolean }).is_active === false ||
+        (catalog as { is_active?: boolean; is_published?: boolean }).is_published === false) {
+      return errorResponse('NOT_FOUND', 'Catalog not found', 404)
+    }
+
     const { data: addons, error: addonsError } = await supabase
       .from('catalog_addons')
       .select('*, materials(*)')

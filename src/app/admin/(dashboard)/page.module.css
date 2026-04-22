@@ -79,7 +79,7 @@
 }
 
 .tableWrap {
-  @apply overflow-x-hidden;
+  @apply overflow-x-auto;
 }
 
 .table {

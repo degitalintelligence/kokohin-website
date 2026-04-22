@@ -124,6 +124,26 @@ export async function importMaterials(formData: FormData) {
     }
   })
 
+  const importedCategories = Array.from(
+    new Set(
+      [...payloadWithId, ...payloadWithoutId]
+        .map((item) => (item.category || '').trim())
+        .filter((value) => value.length > 0),
+    ),
+  )
+
+  if (importedCategories.length > 0) {
+    const categoryPayload = importedCategories.map((code, index) => ({
+      code,
+      name: code.charAt(0).toUpperCase() + code.slice(1),
+      sort_order: 200 + index,
+      is_active: true,
+    }))
+    await supabase
+      .from('material_categories')
+      .upsert(categoryPayload, { onConflict: 'code' })
+  }
+
   if (payloadWithId.length > 0) {
     const { error } = await supabase
       .from('materials')
@@ -199,15 +219,31 @@ export async function copyMaterial(materialId: string) {
   }
 
   const baseCode = (original as { code?: string }).code || ''
-
-  const { data: sameCodeRows } = await supabase
-    .from('materials')
-    .select('code')
-    .like('code', `${baseCode}-COPY%`)
-
   type CodeRow = { code: string }
-  const existingCodes = (sameCodeRows ?? []).map((r: CodeRow) => r.code)
-  const newCode = buildCopyCode(baseCode, existingCodes)
+  const codeCache = new Map<string, string[]>()
+  const generateCopyCode = async (sourceCode: string) => {
+    if (!sourceCode) {
+      throw new Error('Kode material tidak valid')
+    }
+    if (!codeCache.has(sourceCode)) {
+      const { data: sameCodeRows, error: codeErr } = await supabase
+        .from('materials')
+        .select('code')
+        .like('code', `${sourceCode}-COPY%`)
+      if (codeErr) {
+        throw new Error(codeErr.message || 'Gagal menyiapkan kode salinan')
+      }
+      codeCache.set(
+        sourceCode,
+        (sameCodeRows ?? []).map((r: CodeRow) => r.code),
+      )
+    }
+    const existingCodes = codeCache.get(sourceCode) ?? []
+    const nextCode = buildCopyCode(sourceCode, existingCodes)
+    codeCache.set(sourceCode, [...existingCodes, nextCode])
+    return nextCode
+  }
+  const newCode = await generateCopyCode(baseCode)
 
   const clone: Record<string, unknown> = { ...(original as Record<string, unknown>) }
   delete clone.id
@@ -229,6 +265,39 @@ export async function copyMaterial(materialId: string) {
 
   if (insErr || !inserted) {
     throw new Error(insErr?.message || 'Gagal menyalin material')
+  }
+
+  const { data: childRows, error: childErr } = await supabase
+    .from('materials')
+    .select('*')
+    .eq('parent_material_id', materialId)
+
+  if (childErr) {
+    throw new Error(childErr.message || 'Gagal membaca varian material')
+  }
+
+  if (childRows && childRows.length > 0) {
+    const childPayloads: Record<string, unknown>[] = []
+    for (const child of childRows as Record<string, unknown>[]) {
+      const childCode = String(child.code ?? '')
+      const newChildCode = await generateCopyCode(childCode)
+      const childClone: Record<string, unknown> = { ...child }
+      delete childClone.id
+      delete childClone.created_at
+      delete childClone.updated_at
+      childPayloads.push({
+        ...childClone,
+        code: newChildCode,
+        parent_material_id: inserted.id,
+        is_active: true,
+      })
+    }
+
+    const { error: insertChildrenErr } = await supabase.from('materials').insert(childPayloads)
+    if (insertChildrenErr) {
+      await supabase.from('materials').delete().eq('id', inserted.id)
+      throw new Error(insertChildrenErr.message || 'Gagal menyalin varian material')
+    }
   }
 
   revalidatePath('/admin/materials')

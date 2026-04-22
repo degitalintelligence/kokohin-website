@@ -10,9 +10,13 @@ export const metadata: Metadata = {
 }
 export const revalidate = 3600
 
-export default async function KalkulatorPage({ searchParams }: { searchParams: { catalog?: string } }) {
+export default async function KalkulatorPage({
+  searchParams,
+}: {
+  searchParams: { catalog?: string; catalog_id?: string }
+}) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
-  const catalogParam = resolvedSearchParams?.catalog
+  const catalogParam = resolvedSearchParams?.catalog ?? resolvedSearchParams?.catalog_id
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
       {/* Hero Section */}

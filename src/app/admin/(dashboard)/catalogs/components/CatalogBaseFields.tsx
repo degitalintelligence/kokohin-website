@@ -2,14 +2,28 @@
 
 import { useMemo, useState } from 'react'
 
-type Option = { id: string; name: string }
-type Category = '' | 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya'
+type Option = {
+  id: string
+  name: string
+  variant_name?: string | null
+  unit?: string | null
+  category?: string | null
+}
+type CatalogCategoryOption = {
+  code: string
+  name: string
+  require_atap?: boolean
+  require_rangka?: boolean
+  require_isian?: boolean
+  require_finishing?: boolean
+}
 
 export default function CatalogBaseFields({
   atapList,
   rangkaList,
   finishingList,
   isianList,
+  categoryOptions,
   initialCategory = '',
   initialAtapId = '',
   initialRangkaId = '',
@@ -20,31 +34,44 @@ export default function CatalogBaseFields({
   rangkaList: Option[]
   finishingList: Option[]
   isianList: Option[]
-  initialCategory?: Category
+  categoryOptions: CatalogCategoryOption[]
+  initialCategory?: string
   initialAtapId?: string
   initialRangkaId?: string
   initialFinishingId?: string
   initialIsianId?: string
 }) {
-  const [category, setCategory] = useState<Category>(initialCategory || '')
+  const [category, setCategory] = useState<string>(initialCategory || '')
   const [atapId, setAtapId] = useState(initialAtapId || '')
   const [rangkaId, setRangkaId] = useState(initialRangkaId || '')
   const [finishingId, setFinishingId] = useState(initialFinishingId || '')
   const [isianId, setIsianId] = useState(initialIsianId || '')
 
-  const showAtap = useMemo(() => category === 'kanopi', [category])
-  const showRangka = useMemo(() => category !== 'aksesoris' && category !== 'lainnya' && category !== '', [category])
-  const showIsian = useMemo(() => category === 'pagar' || category === 'railing', [category])
-  const showFinishing = useMemo(() => category !== 'aksesoris' && category !== 'lainnya' && category !== '', [category])
+  const selectedCategory = useMemo(
+    () => categoryOptions.find((item) => item.code === category) ?? null,
+    [categoryOptions, category],
+  )
+  const showAtap = !!selectedCategory?.require_atap
+  const showRangka = !!selectedCategory?.require_rangka
+  const showIsian = !!selectedCategory?.require_isian
+  const showFinishing = !!selectedCategory?.require_finishing
 
-  const onCategoryChange = (next: Category) => {
+  const onCategoryChange = (next: string) => {
     setCategory(next)
-    if (next !== 'kanopi') setAtapId('')
-    if (next !== 'pagar' && next !== 'railing') setIsianId('')
-    if (next === 'aksesoris' || next === 'lainnya' || next === '') {
-      setRangkaId('')
-      setFinishingId('')
-    }
+    const nextCategory = categoryOptions.find((item) => item.code === next)
+    if (!nextCategory?.require_atap) setAtapId('')
+    if (!nextCategory?.require_rangka) setRangkaId('')
+    if (!nextCategory?.require_isian) setIsianId('')
+    if (!nextCategory?.require_finishing) setFinishingId('')
+  }
+
+  const toOptionLabel = (option: Option) => {
+    const variant =
+      option.variant_name && option.variant_name.toLowerCase() !== 'default'
+        ? ` - ${option.variant_name}`
+        : ''
+    const unit = option.unit ? ` (${option.unit})` : ''
+    return `${option.name}${variant}${unit}`
   }
 
   return (
@@ -56,14 +83,14 @@ export default function CatalogBaseFields({
           className="w-full px-4 py-2 border rounded-md"
           required
           value={category}
-          onChange={(e) => onCategoryChange(e.target.value as Category)}
+          onChange={(e) => onCategoryChange(e.target.value)}
         >
           <option value="">Pilih Kategori...</option>
-          <option value="kanopi">Kanopi</option>
-          <option value="pagar">Pagar</option>
-          <option value="railing">Railing</option>
-          <option value="aksesoris">Aksesoris</option>
-          <option value="lainnya">Lainnya</option>
+          {categoryOptions.map((item) => (
+            <option key={item.code} value={item.code}>
+              {item.name}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -79,7 +106,7 @@ export default function CatalogBaseFields({
           >
             <option value="">Pilih Atap...</option>
             {atapList?.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+              <option key={m.id} value={m.id}>{toOptionLabel(m)}</option>
             ))}
           </select>
         </div>
@@ -99,7 +126,7 @@ export default function CatalogBaseFields({
           >
             <option value="">Pilih Rangka...</option>
             {rangkaList?.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+              <option key={m.id} value={m.id}>{toOptionLabel(m)}</option>
             ))}
           </select>
         </div>
@@ -119,7 +146,7 @@ export default function CatalogBaseFields({
           >
             <option value="">Pilih Isian...</option>
             {isianList?.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+              <option key={m.id} value={m.id}>{toOptionLabel(m)}</option>
             ))}
           </select>
         </div>
@@ -139,7 +166,7 @@ export default function CatalogBaseFields({
           >
             <option value="">Pilih Finishing...</option>
             {finishingList?.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+              <option key={m.id} value={m.id}>{toOptionLabel(m)}</option>
             ))}
           </select>
         </div>

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { signOut } from '@/app/actions/auth'
-import { LogOut, LayoutDashboard, Users, Box, BookOpen, Map, Briefcase, Settings, ExternalLink, Wrench, Camera, Calendar, MessageSquare } from 'lucide-react'
+import { LogOut, LayoutDashboard, Users, Box, BookOpen, Map, Briefcase, Settings, ExternalLink, Wrench, Camera, Calendar, MessageSquare, Layers } from 'lucide-react'
 
 type AppRole = 'super_admin' | 'admin_sales' | 'admin_proyek' | null
 
@@ -91,9 +91,17 @@ export default function Sidebar() {
                             <Box size={18} />
                             Material
                         </Link>
+                        <Link href="/admin/material-categories" className={navItemClass('/admin/material-categories')}>
+                            <Box size={18} />
+                            Kategori Material
+                        </Link>
                         <Link href="/admin/catalogs" className={navItemClass('/admin/catalogs')}>
                             <BookOpen size={18} />
                             Katalog
+                        </Link>
+                        <Link href="/admin/catalog-hpp-segments" className={navItemClass('/admin/catalog-hpp-segments')}>
+                            <Layers size={18} />
+                            Segmen HPP
                         </Link>
                         <Link href="/admin/zones" className={navItemClass('/admin/zones')}>
                             <Map size={18} />

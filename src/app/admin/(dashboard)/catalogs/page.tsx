@@ -22,6 +22,7 @@ async function importCatalogs(formData: FormData) {
   const payload = dataRows.map((row) => {
     const basePrice = row[index('base_price_per_m2')]
     const isActiveValue = row[index('is_active')]
+    const isPublishedValue = row[index('is_published')]
     return {
       title: row[index('title')],
       image_url: row[index('image_url')] || null,
@@ -33,7 +34,8 @@ async function importCatalogs(formData: FormData) {
       base_price_per_m2: basePrice ? Number(basePrice) : 0,
       base_price_unit: (row[index('base_price_unit')] as ('m2'|'m1'|'unit')) || 'm2',
       hpp_per_unit: basePrice ? Number(basePrice) : 0,
-      is_active: isActiveValue ? ['true', '1', 'yes'].includes(String(isActiveValue).toLowerCase()) : true
+      is_active: isActiveValue ? ['true', '1', 'yes'].includes(String(isActiveValue).toLowerCase()) : true,
+      is_published: isPublishedValue ? ['true', '1', 'yes'].includes(String(isPublishedValue).toLowerCase()) : true,
     }
   })
   const { data: existing } = await supabase.from('catalogs').select('id,title')
@@ -71,8 +73,9 @@ const buildCatalogsCsv = (catalogs: Array<{
   base_price_unit?: 'm2'|'m1'|'unit'
   hpp_per_unit?: number | null
   is_active: boolean
+  is_published?: boolean
 }>) => {
-  const header = ['title', 'image_url', 'category', 'atap_id', 'rangka_id', 'finishing_id', 'isian_id', 'base_price_per_m2', 'base_price_unit', 'hpp_per_unit', 'is_active']
+  const header = ['title', 'image_url', 'category', 'atap_id', 'rangka_id', 'finishing_id', 'isian_id', 'base_price_per_m2', 'base_price_unit', 'hpp_per_unit', 'is_active', 'is_published']
   const rows = catalogs.map((c) => [
     escapeCsvValue(c.title),
     escapeCsvValue(c.image_url),
@@ -84,7 +87,8 @@ const buildCatalogsCsv = (catalogs: Array<{
     escapeCsvValue(c.base_price_per_m2),
     escapeCsvValue(c.base_price_unit ?? 'm2'),
     escapeCsvValue(c.hpp_per_unit ?? ''),
-    escapeCsvValue(c.is_active)
+    escapeCsvValue(c.is_active),
+    escapeCsvValue(c.is_published ?? true)
   ])
   return [header.join(','), ...rows.map((row) => row.join(','))].join('\n')
 }
@@ -141,14 +145,11 @@ export default async function AdminCatalogsPage({
     notice?: string
   }>
 }) {
-  const { q, sort, category, page, error: errorParam, notice } = await searchParams
+  const { q, sort, category, error: errorParam, notice } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const bypass = await isDevBypass()
   if (!user && !bypass) redirect('/admin/login')
-
-  const currentPage = Math.max(1, Number(page || '1'))
-  const pageSize = 20;
 
   let query = supabase
     .from('catalogs')
@@ -176,9 +177,6 @@ export default async function AdminCatalogsPage({
   } else {
     query = query.order('created_at', { ascending: false })
   }
-
-  const startIndex = (currentPage - 1) * pageSize
-  query = query.range(startIndex, startIndex + pageSize - 1)
 
   const { data: catalogs, error, count } = await query
 
@@ -218,7 +216,7 @@ export default async function AdminCatalogsPage({
       id: String((c as { id: string }).id),
       title: String((c as { title: string }).title),
       image_url: ((c as { image_url?: string | null }).image_url ?? null),
-      category: ((c as { category?: 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya' | null }).category ?? null),
+      category: ((c as { category?: string | null }).category ?? null),
       atapName: '-',
       rangkaName: '-',
       finishingName: '-',
@@ -227,6 +225,7 @@ export default async function AdminCatalogsPage({
       base_price_unit: unit,
       hpp_per_unit: (c as { hpp_per_unit?: number | null }).hpp_per_unit ?? null,
       is_active: !!(c as { is_active?: boolean | null }).is_active,
+      is_published: !!(c as { is_published?: boolean | null }).is_published,
       is_popular: !!(c as { is_popular?: boolean | null }).is_popular,
       created_at: ((c as { created_at?: string | null }).created_at ?? null),
       atap_id: ((c as { atap_id?: string | null }).atap_id ?? null),
@@ -337,7 +336,7 @@ export default async function AdminCatalogsPage({
           <div className="p-5 border-b border-gray-200 flex justify-between items-center bg-gray-50">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Daftar Paket</h2>
-              <p className="text-sm text-gray-500 mt-1">Total {totalCatalogs} paket ditemukan. Menampilkan halaman {currentPage} dari {Math.ceil(totalCatalogs/pageSize)}</p>
+              <p className="text-sm text-gray-500 mt-1">Total {totalCatalogs} paket ditemukan. Gunakan pencarian dan filter untuk mempersempit daftar.</p>
             </div>
             <div className="flex items-center gap-2">
               <Link href="/admin/catalogs/new" className="btn btn-primary btn-sm">
@@ -350,7 +349,7 @@ export default async function AdminCatalogsPage({
             </div>
           </div>
           <div className="p-5">
-            <CatalogsListClient catalogs={mappedCatalogs} totalCount={totalCatalogs} pageSize={pageSize} />
+            <CatalogsListClient catalogs={mappedCatalogs} totalCount={totalCatalogs} />
           </div>
         </section>
 

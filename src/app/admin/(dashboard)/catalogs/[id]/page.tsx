@@ -1,7 +1,7 @@
 import { createClient, isDevBypass } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { AlertTriangle, Info, DollarSign, Wrench, UploadCloud } from 'lucide-react'
+import { AlertTriangle, Info, DollarSign, Wrench } from 'lucide-react'
 import DeleteCatalogButton from '../components/DeleteCatalogButton'
 import CatalogAddonsEditor from '../components/CatalogAddonsEditor'
 import CatalogBaseFields from '../components/CatalogBaseFields'
@@ -13,7 +13,7 @@ import CatalogTitleField from '../components/CatalogTitleField'
 import ImageUpload from '../components/ImageUpload'
 
 // import styles from '../../page.module.css'
-import { updateCatalog, importCatalogAddons } from '@/app/actions/catalogs'
+import { updateCatalog } from '@/app/actions/catalogs'
 
 export default async function AdminCatalogDetailPage({
   params,
@@ -36,18 +36,39 @@ export default async function AdminCatalogDetailPage({
     .eq('id', id)
     .single()
 
-  // Fetch all active materials in one go for efficiency
-  const { data: allMaterials } = await supabase
-    .from('materials')
-    .select('id, name, category, base_price_per_unit, unit')
-    .eq('is_active', true)
-    .order('name');
+  // Hanya tampilkan material leaf (tanpa child) agar parent tidak salah dipilih untuk kalkulasi.
+  const [{ data: allActiveMaterials }, { data: childRows }] = await Promise.all([
+    supabase
+      .from('materials')
+      .select('id, name, variant_name, category, base_price_per_unit, unit')
+      .eq('is_active', true)
+      .order('name'),
+    supabase
+      .from('materials')
+      .select('parent_material_id')
+      .not('parent_material_id', 'is', null),
+  ])
+  const parentIdsWithChildren = new Set(
+    (childRows ?? [])
+      .map((row) => row.parent_material_id)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0),
+  )
+  const allMaterials = (allActiveMaterials ?? []).filter((material) => !parentIdsWithChildren.has(material.id))
+  const withPriority = (keywords: string[]) => {
+    const match = (material: { name: string; category: string | null; variant_name?: string | null }) => {
+      const haystack = `${material.category ?? ''} ${material.name} ${material.variant_name ?? ''}`.toLowerCase()
+      return keywords.some((keyword) => haystack.includes(keyword))
+    }
+    const prioritized = allMaterials.filter(match)
+    const rest = allMaterials.filter((item) => !match(item))
+    return [...prioritized, ...rest]
+  }
 
-  // Process materials in-memory
-  const atapList = allMaterials?.filter(m => m.category === 'atap') ?? [];
-  const rangkaList = allMaterials?.filter(m => m.category === 'frame') ?? [];
-  const finishingList = allMaterials?.filter(m => m.category === 'finishing') ?? [];
-  const isianList = allMaterials?.filter(m => m.category === 'isian') ?? [];
+  // Tidak strict ke enum category supaya tetap kompatibel saat kode kategori material berubah.
+  const atapList = withPriority(['atap', 'roof'])
+  const rangkaList = withPriority(['frame', 'rangka', 'struktur'])
+  const finishingList = withPriority(['finishing', 'coating', 'cat'])
+  const isianList = withPriority(['isian', 'infill'])
 
   // Fetch catalog-specific data
   const [{ data: addons }, { data: hppComponentRows }] = await Promise.all([
@@ -58,24 +79,74 @@ export default async function AdminCatalogDetailPage({
       .order('created_at', { ascending: true }),
     supabase
       .from('catalog_hpp_components')
-      .select('id, material_id, quantity, section')
+      .select('id, material_id, source_catalog_id, quantity, section')
       .eq('catalog_id', id)
       .order('created_at', { ascending: true })
   ]);
 
-  const hppMaterialIds = (hppComponentRows ?? []).map(c => c.material_id).filter(Boolean)
-  const { data: hppMaterials } = await supabase.from('materials').select('id, name, base_price_per_unit, unit, category').in('id', hppMaterialIds)
+  const hppMaterialIds = (hppComponentRows ?? [])
+    .map((c) => c.material_id)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+  const hppSourceCatalogIds = (hppComponentRows ?? [])
+    .map((c) => c.source_catalog_id)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+  const { data: hppMaterials } = hppMaterialIds.length > 0
+    ? await supabase.from('materials').select('id, name, base_price_per_unit, unit, category').in('id', hppMaterialIds)
+    : { data: [] as Array<{ id: string; name: string; base_price_per_unit: number; unit: string; category: string }> }
+  const { data: hppSourceCatalogs } = hppSourceCatalogIds.length > 0
+    ? await supabase.from('catalogs').select('id, title, hpp_per_unit').in('id', hppSourceCatalogIds)
+    : { data: [] as Array<{ id: string; title: string; hpp_per_unit: number | null }> }
   const hppMaterialMap = new Map((hppMaterials ?? []).map(m => [m.id, m]))
+  const hppSourceCatalogMap = new Map((hppSourceCatalogs ?? []).map((c) => [c.id, c]))
   const hppComponents = (hppComponentRows ?? []).map(c => ({
     ...c,
-    material: hppMaterialMap.get(c.material_id)
+    material: c.material_id ? hppMaterialMap.get(c.material_id) : undefined,
+    source_catalog: c.source_catalog_id ? hppSourceCatalogMap.get(c.source_catalog_id) : undefined,
   }))
 
   const { data: copySourceCatalogs } = await supabase
     .from('catalogs')
-    .select('id, title, category')
+    .select('id, title, category, hpp_per_unit')
     .neq('id', id)
     .order('title')
+
+  const { data: catalogCategories } = await supabase
+    .from('catalog_categories')
+    .select('code, name, sort_order, require_atap, require_rangka, require_isian, require_finishing')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true })
+
+  const categoryCode = String((catalog as { category?: string | null })?.category ?? '')
+  const { data: hppSectionsByCategory } = await supabase
+    .from('catalog_category_hpp_sections')
+    .select('section_code, sort_order')
+    .eq('category_code', categoryCode)
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+
+  const mappedSectionCodes = (hppSectionsByCategory ?? [])
+    .map((row) => String((row as { section_code?: string }).section_code ?? '').toLowerCase())
+    .filter((code) => code.length > 0)
+
+  const sectionRows = mappedSectionCodes.length > 0
+    ? (await supabase
+        .from('catalog_hpp_sections')
+        .select('code, name, sort_order, is_active')
+        .in('code', mappedSectionCodes)
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+        .order('code', { ascending: true })).data ?? []
+    : []
+
+  const hppSections = sectionRows.length > 0
+    ? sectionRows
+    : (await supabase
+        .from('catalog_hpp_sections')
+        .select('code, name, sort_order, is_active')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+        .order('code', { ascending: true })).data ?? []
 
   if (error || !catalog) {
     return (
@@ -113,15 +184,14 @@ export default async function AdminCatalogDetailPage({
     margin_percentage: number
     use_std_calculation: boolean
     std_calculation: number
-    labor_cost: number
-    transport_cost: number
     is_active: boolean
+    is_published: boolean
   }
 
   const catalogMetadata = catalog as unknown as CatalogFormMetadata
 
   return (
-    <div className="flex-1 h-full pb-28 scroll-smooth">
+    <div className="flex-1 h-full pb-56 md:pb-44 scroll-smooth">
       <div className="bg-white shadow-md rounded-lg p-6 flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Edit Katalog</h1>
@@ -181,6 +251,7 @@ export default async function AdminCatalogDetailPage({
                       rangkaList={rangkaList ?? []}
                       finishingList={finishingList ?? []}
                       isianList={isianList ?? []}
+                      categoryOptions={catalogCategories ?? []}
                       initialCategory={catalog.category ?? ''}
                       initialAtapId={catalog.atap_id || ''}
                       initialRangkaId={catalog.rangka_id || ''}
@@ -199,15 +270,29 @@ export default async function AdminCatalogDetailPage({
                     </div>
 
                     <div id="status" className={`md:col-span-2`}>
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          name="is_active"
-                          defaultChecked={catalog.is_active}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm">Aktifkan Katalog ini</span>
-                      </label>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            name="is_active"
+                            defaultChecked={catalog.is_active}
+                            className="w-4 h-4"
+                          />
+                          <span className="text-sm">Status Aktif (digunakan di backend)</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            name="is_published"
+                            defaultChecked={(catalog as { is_published?: boolean }).is_published !== false}
+                            className="w-4 h-4"
+                          />
+                          <span className="text-sm">Status Publish (tampil di website)</span>
+                        </label>
+                        <p className="text-xs text-gray-500">
+                          Katalog tampil di website hanya jika <span className="font-semibold">Aktif + Publish</span>.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -240,7 +325,7 @@ export default async function AdminCatalogDetailPage({
                       <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2 pb-3 border-b border-gray-100">
                         <Info className="w-4 h-4 text-gray-400" /> Pengaturan Dasar HPP
                       </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
                         <label className="flex items-center gap-3 cursor-pointer p-3 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-200">
                           <input
                             type="checkbox"
@@ -268,44 +353,14 @@ export default async function AdminCatalogDetailPage({
                             <span className="px-3 py-2 bg-gray-50 border border-l-0 border-gray-200 rounded-r-lg text-sm text-gray-500 font-medium">m²</span>
                           </div>
                         </div>
-
-                        <div className="space-y-4 border-l border-gray-100 pl-6">
-                          <div className="space-y-1">
-                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Biaya Tukang (Labor)</label>
-                            <div className="relative">
-                              <span className="absolute left-3 top-2 text-gray-400 text-sm">Rp</span>
-                              <input
-                                type="number"
-                                name="labor_cost"
-                                step="1000"
-                                min="0"
-                                defaultValue={(catalog as { labor_cost?: number }).labor_cost ?? 0}
-                                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#E30613]/20 focus:border-[#E30613]"
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Biaya Transport</label>
-                            <div className="relative">
-                              <span className="absolute left-3 top-2 text-gray-400 text-sm">Rp</span>
-                              <input
-                                type="number"
-                                name="transport_cost"
-                                step="1000"
-                                min="0"
-                                defaultValue={(catalog as { transport_cost?: number }).transport_cost ?? 0}
-                                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#E30613]/20 focus:border-[#E30613]"
-                              />
-                            </div>
-                          </div>
-                        </div>
                       </div>
                     </div>
 
                   <CatalogHppEditor
-                    materials={allMaterials ?? []}
+                    materials={allMaterials}
                     initialComponents={hppComponents ?? []}
                     copySourceCatalogs={copySourceCatalogs ?? []}
+                    sections={hppSections ?? []}
                   />
                 </div>
               </div>
@@ -403,22 +458,30 @@ export default async function AdminCatalogDetailPage({
                                 <span className="font-mono font-medium">Rp {(hppComponents.reduce((sum, c) => sum + (c.material?.base_price_per_unit || 0) * (c.quantity || 0), 0)).toLocaleString('id-ID')}</span>
                               </div>
                               <div className="flex justify-between border-b border-gray-200 pb-2">
-                                <span className="text-gray-500">Biaya Tukang (Labor):</span>
-                                <span className="font-mono font-medium">Rp {(catalog.labor_cost || 0).toLocaleString('id-ID')}</span>
+                                <span className="text-gray-500">Komponen Katalog:</span>
+                                <span className="font-mono font-medium">Rp {(hppComponents.reduce((sum, c) => {
+                                  if (!c.source_catalog_id) return sum
+                                  const sourceCost = Number((c as { source_catalog?: { hpp_per_unit?: number | null } | null }).source_catalog?.hpp_per_unit || 0)
+                                  return sum + sourceCost * (c.quantity || 0)
+                                }, 0)).toLocaleString('id-ID')}</span>
                               </div>
-                              <div className="flex justify-between border-b border-gray-200 pb-2">
-                                <span className="text-gray-500">Biaya Transport:</span>
-                                <span className="font-mono font-medium">Rp {(catalog.transport_cost || 0).toLocaleString('id-ID')}</span>
-                              </div>
-                              <div className="flex justify-between pt-1">
+                              <div className="flex justify-between pt-1 border-t border-gray-200 mt-2">
                                 <span className="font-bold text-gray-700">Total Biaya Dasar:</span>
-                                <span className="font-mono font-bold text-gray-900">Rp {((hppComponents.reduce((sum, c) => sum + (c.material?.base_price_per_unit || 0) * (c.quantity || 0), 0)) + (catalog.labor_cost || 0) + (catalog.transport_cost || 0)).toLocaleString('id-ID')}</span>
+                                <span className="font-mono font-bold text-gray-900">Rp {((hppComponents.reduce((sum, c) => sum + (c.material?.base_price_per_unit || 0) * (c.quantity || 0), 0)) + (hppComponents.reduce((sum, c) => {
+                                  if (!c.source_catalog_id) return sum
+                                  const sourceCost = Number((c as { source_catalog?: { hpp_per_unit?: number | null } | null }).source_catalog?.hpp_per_unit || 0)
+                                  return sum + sourceCost * (c.quantity || 0)
+                                }, 0))).toLocaleString('id-ID')}</span>
                               </div>
                               {catalog.use_std_calculation && (
                                 <div className="mt-2 pt-2 border-t border-dashed border-gray-300">
                                   <div className="flex justify-between text-blue-700 font-medium">
                                     <span>HPP per Unit (÷ {catalog.std_calculation} m²):</span>
-                                    <span className="font-mono font-bold">Rp {(((hppComponents.reduce((sum, c) => sum + (c.material?.base_price_per_unit || 0) * (c.quantity || 0), 0)) + (catalog.labor_cost || 0) + (catalog.transport_cost || 0)) / (catalog.std_calculation || 1)).toLocaleString('id-ID')}</span>
+                                    <span className="font-mono font-bold">Rp {(((hppComponents.reduce((sum, c) => sum + (c.material?.base_price_per_unit || 0) * (c.quantity || 0), 0)) + (hppComponents.reduce((sum, c) => {
+                                      if (!c.source_catalog_id) return sum
+                                      const sourceCost = Number((c as { source_catalog?: { hpp_per_unit?: number | null } | null }).source_catalog?.hpp_per_unit || 0)
+                                      return sum + sourceCost * (c.quantity || 0)
+                                    }, 0))) / (catalog.std_calculation || 1)).toLocaleString('id-ID')}</span>
                                   </div>
                                 </div>
                               )}
@@ -476,7 +539,7 @@ export default async function AdminCatalogDetailPage({
                   </div>
 
                   <CatalogAddonsEditor
-                    materials={allMaterials ?? []}
+                    materials={allMaterials}
                     initialAddons={(addons ?? []).map((a) => {
                       type AddonMaterial = {
                         id: string;
@@ -501,66 +564,6 @@ export default async function AdminCatalogDetailPage({
                     })}
                   />
 
-                  {/* Import Addons from CSV (Inside Addons Tab) */}
-                  <div className="mt-12 pt-12 border-t border-gray-100">
-                    <h3 className="text-base font-bold text-gray-800 flex items-center gap-2 mb-4">
-                      <UploadCloud className="w-4 h-4 text-gray-400" />
-                      Import Addons dari CSV
-                    </h3>
-                    <div className="flex flex-col md:flex-row items-start md:items-center gap-4 bg-gray-50 p-5 rounded-xl border border-gray-200 border-dashed">
-                      <input type="hidden" name="catalog_id" value={catalog.id} />
-                      <div className="flex-1 w-full">
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Upload File CSV</label>
-                        <input 
-                          type="file" 
-                          name="file" 
-                          accept=".csv" 
-                          className="block w-full text-sm text-gray-500
-                            file:mr-4 file:py-2 file:px-4
-                            file:rounded-full file:border-0
-                            file:text-sm file:font-semibold
-                            file:bg-[#E30613]/10 file:text-[#E30613]
-                            hover:file:bg-[#E30613]/20
-                            cursor-pointer" 
-                        />
-                      </div>
-                      
-                      <div className="w-full md:w-auto">
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Mode Import</label>
-                        <select name="mode" defaultValue="replace" className="w-full px-3 py-2 border rounded-lg bg-white text-sm focus:outline-none focus:border-[#E30613]">
-                          <option value="replace">Replace (Hapus lama & Ganti baru)</option>
-                          <option value="append">Append (Tambah ke yang sudah ada)</option>
-                          <option value="upsert">Upsert (Update jika ada, Tambah jika baru)</option>
-                        </select>
-                      </div>
-
-                      <div className="w-full md:w-auto pt-6">
-                        <label className="inline-flex items-center gap-2 text-sm bg-white px-3 py-2 border rounded-lg cursor-pointer hover:border-gray-300 transition-colors w-full md:w-auto justify-center">
-                          <input type="checkbox" name="preview" value="1" className="text-[#E30613] focus:ring-[#E30613] rounded" />
-                          <span>Preview Data Saja</span>
-                        </label>
-                      </div>
-                    </div>
-                    
-                    <div className="flex justify-between items-center mt-4">
-                      <a href="/templates/catalog_addons_template.csv" className="text-sm font-medium text-[#E30613] hover:underline flex items-center gap-1">
-                        <UploadCloud className="w-4 h-4" /> Download Template CSV
-                      </a>
-                      <button 
-                        type="submit" 
-                        formAction={importCatalogAddons} 
-                        className="px-6 py-2.5 rounded-lg text-white font-bold text-sm shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2" 
-                        style={{ backgroundColor: '#E30613' }}
-                      >
-                        <UploadCloud className="w-4 h-4" />
-                        Proses Import CSV
-                      </button>
-                    </div>
-
-                    <p className="text-xs text-gray-400 mt-4 italic">
-                      * Format kolom wajib: material_id, basis (m2/m1/unit), qty_per_basis, is_optional.
-                    </p>
-                  </div>
                 </div>
               </div>
             </div>
@@ -568,8 +571,10 @@ export default async function AdminCatalogDetailPage({
         </form>
       </div>
 
+      <div aria-hidden className="h-52 md:h-40 lg:h-32" />
+
       {/* Sticky Save Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 md:left-64">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 md:left-64">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="hidden md:block">
             <p className="text-sm font-medium text-gray-500">Katalog: <span className="text-gray-900 font-bold">{catalog.title}</span></p>

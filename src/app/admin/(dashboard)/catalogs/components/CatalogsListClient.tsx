@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp, Loader2, Maximize2, MoreHorizontal, Search, Star, Trash2, Image as ImageIcon } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, Maximize2, MoreHorizontal, Search, Star, Trash2, Image as ImageIcon, CheckSquare } from 'lucide-react'
 
 type Unit = 'm2' | 'm1' | 'unit'
 
@@ -11,7 +11,7 @@ type CatalogItem = {
   id: string
   title: string
   image_url: string | null
-  category?: 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya' | null
+  category?: string | null
   atapName: string
   rangkaName: string
   finishingName?: string
@@ -20,6 +20,7 @@ type CatalogItem = {
   base_price_unit: Unit
   hpp_per_unit: number | null
   is_active: boolean
+  is_published?: boolean
   is_popular?: boolean
   created_at: string | null
   atap_id: string | null
@@ -50,9 +51,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
   >('recent')
   const [page, setPage] = useState(1)
   const pageSize = 10
-  const [categoryFilter, setCategoryFilter] = useState<
-    'all' | 'kanopi' | 'pagar' | 'railing' | 'aksesoris' | 'lainnya'
-  >('all')
+  const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [onlyPopular, setOnlyPopular] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
@@ -61,12 +60,25 @@ export default function CatalogsListClient({ catalogs }: Props) {
   const [saving, setSaving] = useState(false)
   const [confirmActive, setConfirmActive] = useState<{ id: string; nextVal: boolean; title: string } | null>(null)
   const [savingActive, setSavingActive] = useState(false)
+  const [confirmPublish, setConfirmPublish] = useState<{ id: string; nextVal: boolean; title: string } | null>(null)
+  const [savingPublish, setSavingPublish] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null)
   const [savingDelete, setSavingDelete] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [bulkConfirm, setBulkConfirm] = useState<{
+    action: 'delete' | 'activate' | 'deactivate' | 'publish' | 'unpublish'
+    ids: string[]
+  } | null>(null)
+  const [bulkSaving, setBulkSaving] = useState(false)
+  const [bulkError, setBulkError] = useState<string | null>(null)
 
   useEffect(() => {
     setRowsState(catalogs)
   }, [catalogs])
+
+  useEffect(() => {
+    setSelectedIds((prev) => prev.filter((id) => rowsState.some((row) => row.id === id)))
+  }, [rowsState])
 
   useEffect(() => {
     const id = window.setTimeout(() => setPage(1), 0)
@@ -186,6 +198,13 @@ export default function CatalogsListClient({ catalogs }: Props) {
     })
   }, [rowsState, query, sortKey, onlyPopular, categoryFilter])
 
+  const categoryOptions = useMemo(() => {
+    const unique = Array.from(
+      new Set(rowsState.map((row) => String(row.category || '').trim()).filter((row) => row.length > 0)),
+    )
+    return unique.sort((a, b) => a.localeCompare(b, 'id-ID'))
+  }, [rowsState])
+
   const isFiltering = query.trim().length > 0
   const total = processed.length
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
@@ -193,6 +212,12 @@ export default function CatalogsListClient({ catalogs }: Props) {
   const startIndex = (currentPage - 1) * pageSize
   const endIndex = startIndex + pageSize
   const pageItems = processed.slice(startIndex, endIndex)
+  const pageIds = pageItems.map((item) => item.id)
+  const selectedOnPageCount = pageIds.filter((id) => selectedIds.includes(id)).length
+  const allPageSelected = pageIds.length > 0 && selectedOnPageCount === pageIds.length
+  const filteredIds = processed.map((item) => item.id)
+  const selectedFilteredCount = filteredIds.filter((id) => selectedIds.includes(id)).length
+  const allFilteredSelected = filteredIds.length > 0 && selectedFilteredCount === filteredIds.length
 
   const handleToggleExpand = (id: string) => {
     setExpandedId((prev) => (prev === id ? null : id))
@@ -200,6 +225,154 @@ export default function CatalogsListClient({ catalogs }: Props) {
 
   const handleToggleMenu = (id: string) => {
     setMenuOpenId((prev) => (prev === id ? null : id))
+  }
+
+  const toggleRowSelection = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      if (checked) {
+        if (prev.includes(id)) return prev
+        return [...prev, id]
+      }
+      return prev.filter((item) => item !== id)
+    })
+  }
+
+  const toggleSelectAllOnPage = (checked: boolean) => {
+    setSelectedIds((prev) => {
+      if (!checked) {
+        return prev.filter((id) => !pageIds.includes(id))
+      }
+      const merged = new Set([...prev, ...pageIds])
+      return Array.from(merged)
+    })
+  }
+
+  const openBulkConfirm = (action: 'delete' | 'activate' | 'deactivate' | 'publish' | 'unpublish') => {
+    if (selectedIds.length === 0) return
+    setBulkError(null)
+    setBulkConfirm({ action, ids: selectedIds.slice() })
+  }
+
+  const selectAllFiltered = () => {
+    setSelectedIds(filteredIds)
+  }
+
+  const clearFilteredSelection = () => {
+    setSelectedIds((prev) => prev.filter((id) => !filteredIds.includes(id)))
+  }
+
+  const getBulkActionLabel = (action: 'delete' | 'activate' | 'deactivate' | 'publish' | 'unpublish') => {
+    if (action === 'delete') return 'Hapus'
+    if (action === 'activate') return 'Aktifkan'
+    if (action === 'deactivate') return 'Nonaktifkan'
+    if (action === 'publish') return 'Publish'
+    return 'Unpublish'
+  }
+
+  const doBulkAction = async () => {
+    if (!bulkConfirm || bulkConfirm.ids.length === 0) return
+    setBulkSaving(true)
+    setBulkError(null)
+    try {
+      const ids = bulkConfirm.ids
+      const collectFailMessage = (fails: Array<{ id: string; status: number; reason: string }>) => {
+        const preview = fails.slice(0, 3).map((f) => `${f.id.slice(0, 8)} (${f.status}: ${f.reason})`).join(', ')
+        const suffix = fails.length > 3 ? ` +${fails.length - 3} lainnya` : ''
+        return `${fails.length} item gagal diproses: ${preview}${suffix}`
+      }
+      const extractReason = (body: unknown, fallback = 'Request failed') => {
+        if (!body || typeof body !== 'object') return fallback
+        const data = body as { details?: unknown; message?: unknown; error?: unknown; code?: unknown }
+        return String(data.details || data.message || data.error || data.code || fallback)
+      }
+      if (bulkConfirm.action === 'delete') {
+        const results = await Promise.all(
+          ids.map(async (id) => {
+            const res = await fetch(`/api/admin/catalogs/delete?id=${id}`, { method: 'DELETE' })
+            let reason = 'Request failed'
+            try {
+              const body = await res.json()
+              reason = extractReason(body, reason)
+            } catch {}
+            return { id, ok: res.ok, status: res.status, reason }
+          }),
+        )
+        const successIds = results.filter((r) => r.ok).map((r) => r.id)
+        if (successIds.length > 0) {
+          setRowsState((prev) => prev.filter((row) => !successIds.includes(row.id)))
+          setSelectedIds((prev) => prev.filter((id) => !successIds.includes(id)))
+        }
+        const fails = results.filter((r) => !r.ok)
+        if (fails.length > 0) {
+          setBulkError(collectFailMessage(fails))
+          return
+        }
+      } else if (bulkConfirm.action === 'activate' || bulkConfirm.action === 'deactivate') {
+        const nextVal = bulkConfirm.action === 'activate'
+        const results = await Promise.all(
+          ids.map(async (id) => {
+            const res = await fetch('/api/admin/catalogs/active', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id, is_active: nextVal }),
+            })
+            let reason = 'Request failed'
+            try {
+              const body = await res.json()
+              reason = extractReason(body, reason)
+            } catch {}
+            return { id, ok: res.ok, status: res.status, reason }
+          }),
+        )
+        const successIds = results.filter((r) => r.ok).map((r) => r.id)
+        if (successIds.length > 0) {
+          setRowsState((prev) =>
+            prev.map((row) => (successIds.includes(row.id) ? { ...row, is_active: nextVal } : row)),
+          )
+          setSelectedIds((prev) => prev.filter((id) => !successIds.includes(id)))
+        }
+        const fails = results.filter((r) => !r.ok)
+        if (fails.length > 0) {
+          setBulkError(collectFailMessage(fails))
+          return
+        }
+      } else {
+        const nextVal = bulkConfirm.action === 'publish'
+        const results = await Promise.all(
+          ids.map(async (id) => {
+            const res = await fetch('/api/admin/catalogs/publish', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id, is_published: nextVal }),
+            })
+            let reason = 'Request failed'
+            try {
+              const body = await res.json()
+              reason = extractReason(body, reason)
+            } catch {}
+            return { id, ok: res.ok, status: res.status, reason }
+          }),
+        )
+        const successIds = results.filter((r) => r.ok).map((r) => r.id)
+        if (successIds.length > 0) {
+          setRowsState((prev) =>
+            prev.map((row) => (successIds.includes(row.id) ? { ...row, is_published: nextVal } : row)),
+          )
+          setSelectedIds((prev) => prev.filter((id) => !successIds.includes(id)))
+        }
+        const fails = results.filter((r) => !r.ok)
+        if (fails.length > 0) {
+          setBulkError(collectFailMessage(fails))
+          return
+        }
+      }
+      setBulkConfirm(null)
+    } catch (e) {
+      console.error(e)
+      setBulkError('Terjadi error saat memproses mass action')
+    } finally {
+      setBulkSaving(false)
+    }
   }
 
   const getCategoryBadgeClass = (cat?: string | null) => {
@@ -257,12 +430,6 @@ export default function CatalogsListClient({ catalogs }: Props) {
     if (!confirmDelete) return
     setSavingDelete(true)
     try {
-      const formData = new FormData()
-      formData.append('id', confirmDelete.id)
-      
-      // We use the server action directly if imported, or fetch an API
-      // Since deleteCatalog is a server action, we can try to call it if we import it
-      // But for simplicity in client component, we might want an API route or use the action via a form
       const res = await fetch(`/api/admin/catalogs/delete?id=${confirmDelete.id}`, { method: 'DELETE' })
       if (res.ok) {
         setRowsState(prev => prev.filter(c => c.id !== confirmDelete.id))
@@ -272,6 +439,27 @@ export default function CatalogsListClient({ catalogs }: Props) {
     } finally {
       setSavingDelete(false)
       setConfirmDelete(null)
+    }
+  }
+
+  const openConfirmPublish = (id: string, nextVal: boolean, title: string) => {
+    setConfirmPublish({ id, nextVal, title })
+  }
+
+  const handleDoConfirmPublish = async () => {
+    if (!confirmPublish) return
+    setSavingPublish(true)
+    try {
+      const res = await fetch('/api/admin/catalogs/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: confirmPublish.id, is_published: confirmPublish.nextVal }),
+      })
+      if (!res.ok) return
+      setRowsState((prev) => prev.map((c) => (c.id === confirmPublish.id ? { ...c, is_published: confirmPublish.nextVal } : c)))
+    } finally {
+      setSavingPublish(false)
+      setConfirmPublish(null)
     }
   }
 
@@ -292,15 +480,15 @@ export default function CatalogsListClient({ catalogs }: Props) {
         <div className="flex flex-wrap gap-3 items-center">
           <select
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
+            onChange={(e) => setCategoryFilter(e.target.value)}
             className="px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#E30613]/20 focus:border-[#E30613] transition-all cursor-pointer"
           >
             <option value="all">Semua Kategori</option>
-            <option value="kanopi">Kanopi</option>
-            <option value="pagar">Pagar</option>
-            <option value="railing">Railing</option>
-            <option value="aksesoris">Aksesoris</option>
-            <option value="lainnya">Lainnya</option>
+            {categoryOptions.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
           </select>
           
           <label className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
@@ -332,6 +520,78 @@ export default function CatalogsListClient({ catalogs }: Props) {
         <div className="flex items-center gap-2 text-xs text-gray-400 animate-pulse">
           <Loader2 className="h-3 w-3 animate-spin" />
           <span>Menyaring hasil pencarian...</span>
+        </div>
+      )}
+
+      {selectedIds.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-2 text-sm font-bold text-gray-800 mr-2">
+            <CheckSquare className="w-4 h-4 text-[#E30613]" />
+            {selectedIds.length} katalog dipilih
+          </span>
+          <span className="text-xs text-gray-500 mr-2">
+            {selectedOnPageCount} di halaman ini, {selectedFilteredCount} dari {filteredIds.length} hasil filter
+          </span>
+          {!allFilteredSelected && filteredIds.length > selectedFilteredCount && (
+            <button
+              type="button"
+              onClick={selectAllFiltered}
+              className="px-3 py-2 text-xs font-bold rounded-lg bg-[#E30613]/10 text-[#E30613] hover:bg-[#E30613]/20"
+            >
+              Pilih semua hasil filter ({filteredIds.length})
+            </button>
+          )}
+          {allFilteredSelected && (
+            <button
+              type="button"
+              onClick={clearFilteredSelection}
+              className="px-3 py-2 text-xs font-bold rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+            >
+              Batalkan pilih semua filter
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => openBulkConfirm('activate')}
+            className="px-3 py-2 text-xs font-bold rounded-lg bg-green-100 text-green-700 hover:bg-green-200"
+          >
+            Aktifkan
+          </button>
+          <button
+            type="button"
+            onClick={() => openBulkConfirm('deactivate')}
+            className="px-3 py-2 text-xs font-bold rounded-lg bg-red-100 text-red-700 hover:bg-red-200"
+          >
+            Nonaktifkan
+          </button>
+          <button
+            type="button"
+            onClick={() => openBulkConfirm('publish')}
+            className="px-3 py-2 text-xs font-bold rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200"
+          >
+            Publish
+          </button>
+          <button
+            type="button"
+            onClick={() => openBulkConfirm('unpublish')}
+            className="px-3 py-2 text-xs font-bold rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+          >
+            Unpublish
+          </button>
+          <button
+            type="button"
+            onClick={() => openBulkConfirm('delete')}
+            className="px-3 py-2 text-xs font-bold rounded-lg bg-red-600 text-white hover:bg-red-700"
+          >
+            Hapus
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedIds([])}
+            className="px-3 py-2 text-xs font-bold rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 ml-auto"
+          >
+            Reset Pilihan
+          </button>
         </div>
       )}
 
@@ -453,12 +713,89 @@ export default function CatalogsListClient({ catalogs }: Props) {
         </div>
       )}
 
+      {confirmPublish && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => !savingPublish && setConfirmPublish(null)} />
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-gray-200 shadow-2xl p-8">
+            <h3 className="text-xl font-black text-gray-900 text-center">{confirmPublish.nextVal ? 'Publish Katalog?' : 'Unpublish Katalog?'}</h3>
+            <p className="mt-3 text-sm text-gray-500 text-center leading-relaxed">
+              Ubah status publish paket <span className="font-bold text-gray-900">&quot;{confirmPublish.title}&quot;</span>.
+            </p>
+            <div className="mt-8 flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={handleDoConfirmPublish}
+                disabled={savingPublish}
+                className="w-full py-3.5 rounded-xl bg-[#1D1D1B] text-white hover:bg-black font-black text-sm"
+              >
+                Ya, Simpan
+              </button>
+              <button
+                type="button"
+                onClick={() => !savingPublish && setConfirmPublish(null)}
+                disabled={savingPublish}
+                className="w-full py-3.5 rounded-xl bg-gray-50 text-gray-700 hover:bg-gray-100 font-bold text-sm"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => !bulkSaving && setBulkConfirm(null)} />
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-gray-200 shadow-2xl p-8">
+            <h3 className="text-xl font-black text-gray-900 text-center">
+              {getBulkActionLabel(bulkConfirm.action)} {bulkConfirm.ids.length} Katalog?
+            </h3>
+            <p className="mt-3 text-sm text-gray-500 text-center leading-relaxed">
+              Anda akan menjalankan aksi <span className="font-bold text-gray-900">{getBulkActionLabel(bulkConfirm.action)}</span> untuk{' '}
+              <span className="font-bold text-gray-900">{bulkConfirm.ids.length}</span> katalog terpilih.
+            </p>
+            {bulkError && (
+              <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">
+                {bulkError}
+              </div>
+            )}
+            <div className="mt-8 flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={doBulkAction}
+                disabled={bulkSaving}
+                className="w-full py-3.5 rounded-xl bg-[#1D1D1B] text-white hover:bg-black font-black text-sm disabled:opacity-70"
+              >
+                {bulkSaving ? 'Memproses...' : `Ya, ${getBulkActionLabel(bulkConfirm.action)}`}
+              </button>
+              <button
+                type="button"
+                onClick={() => !bulkSaving && setBulkConfirm(null)}
+                disabled={bulkSaving}
+                className="w-full py-3.5 rounded-xl bg-gray-50 text-gray-700 hover:bg-gray-100 font-bold text-sm"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Table Desktop */}
       <div className="hidden lg:block overflow-hidden bg-white rounded-xl border border-gray-200">
         <table className="w-full text-left border-collapse table-fixed">
           <thead>
             <tr className="bg-gray-50/80 border-b border-gray-200">
-              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider w-[40%]">Info Paket</th>
+              <th className="px-4 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider w-[4%] text-center">
+                <input
+                  type="checkbox"
+                  aria-label="Pilih semua di halaman ini"
+                  checked={allPageSelected}
+                  onChange={(e) => toggleSelectAllOnPage(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-[#E30613] focus:ring-[#E30613]"
+                />
+              </th>
+              <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider w-[36%]">Info Paket</th>
               <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider w-[18%] text-right">Harga Jual</th>
               <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider w-[18%] text-right">HPP Estimasi</th>
               <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider w-[12%] text-center">Status</th>
@@ -475,6 +812,15 @@ export default function CatalogsListClient({ catalogs }: Props) {
               return (
                 <Fragment key={catalog.id}>
                   <tr className="group hover:bg-gray-50/50 transition-colors">
+                    <td className="px-4 py-5 text-center align-top">
+                      <input
+                        type="checkbox"
+                        aria-label={`Pilih katalog ${catalog.title}`}
+                        checked={selectedIds.includes(catalog.id)}
+                        onChange={(e) => toggleRowSelection(catalog.id, e.target.checked)}
+                        className="mt-1 h-4 w-4 rounded border-gray-300 text-[#E30613] focus:ring-[#E30613]"
+                      />
+                    </td>
                     <td className="px-6 py-5">
                       <div className="flex items-start gap-4">
                         <button
@@ -555,17 +901,30 @@ export default function CatalogsListClient({ catalogs }: Props) {
                       )}
                     </td>
                     <td className="px-6 py-5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => openConfirmActive(catalog.id, !catalog.is_active, catalog.title)}
-                        className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
-                          catalog.is_active
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                            : 'bg-red-100 text-red-700 hover:bg-red-200'
-                        }`}
-                      >
-                        {catalog.is_active ? 'Aktif' : 'Nonaktif'}
-                      </button>
+                      <div className="flex flex-col gap-1 items-center">
+                        <button
+                          type="button"
+                          onClick={() => openConfirmActive(catalog.id, !catalog.is_active, catalog.title)}
+                          className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                            catalog.is_active
+                              ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                              : 'bg-red-100 text-red-700 hover:bg-red-200'
+                          }`}
+                        >
+                          {catalog.is_active ? 'Aktif' : 'Nonaktif'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openConfirmPublish(catalog.id, !catalog.is_published, catalog.title)}
+                          className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                            catalog.is_published
+                              ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {catalog.is_published ? 'Publish' : 'Draft'}
+                        </button>
+                      </div>
                     </td>
                     <td className="px-6 py-5">
                       <div className="flex items-center justify-end gap-2 relative" data-menu-id={catalog.id}>
@@ -612,7 +971,7 @@ export default function CatalogsListClient({ catalogs }: Props) {
                   </tr>
                   {isExpanded && (
                     <tr className="bg-gray-50/30">
-                      <td colSpan={5} className="px-6 py-4">
+                      <td colSpan={6} className="px-6 py-4">
                         <div className="grid grid-cols-4 gap-6 bg-white p-5 rounded-xl border border-gray-100 shadow-sm animate-in slide-in-from-top-1">
                           <div>
                             <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Atap</p>
@@ -670,6 +1029,15 @@ export default function CatalogsListClient({ catalogs }: Props) {
                   </span>
                 </div>
                 <div className="absolute top-4 right-4 flex items-center gap-2">
+                  <label className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/90 shadow-sm">
+                    <input
+                      type="checkbox"
+                      aria-label={`Pilih katalog ${catalog.title}`}
+                      checked={selectedIds.includes(catalog.id)}
+                      onChange={(e) => toggleRowSelection(catalog.id, e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-[#E30613] focus:ring-[#E30613]"
+                    />
+                  </label>
                   <button
                     type="button"
                     onClick={() => openConfirm(catalog.id, !catalog.is_popular, catalog.title)}
