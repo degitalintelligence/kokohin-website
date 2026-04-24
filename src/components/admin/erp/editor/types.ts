@@ -24,6 +24,17 @@ export interface ErpItem {
   rangka_id?: string | null
   finishing_id?: string | null
   isian_id?: string | null
+  baseline_costs?: Array<{
+    quotation_item_id: string
+    component_key: string
+    component_name: string
+    segment: string
+    unit_snapshot: string | null
+    qty_snapshot: number
+    hpp_snapshot: number
+    subtotal_snapshot: number
+    source_type: string
+  }>
 }
 
 export interface CustomerProfile {
@@ -73,10 +84,13 @@ export interface CatalogHppComponent {
   catalog_id: string
   material_id: string
   quantity: number
+  calculation_mode?: 'variable' | 'fixed'
   material: {
     name: string
+    variant_name?: string | null
     unit: string
     base_price_per_unit: number
+    length_per_unit?: number | null
   }
 }
 

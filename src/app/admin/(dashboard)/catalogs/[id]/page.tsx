@@ -72,18 +72,28 @@ export default async function AdminCatalogDetailPage({
   const isianList = withPriority(['isian', 'infill'])
 
   const hasHppNoteColumn = async () => {
-    const { data } = await supabase
-      .from('information_schema.columns')
-      .select('column_name')
-      .eq('table_schema', 'public')
-      .eq('table_name', 'catalog_hpp_components')
-      .eq('column_name', 'note')
-      .maybeSingle()
-    return !!data
+    const { error } = await supabase
+      .from('catalog_hpp_components')
+      .select('id, note')
+      .limit(1)
+    if (!error) return true
+    if (String(error.message || '').toLowerCase().includes('column')) return false
+    return false
   }
 
-  const [hasNoteColumn, addonsResult] = await Promise.all([
+  const hasHppCalculationModeColumn = async () => {
+    const { error } = await supabase
+      .from('catalog_hpp_components')
+      .select('id, calculation_mode')
+      .limit(1)
+    if (!error) return true
+    if (String(error.message || '').toLowerCase().includes('column')) return false
+    return false
+  }
+
+  const [hasNoteColumn, hasCalculationModeColumn, addonsResult] = await Promise.all([
     hasHppNoteColumn(),
+    hasHppCalculationModeColumn(),
     supabase
       .from('catalog_addons')
       .select('id, material_id, basis, qty_per_basis, is_optional, material:material_id(id, name, base_price_per_unit, unit, category)')
@@ -91,17 +101,47 @@ export default async function AdminCatalogDetailPage({
       .order('created_at', { ascending: true }),
   ])
 
-  const { data: hppComponentRows } = hasNoteColumn
-    ? await supabase
-        .from('catalog_hpp_components')
-        .select('id, material_id, source_catalog_id, quantity, section, note')
-        .eq('catalog_id', id)
-        .order('created_at', { ascending: true })
-    : await supabase
-        .from('catalog_hpp_components')
-        .select('id, material_id, source_catalog_id, quantity, section')
-        .eq('catalog_id', id)
-        .order('created_at', { ascending: true })
+  let hppComponentRows:
+    | Array<{
+        id: string
+        material_id?: string | null
+        source_catalog_id?: string | null
+        quantity?: number | null
+        section?: string | null
+        calculation_mode?: 'variable' | 'fixed' | null
+        note?: string | null
+      }>
+    | null = null
+
+  if (hasNoteColumn && hasCalculationModeColumn) {
+    const { data } = await supabase
+      .from('catalog_hpp_components')
+      .select('id, material_id, source_catalog_id, quantity, section, calculation_mode, note')
+      .eq('catalog_id', id)
+      .order('created_at', { ascending: true })
+    hppComponentRows = data
+  } else if (hasNoteColumn) {
+    const { data } = await supabase
+      .from('catalog_hpp_components')
+      .select('id, material_id, source_catalog_id, quantity, section, note')
+      .eq('catalog_id', id)
+      .order('created_at', { ascending: true })
+    hppComponentRows = data
+  } else if (hasCalculationModeColumn) {
+    const { data } = await supabase
+      .from('catalog_hpp_components')
+      .select('id, material_id, source_catalog_id, quantity, section, calculation_mode')
+      .eq('catalog_id', id)
+      .order('created_at', { ascending: true })
+    hppComponentRows = data
+  } else {
+    const { data } = await supabase
+      .from('catalog_hpp_components')
+      .select('id, material_id, source_catalog_id, quantity, section')
+      .eq('catalog_id', id)
+      .order('created_at', { ascending: true })
+    hppComponentRows = data
+  }
 
   const addons = addonsResult.data
 
@@ -112,8 +152,8 @@ export default async function AdminCatalogDetailPage({
     .map((c) => c.source_catalog_id)
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
   const { data: hppMaterials } = hppMaterialIds.length > 0
-    ? await supabase.from('materials').select('id, name, base_price_per_unit, unit, category').in('id', hppMaterialIds)
-    : { data: [] as Array<{ id: string; name: string; base_price_per_unit: number; unit: string; category: string }> }
+    ? await supabase.from('materials').select('id, name, base_price_per_unit, unit, category, length_per_unit').in('id', hppMaterialIds)
+    : { data: [] as Array<{ id: string; name: string; base_price_per_unit: number; unit: string; category: string; length_per_unit: number | null }> }
   const { data: hppSourceCatalogs } = hppSourceCatalogIds.length > 0
     ? await supabase.from('catalogs').select('id, title, hpp_per_unit').in('id', hppSourceCatalogIds)
     : { data: [] as Array<{ id: string; title: string; hpp_per_unit: number | null }> }
@@ -121,6 +161,10 @@ export default async function AdminCatalogDetailPage({
   const hppSourceCatalogMap = new Map((hppSourceCatalogs ?? []).map((c) => [c.id, c]))
   const hppComponents = (hppComponentRows ?? []).map(c => ({
     ...c,
+    quantity: typeof c.quantity === 'number' ? c.quantity : 0,
+    section: typeof c.section === 'string' ? c.section : 'lainnya',
+    calculation_mode: c.calculation_mode === 'fixed' ? ('fixed' as const) : ('variable' as const),
+    note: typeof c.note === 'string' ? c.note : '',
     material: c.material_id ? hppMaterialMap.get(c.material_id) : undefined,
     source_catalog: c.source_catalog_id ? hppSourceCatalogMap.get(c.source_catalog_id) : undefined,
   }))

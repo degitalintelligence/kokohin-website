@@ -44,10 +44,24 @@ export function useErpPricing({ items, selectedZoneId, zones }: UseErpPricingPar
         }
 
         if (missingComponentIds.length > 0) {
-          const { data: components, error: componentError } = await supabase
+          let components: unknown[] | null = null
+          let componentError: { message?: string } | null = null
+
+          const primaryResult = await supabase
             .from('catalog_hpp_components')
-            .select('id, catalog_id, material_id, quantity, material:material_id(name, unit, base_price_per_unit)')
+            .select('id, catalog_id, material_id, quantity, calculation_mode, material:material_id(name, variant_name, unit, base_price_per_unit, length_per_unit)')
             .in('catalog_id', missingComponentIds)
+          components = primaryResult.data
+          componentError = primaryResult.error
+
+          if (componentError) {
+            const fallback = await supabase
+              .from('catalog_hpp_components')
+              .select('id, catalog_id, material_id, quantity, material:material_id(name, variant_name, unit, base_price_per_unit, length_per_unit)')
+              .in('catalog_id', missingComponentIds)
+            components = fallback.data as unknown[] | null
+            componentError = fallback.error as { message?: string } | null
+          }
 
           if (componentError) {
             console.error('Error fetching HPP components:', componentError)
@@ -57,7 +71,7 @@ export function useErpPricing({ items, selectedZoneId, zones }: UseErpPricingPar
           if (components) {
             setCatalogComponentsCache(prev => {
               const next = { ...prev }
-              components.forEach((component) => {
+              ;(components as Array<{ catalog_id: string }>).forEach((component) => {
                 if (!next[component.catalog_id]) next[component.catalog_id] = []
                 next[component.catalog_id].push(component as unknown as CatalogHppComponent)
               })

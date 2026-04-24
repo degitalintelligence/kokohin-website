@@ -70,14 +70,25 @@ async function getCatalogCategoryRules(
 }
 
 async function hasCatalogHppNoteColumn(supabase: SupabaseClient): Promise<boolean> {
-  const { data } = await supabase
-    .from('information_schema.columns')
-    .select('column_name')
-    .eq('table_schema', 'public')
-    .eq('table_name', 'catalog_hpp_components')
-    .eq('column_name', 'note')
-    .maybeSingle()
-  return !!data
+  const { error } = await supabase
+    .from('catalog_hpp_components')
+    .select('id, note')
+    .limit(1)
+
+  if (!error) return true
+  if (String(error.message || '').toLowerCase().includes('column')) return false
+  return false
+}
+
+async function hasCatalogHppCalculationModeColumn(supabase: SupabaseClient): Promise<boolean> {
+  const { error } = await supabase
+    .from('catalog_hpp_components')
+    .select('id, calculation_mode')
+    .limit(1)
+
+  if (!error) return true
+  if (String(error.message || '').toLowerCase().includes('column')) return false
+  return false
 }
 
 export async function updateHppPerUnit(catalogId: string, userId?: string) {
@@ -214,10 +225,14 @@ export async function fetchCatalogHppComponents(catalogId: string) {
     throw new Error('ID katalog sumber tidak valid')
   }
 
-  const includeNote = await hasCatalogHppNoteColumn(supabase)
+  const [includeNote, includeCalculationMode] = await Promise.all([
+    hasCatalogHppNoteColumn(supabase),
+    hasCatalogHppCalculationModeColumn(supabase),
+  ])
+  const maybeCalculationMode = includeCalculationMode ? ', calculation_mode' : ''
   const selectFields = includeNote
-    ? 'id, material_id, source_catalog_id, quantity, section, note, material:material_id(id, name, base_price_per_unit, unit, category), source_catalog:source_catalog_id(id, title, hpp_per_unit)'
-    : 'id, material_id, source_catalog_id, quantity, section, material:material_id(id, name, base_price_per_unit, unit, category), source_catalog:source_catalog_id(id, title, hpp_per_unit)'
+    ? `id, material_id, source_catalog_id, quantity, section${maybeCalculationMode}, note, material:material_id(id, name, base_price_per_unit, unit, category, length_per_unit), source_catalog:source_catalog_id(id, title, hpp_per_unit)`
+    : `id, material_id, source_catalog_id, quantity, section${maybeCalculationMode}, material:material_id(id, name, base_price_per_unit, unit, category, length_per_unit), source_catalog:source_catalog_id(id, title, hpp_per_unit)`
 
   const { data, error } = await supabase
     .from('catalog_hpp_components')
@@ -436,9 +451,11 @@ export async function updateCatalog(formData: FormData) {
       source_catalog_id?: string | null
       quantity: number
       section?: string
+      calculation_mode?: 'variable' | 'fixed'
       note?: string
     }> = JSON.parse(hppComponentsJson) ?? []
     const includeHppNote = await hasCatalogHppNoteColumn(supabase)
+    const includeHppCalculationMode = await hasCatalogHppCalculationModeColumn(supabase)
 
     let imageUrl = currentImageUrl
     const newImageUrl = await uploadImage(imageFile, supabase)
@@ -492,6 +509,9 @@ export async function updateCatalog(formData: FormData) {
           source_catalog_id: validSourceCatalogId,
           quantity: typeof c.quantity === 'number' ? c.quantity : 0,
           section: c.section || 'lainnya',
+          ...(includeHppCalculationMode
+            ? { calculation_mode: c.calculation_mode === 'fixed' ? 'fixed' : 'variable' }
+            : {}),
           ...(includeHppNote ? { note: String(c.note || '') } : {}),
         })
         .eq('id', c.id as string)
@@ -507,6 +527,9 @@ export async function updateCatalog(formData: FormData) {
           c.source_catalog_id && String(c.source_catalog_id).length > 0 ? c.source_catalog_id : null,
         quantity: Number(c.quantity) > 0 ? Number(c.quantity) : 1,
         section: c.section || 'lainnya',
+        ...(includeHppCalculationMode
+          ? { calculation_mode: c.calculation_mode === 'fixed' ? 'fixed' : 'variable' }
+          : {}),
         ...(includeHppNote ? { note: String(c.note || '') } : {}),
       }))
       const { error: insErr } = await supabase.from('catalog_hpp_components').insert(rows)
@@ -720,10 +743,12 @@ export async function saveCatalogHpp(formData: FormData) {
     source_catalog_id?: string | null
     quantity: number
     section?: string
+    calculation_mode?: 'variable' | 'fixed'
     note?: string
   }> =
     JSON.parse(hppComponentsJson) ?? []
   const includeHppNote = await hasCatalogHppNoteColumn(supabase)
+  const includeHppCalculationMode = await hasCatalogHppCalculationModeColumn(supabase)
 
   const payload = {
     std_calculation: stdCalculation,
@@ -760,6 +785,9 @@ export async function saveCatalogHpp(formData: FormData) {
         source_catalog_id: validSourceCatalogId,
         quantity: typeof c.quantity === 'number' ? c.quantity : 0,
         section: c.section || 'lainnya',
+        ...(includeHppCalculationMode
+          ? { calculation_mode: c.calculation_mode === 'fixed' ? 'fixed' : 'variable' }
+          : {}),
         ...(includeHppNote ? { note: String(c.note || '') } : {}),
       })
       .eq('id', c.id as string)
@@ -775,6 +803,9 @@ export async function saveCatalogHpp(formData: FormData) {
         c.source_catalog_id && String(c.source_catalog_id).length > 0 ? c.source_catalog_id : null,
       quantity: Number(c.quantity) > 0 ? Number(c.quantity) : 1,
       section: c.section || 'lainnya',
+      ...(includeHppCalculationMode
+        ? { calculation_mode: c.calculation_mode === 'fixed' ? 'fixed' : 'variable' }
+        : {}),
       ...(includeHppNote ? { note: String(c.note || '') } : {}),
     }))
     const { error: insErr } = await supabase.from('catalog_hpp_components').insert(rows)

@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { errorResponse } from '@/lib/api-response'
 
@@ -9,11 +8,7 @@ export async function GET(request: Request) {
   const category = searchParams.get('category')
   const search = searchParams.get('search')
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const supabase = serviceKey
-    ? createSupabaseAdminClient(supabaseUrl, serviceKey)
-    : await createClient()
+  const supabase = await createClient()
 
   if (id) {
     const { data, error } = await supabase

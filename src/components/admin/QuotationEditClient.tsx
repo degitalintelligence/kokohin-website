@@ -25,6 +25,17 @@ interface QuotationEditItem {
   rangka_id?: string | null
   finishing_id?: string | null
   isian_id?: string | null
+  baseline_costs?: Array<{
+    quotation_item_id: string
+    component_key: string
+    component_name: string
+    segment: string
+    unit_snapshot: string | null
+    qty_snapshot: number
+    hpp_snapshot: number
+    subtotal_snapshot: number
+    source_type: string
+  }>
 }
 
 interface QuotationEditClientProps {

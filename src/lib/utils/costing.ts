@@ -34,10 +34,10 @@ export type CatalogCosting = {
   isian_id?: string | null
   use_std_calculation?: boolean | null
   std_calculation?: number | null
-  atap?: { name: string; unit: string; base_price_per_unit: number } | null
-  rangka?: { name: string; unit: string; base_price_per_unit: number } | null
-  finishing?: { name: string; unit: string; base_price_per_unit: number } | null
-  isian?: { name: string; unit: string; base_price_per_unit: number } | null
+  atap?: { name: string; variant_name?: string | null; unit: string; base_price_per_unit: number; length_per_unit?: number | null } | null
+  rangka?: { name: string; variant_name?: string | null; unit: string; base_price_per_unit: number; length_per_unit?: number | null } | null
+  finishing?: { name: string; variant_name?: string | null; unit: string; base_price_per_unit: number; length_per_unit?: number | null } | null
+  isian?: { name: string; variant_name?: string | null; unit: string; base_price_per_unit: number; length_per_unit?: number | null } | null
 }
 
 export type HppComponent = {
@@ -45,10 +45,13 @@ export type HppComponent = {
   material_id: string
   quantity: number
   section?: string
+  calculation_mode?: 'variable' | 'fixed'
   material?: {
     name: string
+    variant_name?: string | null
     unit: string
     base_price_per_unit: number
+    length_per_unit?: number | null
   }
 }
 
@@ -70,6 +73,19 @@ export const buildCostingItems = (
   isCustom: boolean,
   hppComponents: HppComponent[] = []
 ): CostingItem[] => {
+  const formatMaterialName = (name?: string | null, variant?: string | null): string => {
+    const base = String(name ?? '').trim()
+    const variantLabel = String(variant ?? '').trim()
+    if (!base) return 'Material'
+    if (!variantLabel || variantLabel.toLowerCase() === 'default') return base
+    return `${base} - ${variantLabel}`
+  }
+
+  const calculateChargedQty = (neededQty: number): number => {
+    const safeNeeded = Math.max(0, neededQty)
+    return Math.ceil(safeNeeded)
+  }
+
   if (isCustom) {
     return [
       {
@@ -100,6 +116,7 @@ export const buildCostingItems = (
   const items: CostingItem[] = []
   const useStd = activeCatalog.use_std_calculation ?? false
   const stdCalc = activeCatalog.std_calculation && activeCatalog.std_calculation > 0 ? activeCatalog.std_calculation : 1
+  const variableHppScale = orderedQty / stdCalc
   
   const ratio = useStd ? (orderedQty / stdCalc) : orderedQty
 
@@ -116,16 +133,17 @@ export const buildCostingItems = (
   mainComponents.forEach((comp) => {
     if (!comp.material) return
     const hpp = comp.material.base_price_per_unit || 0
-    const qtyNeeded = 1 * ratio // Default 1 unit per ratio
-    const qtyCharged = Math.ceil(qtyNeeded)
+    const qtyNeeded = 1 * ratio
+    const lengthPerUnit = comp.material.length_per_unit ?? 1
+    const qtyCharged = calculateChargedQty(qtyNeeded)
     const subtotal = Math.ceil(hpp * qtyCharged)
     
     items.push({
       id: `main-${comp.type}-${comp.id}`,
-      name: comp.material.name,
+      name: formatMaterialName(comp.material.name, comp.material.variant_name),
       unit: comp.material.unit || 'unit',
       hpp,
-      lengthPerUnit: 1,
+      lengthPerUnit,
       qtyNeeded,
       qtyCharged,
       subtotal,
@@ -136,18 +154,22 @@ export const buildCostingItems = (
   // 2. Add HPP Components from table
   hppComponents.forEach((comp) => {
     const baseQty = comp.quantity || 0
-    const qtyNeeded = Math.ceil(baseQty * ratio)
-    const qtyCharged = qtyNeeded
+    const mode = comp.calculation_mode === 'fixed' ? 'fixed' : 'variable'
+    const qtyNeeded = mode === 'fixed'
+      ? baseQty
+      : baseQty * variableHppScale
+    const lengthPerUnit = comp.material?.length_per_unit ?? 1
+    const qtyCharged = calculateChargedQty(qtyNeeded)
     const hpp = comp.material?.base_price_per_unit ?? 0
     const subtotal = Math.ceil(hpp * qtyCharged)
 
     if (qtyCharged > 0) {
       items.push({
         id: comp.id,
-        name: comp.material?.name || 'Material',
+        name: formatMaterialName(comp.material?.name, comp.material?.variant_name),
         unit: comp.material?.unit || 'unit',
         hpp,
-        lengthPerUnit: 1,
+        lengthPerUnit,
         qtyNeeded,
         qtyCharged,
         subtotal,

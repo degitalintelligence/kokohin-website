@@ -26,13 +26,13 @@
     "@react-pdf/renderer": "^4.3.2",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.97.0",
-    "axios": "^1.13.6",
+    "axios": "^1.15.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.34.3",
     "ioredis": "^5.10.0",
     "lucide-react": "^0.575.0",
-    "next": "16.1.6",
+    "next": "^16.2.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-hot-toast": "^2.6.0",
@@ -50,9 +50,12 @@
     "@types/redis": "^4.0.10",
     "autoprefixer": "^10.4.24",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
-    "postcss": "^8.5.6",
+    "eslint-config-next": "^16.2.4",
+    "postcss": "^8.5.10",
     "tailwindcss": "^3.4.0",
     "typescript": "^5"
+  },
+  "overrides": {
+    "follow-redirects": "^1.15.12"
   }
 }

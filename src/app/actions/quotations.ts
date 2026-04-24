@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { buildCostingItems, type CatalogCosting, type HppComponent } from '@/lib/utils/costing'
 
 interface AttachmentPayload {
     name: string
@@ -13,6 +14,7 @@ interface AttachmentPayload {
 type BuilderCostSnapshot = Record<string, unknown>
 
 interface QuotationItem {
+    id?: string
     name: string
     unit: string
     quantity: number
@@ -161,13 +163,18 @@ export async function createQuotationForLead(leadId: string) {
         }
     ]
 
-    const { error: itemError } = await supabase.from('erp_quotation_items').insert(
+    const { data: insertedLeadItems, error: itemError } = await supabase.from('erp_quotation_items').insert(
         qtnItems.map(item => ({ ...item, quotation_id: quotation.id }))
-    )
+    ).select('id, quotation_id, name, builder_costs, catalog_id, panjang, lebar, unit_qty, type')
     if (itemError) {
         console.error('Failed to create quotation items from lead:', itemError)
         throw itemError
     }
+    await syncQuotationItemCostSnapshots(
+        supabase,
+        quotation.id,
+        (insertedLeadItems ?? []) as InsertedQuotationItemRow[],
+    )
 
     // 5. Log Audit Trail
     await supabase.from('erp_audit_trail').insert({
@@ -220,6 +227,266 @@ interface RevisionTermRow {
     amount_due: number
     is_default: boolean
     is_active: boolean
+}
+
+type InsertedQuotationItemRow = {
+    id: string
+    quotation_id: string
+    name: string
+    builder_costs: BuilderCostSnapshot[] | null
+    catalog_id?: string | null
+    panjang?: number | null
+    lebar?: number | null
+    unit_qty?: number | null
+    type?: string
+}
+
+const toNumber = (value: unknown): number => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+}
+
+const normalizeSegment = (value: unknown): string => {
+    const text = String(value ?? '').toLowerCase().trim()
+    if (!text) return 'lainnya'
+    return text === 'frame' ? 'rangka' : text
+}
+
+const isMissingRelationError = (error: unknown): boolean => {
+    const message = String((error as { message?: string } | null)?.message ?? '').toLowerCase()
+    return message.includes('does not exist') || message.includes('42p01')
+}
+
+type BaselineSnapshotRow = {
+    component_key: string
+    component_name: string
+    segment: string
+    source_type: string
+    material_name_snapshot: string | null
+    unit_snapshot: string | null
+    qty_snapshot: number
+    hpp_snapshot: number
+    subtotal_snapshot: number
+    metadata: Record<string, unknown>
+}
+
+type SyncSnapshotOptions = {
+    legacyItemIdsByIndex?: Array<string | null>
+    legacyBaselineByItemId?: Map<string, BaselineSnapshotRow[]>
+}
+
+async function loadLegacyBaselineByItemIds(
+    supabase: Awaited<ReturnType<typeof createClient>>,
+    itemIds: string[],
+): Promise<Map<string, BaselineSnapshotRow[]>> {
+    const map = new Map<string, BaselineSnapshotRow[]>()
+    if (itemIds.length === 0) return map
+    const { data, error } = await supabase
+        .from('erp_quotation_item_baseline_costs')
+        .select('quotation_item_id, component_key, component_name, segment, source_type, material_name_snapshot, unit_snapshot, qty_snapshot, hpp_snapshot, subtotal_snapshot, metadata')
+        .in('quotation_item_id', itemIds)
+    if (error && isMissingRelationError(error)) return map
+    if (error) throw error
+    ;(data ?? []).forEach((row) => {
+        const itemId = String((row as { quotation_item_id?: string }).quotation_item_id ?? '')
+        if (!itemId) return
+        const current = map.get(itemId) ?? []
+        current.push({
+            component_key: String((row as { component_key?: string }).component_key ?? ''),
+            component_name: String((row as { component_name?: string }).component_name ?? ''),
+            segment: normalizeSegment((row as { segment?: string }).segment ?? 'lainnya'),
+            source_type: String((row as { source_type?: string }).source_type ?? 'catalog'),
+            material_name_snapshot: ((row as { material_name_snapshot?: string | null }).material_name_snapshot ?? null),
+            unit_snapshot: ((row as { unit_snapshot?: string | null }).unit_snapshot ?? null),
+            qty_snapshot: toNumber((row as { qty_snapshot?: number }).qty_snapshot),
+            hpp_snapshot: toNumber((row as { hpp_snapshot?: number }).hpp_snapshot),
+            subtotal_snapshot: toNumber((row as { subtotal_snapshot?: number }).subtotal_snapshot),
+            metadata: ((row as { metadata?: Record<string, unknown> }).metadata ?? {}),
+        })
+        map.set(itemId, current)
+    })
+    return map
+}
+
+async function buildCatalogBaselineRows(
+    supabase: Awaited<ReturnType<typeof createClient>>,
+    item: InsertedQuotationItemRow,
+): Promise<BaselineSnapshotRow[]> {
+    if (!item.catalog_id) return []
+    const { data: catalogRaw, error: catalogError } = await supabase
+        .from('catalogs')
+        .select('id, title, base_price_per_m2, base_price_unit, labor_cost, transport_cost, margin_percentage, hpp_per_unit, atap_id, rangka_id, finishing_id, isian_id, use_std_calculation, std_calculation, atap:atap_id(name, variant_name, unit, base_price_per_unit, length_per_unit), rangka:rangka_id(name, variant_name, unit, base_price_per_unit, length_per_unit), finishing:finishing_id(name, variant_name, unit, base_price_per_unit, length_per_unit), isian:isian_id(name, variant_name, unit, base_price_per_unit, length_per_unit)')
+        .eq('id', item.catalog_id)
+        .maybeSingle()
+    if (catalogError) return []
+    if (!catalogRaw) return []
+
+    let hppComponentsRaw: unknown[] = []
+    const primaryResult = await supabase
+        .from('catalog_hpp_components')
+        .select('id, material_id, quantity, section, calculation_mode, material:material_id(name, variant_name, unit, base_price_per_unit, length_per_unit)')
+        .eq('catalog_id', item.catalog_id)
+    if (primaryResult.error) {
+        const fallbackResult = await supabase
+            .from('catalog_hpp_components')
+            .select('id, material_id, quantity, section, material:material_id(name, variant_name, unit, base_price_per_unit, length_per_unit)')
+            .eq('catalog_id', item.catalog_id)
+        hppComponentsRaw = (fallbackResult.data ?? []) as unknown[]
+    } else {
+        hppComponentsRaw = (primaryResult.data ?? []) as unknown[]
+    }
+
+    const baselineItems = buildCostingItems(
+        catalogRaw as unknown as CatalogCosting,
+        {
+            panjang: toNumber(item.panjang),
+            lebar: toNumber(item.lebar),
+            unitQty: Math.max(1, toNumber(item.unit_qty)),
+        },
+        item.type === 'manual' && !item.catalog_id,
+        hppComponentsRaw as HppComponent[],
+    )
+
+    return baselineItems
+        .filter((entry) => !String(entry.id || '').startsWith('addon-') && !String(entry.id || '').startsWith('override-'))
+        .map((entry) => ({
+            component_key: String(entry.id ?? ''),
+            component_name: String(entry.name ?? 'Komponen'),
+            segment: normalizeSegment(entry.type),
+            source_type: 'catalog',
+            material_name_snapshot: String(entry.name ?? ''),
+            unit_snapshot: String(entry.unit ?? 'unit'),
+            qty_snapshot: toNumber(entry.qtyCharged),
+            hpp_snapshot: toNumber(entry.hpp),
+            subtotal_snapshot: toNumber(entry.subtotal),
+            metadata: { source: 'catalog_snapshot' },
+        }))
+}
+
+async function syncQuotationItemCostSnapshots(
+    supabase: Awaited<ReturnType<typeof createClient>>,
+    quotationId: string,
+    insertedItems: InsertedQuotationItemRow[],
+    options?: SyncSnapshotOptions,
+) {
+    const { error: baselineDeleteError } = await supabase
+        .from('erp_quotation_item_baseline_costs')
+        .delete()
+        .eq('quotation_id', quotationId)
+    if (baselineDeleteError && isMissingRelationError(baselineDeleteError)) return
+    if (baselineDeleteError) throw baselineDeleteError
+
+    const { error: actualDeleteError } = await supabase
+        .from('erp_quotation_item_costs')
+        .delete()
+        .eq('quotation_id', quotationId)
+    if (actualDeleteError && isMissingRelationError(actualDeleteError)) return
+    if (actualDeleteError) throw actualDeleteError
+
+    const baselineRows: Array<Record<string, unknown>> = []
+    const actualRows: Array<Record<string, unknown>> = []
+
+    for (let index = 0; index < insertedItems.length; index += 1) {
+        const item = insertedItems[index]
+        const costs = Array.isArray(item.builder_costs) ? item.builder_costs : []
+        const legacyId = options?.legacyItemIdsByIndex?.[index] ?? null
+        const legacyBaselineRows = legacyId ? (options?.legacyBaselineByItemId?.get(legacyId) ?? []) : []
+        const baselineFromCatalog = legacyBaselineRows.length > 0
+            ? legacyBaselineRows
+            : await buildCatalogBaselineRows(supabase, item)
+
+        baselineFromCatalog.forEach((row) => {
+            baselineRows.push({
+                quotation_id: quotationId,
+                quotation_item_id: item.id,
+                component_key: row.component_key || `${item.id}-baseline`,
+                component_name: row.component_name || 'Komponen',
+                segment: normalizeSegment(row.segment),
+                source_type: row.source_type || 'catalog',
+                material_name_snapshot: row.material_name_snapshot,
+                unit_snapshot: row.unit_snapshot,
+                qty_snapshot: toNumber(row.qty_snapshot),
+                hpp_snapshot: toNumber(row.hpp_snapshot),
+                subtotal_snapshot: toNumber(row.subtotal_snapshot),
+                metadata: row.metadata ?? {},
+            })
+        })
+
+        costs.forEach((rawCost, idx) => {
+            const cost = (typeof rawCost === 'object' && rawCost !== null)
+                ? (rawCost as Record<string, unknown>)
+                : {}
+            const idRaw = String(cost.id ?? '').trim()
+            const isAddon = idRaw.startsWith('addon-')
+            const isOverride = idRaw.startsWith('override-')
+            const sourceType = isAddon ? 'addon' : isOverride ? 'override' : 'catalog'
+            const componentKey = idRaw || `${item.id}-line-${idx + 1}`
+            const componentName = String(cost.name ?? `Komponen ${idx + 1}`)
+            const segment = normalizeSegment(cost.type)
+            const unit = String(cost.unit ?? 'unit')
+            const hpp = toNumber(cost.hpp)
+            const qtyFinal = toNumber(cost.qtyCharged)
+            const qtyBase = toNumber(
+                isAddon
+                    ? (cost.addon_base_qty ?? cost.qtyNeeded)
+                    : isOverride
+                        ? (cost.override_base_qty ?? cost.qtyNeeded)
+                        : cost.qtyNeeded,
+            )
+            const subtotal = toNumber(cost.subtotal)
+            const mode = isAddon
+                ? (String(cost.addon_mode ?? '').toLowerCase() === 'fixed' ? 'fixed' : 'variable')
+                : isOverride
+                    ? (String(cost.override_mode ?? '').toLowerCase() === 'fixed' ? 'fixed' : 'variable')
+                    : null
+            const materialName = String(
+                cost.material_name_snapshot ??
+                cost.name ??
+                item.name ??
+                '',
+            )
+            const materialId = typeof cost.addon_material_id === 'string'
+                ? cost.addon_material_id
+                : typeof cost.override_material_id === 'string'
+                    ? cost.override_material_id
+                    : null
+            actualRows.push({
+                quotation_id: quotationId,
+                quotation_item_id: item.id,
+                line_no: idx + 1,
+                component_key: componentKey,
+                component_name: componentName,
+                segment,
+                source_type: sourceType,
+                mode,
+                material_id: materialId,
+                material_name_snapshot: materialName,
+                unit_snapshot: unit,
+                qty_base: qtyBase,
+                qty_final: qtyFinal,
+                hpp_snapshot: hpp,
+                subtotal_final: subtotal,
+                is_excluded: false,
+                metadata: cost,
+            })
+        })
+    }
+
+    if (baselineRows.length > 0) {
+        const { error } = await supabase
+            .from('erp_quotation_item_baseline_costs')
+            .insert(baselineRows)
+        if (error && isMissingRelationError(error)) return
+        if (error) throw error
+    }
+
+    if (actualRows.length > 0) {
+        const { error } = await supabase
+            .from('erp_quotation_item_costs')
+            .insert(actualRows)
+        if (error && isMissingRelationError(error)) return
+        if (error) throw error
+    }
 }
 
 export async function createQuotationFromEstimation(estimationId: string) {
@@ -316,13 +583,18 @@ export async function createQuotationFromEstimation(estimationId: string) {
         }
     ]
 
-    const { error: itemError } = await supabase.from('erp_quotation_items').insert(
+    const { data: insertedEstimationItems, error: itemError } = await supabase.from('erp_quotation_items').insert(
         qtnItems.map(item => ({ ...item, quotation_id: quotation.id }))
-    )
+    ).select('id, quotation_id, name, builder_costs, catalog_id, panjang, lebar, unit_qty, type')
     if (itemError) {
         console.error('Failed to create quotation items from estimation:', itemError)
         throw itemError
     }
+    await syncQuotationItemCostSnapshots(
+        supabase,
+        quotation.id,
+        (insertedEstimationItems ?? []) as InsertedQuotationItemRow[],
+    )
 
     // 4. Log Audit Trail
     await supabase.from('erp_audit_trail').insert({
@@ -435,7 +707,7 @@ export async function createQuotationRevision(quotationId: string) {
     // 4. Copy items to the new quotation
     const originalItems = (qtn.erp_quotation_items || []) as RevisionItemRow[]
     if (originalItems.length > 0) {
-        const { error: itemsError } = await supabase.from('erp_quotation_items').insert(
+        const { data: insertedRevisionItems, error: itemsError } = await supabase.from('erp_quotation_items').insert(
             originalItems.map((item) => ({
                 quotation_id: revision.id,
                 name: item.name,
@@ -457,8 +729,13 @@ export async function createQuotationRevision(quotationId: string) {
                 markup_percentage: item.markup_percentage,
                 markup_flat_fee: item.markup_flat_fee
             }))
-        )
+        ).select('id, quotation_id, name, builder_costs, catalog_id, panjang, lebar, unit_qty, type')
         if (itemsError) throw itemsError
+        await syncQuotationItemCostSnapshots(
+            supabase,
+            revision.id,
+            (insertedRevisionItems ?? []) as InsertedQuotationItemRow[],
+        )
     }
 
     // 5. Copy payment terms if applicable
@@ -504,11 +781,17 @@ export async function updateQuotationItems(quotationId: string, items: Quotation
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Unauthorized')
 
+    const legacyItemIdsByIndex = items.map((item) => (item.id ? item.id : null))
+    const legacyBaselineByItemId = await loadLegacyBaselineByItemIds(
+        supabase,
+        legacyItemIdsByIndex.filter((id): id is string => typeof id === 'string' && id.length > 0),
+    )
+
     // 1. Delete old items
     await supabase.from('erp_quotation_items').delete().eq('quotation_id', quotationId)
 
     // 2. Insert new items with hierarchical builder support
-    const { error: insertError } = await supabase.from('erp_quotation_items').insert(
+    const { data: insertedItems, error: insertError } = await supabase.from('erp_quotation_items').insert(
         items.map((item, idx) => ({
             quotation_id: quotationId,
             name: item.name,
@@ -531,9 +814,18 @@ export async function updateQuotationItems(quotationId: string, items: Quotation
             markup_percentage: item.markup_percentage || 0,
             markup_flat_fee: idx === 0 ? (item.markup_flat_fee || 0) : 0 // Static markup only for Line #1
         }))
-    )
+    ).select('id, quotation_id, name, builder_costs, catalog_id, panjang, lebar, unit_qty, type')
 
     if (insertError) throw insertError
+    await syncQuotationItemCostSnapshots(
+        supabase,
+        quotationId,
+        (insertedItems ?? []) as InsertedQuotationItemRow[],
+        {
+            legacyItemIdsByIndex,
+            legacyBaselineByItemId,
+        },
+    )
 
     // 3. Update quotation total and payment terms
     interface QuotationUpdateData {
@@ -615,9 +907,15 @@ export async function updateQuotationBuilder(
 
     if (qtnError) throw qtnError
 
+    const legacyItemIdsByIndex = data.items.map((item) => (item.id ? item.id : null))
+    const legacyBaselineByItemId = await loadLegacyBaselineByItemIds(
+        supabase,
+        legacyItemIdsByIndex.filter((id): id is string => typeof id === 'string' && id.length > 0),
+    )
+
     // 3. Replace Items
     await supabase.from('erp_quotation_items').delete().eq('quotation_id', quotationId)
-    const { error: itemError } = await supabase.from('erp_quotation_items').insert(
+    const { data: insertedBuilderItems, error: itemError } = await supabase.from('erp_quotation_items').insert(
         data.items.map(item => ({
             quotation_id: quotationId,
             name: item.name,
@@ -625,11 +923,32 @@ export async function updateQuotationBuilder(
             quantity: item.quantity,
             unit_price: item.unit_price,
             subtotal: item.subtotal,
-            type: item.type
+            type: item.type,
+            builder_costs: item.builder_costs || [],
+            catalog_id: item.catalog_id || null,
+            atap_id: item.atap_id || null,
+            rangka_id: item.rangka_id || null,
+            finishing_id: item.finishing_id || null,
+            isian_id: item.isian_id || null,
+            zone_id: item.zone_id || null,
+            panjang: item.panjang || null,
+            lebar: item.lebar || null,
+            unit_qty: item.unit_qty || null,
+            markup_percentage: item.markup_percentage || 0,
+            markup_flat_fee: item.markup_flat_fee || 0
         }))
-    )
+    ).select('id, quotation_id, name, builder_costs, catalog_id, panjang, lebar, unit_qty, type')
 
     if (itemError) throw itemError
+    await syncQuotationItemCostSnapshots(
+        supabase,
+        quotationId,
+        (insertedBuilderItems ?? []) as InsertedQuotationItemRow[],
+        {
+            legacyItemIdsByIndex,
+            legacyBaselineByItemId,
+        },
+    )
 
     // 4. Log Audit Trail with Price Comparison & Zoning
     const standardPrice = data.standard_unit_price || (currentQtn?.catalogs as unknown as { base_price_per_m2?: number })?.base_price_per_m2 || 0

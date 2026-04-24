@@ -24,6 +24,7 @@ type HppComponentRow = {
   source_catalog_id?: string | null
   quantity: number
   section?: string
+  calculation_mode?: 'variable' | 'fixed'
   note?: string
   material?: Pick<Material, 'id' | 'name' | 'base_price_per_unit' | 'unit' | 'category'>
   source_catalog?: { id: string; title: string; hpp_per_unit?: number | null } | null
@@ -135,6 +136,7 @@ export default function CatalogHppEditor({
       source_catalog_id: c.source_catalog_id ?? null,
       quantity: typeof c.quantity === 'number' ? c.quantity : 0,
       section: toLegacyNormalized(c.section),
+      calculation_mode: c.calculation_mode === 'fixed' ? 'fixed' : 'variable',
       note: String(c.note ?? ''),
       material: c.material,
       source_catalog: c.source_catalog ?? null,
@@ -222,6 +224,7 @@ export default function CatalogHppEditor({
         source_catalog_id: null,
         quantity: 1,
         section: normalizeSection(firstMaterial.category),
+        calculation_mode: 'variable',
         note: '',
       },
     ])
@@ -238,6 +241,7 @@ export default function CatalogHppEditor({
       source_catalog_id: null,
       quantity: 1,
       section: targetSection,
+      calculation_mode: 'variable',
       note: '',
     }
 
@@ -265,6 +269,7 @@ export default function CatalogHppEditor({
         source_catalog_id: firstCatalog.id,
         quantity: 1,
         section: normalizeSection('lainnya'),
+        calculation_mode: 'variable',
         note: '',
       },
     ])
@@ -328,6 +333,7 @@ export default function CatalogHppEditor({
         source_catalog_id: r.source_catalog_id ?? null,
         quantity: typeof r.quantity === 'number' ? r.quantity : 0,
         section: normalizeSection(r.section),
+        calculation_mode: r.calculation_mode === 'fixed' ? 'fixed' : 'variable',
         note: String(r.note ?? ''),
       })),
     )
@@ -442,7 +448,7 @@ export default function CatalogHppEditor({
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 font-semibold text-gray-700">
               <MoveVertical className="w-4 h-4 text-gray-500" />
-              Drag komponen untuk reorder atau pindah segmen.
+              Drag komponen untuk reorder. Untuk pindah segmen, gunakan dropdown &quot;Pindah Segmen&quot; di tiap baris.
             </div>
             <div className="font-black text-[#E30613]">Total visible: Rp {totalCost.toLocaleString('id-ID')}</div>
           </div>
@@ -566,6 +572,23 @@ export default function CatalogHppEditor({
                               <div className="h-[42px] border border-dashed border-gray-200 rounded-lg flex items-center justify-center text-gray-400 bg-gray-50">
                                 <GripVertical className="w-4 h-4" />
                               </div>
+                              <div className="mt-2">
+                                <select
+                                  className="w-full h-10 px-3 border border-gray-200 rounded-lg text-xs font-semibold bg-white text-gray-700"
+                                  value={section}
+                                  onChange={(e) => {
+                                    const nextSection = e.target.value
+                                    if (!nextSection || nextSection === section) return
+                                    moveRowToSectionEnd(idx, nextSection)
+                                  }}
+                                >
+                                  {sectionCodes.map((sectionCode) => (
+                                    <option key={sectionCode} value={sectionCode}>
+                                      Pindah: {sectionNameMap.get(sectionCode) ?? sectionCode}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
                             </div>
 
                             <div className="md:col-span-5 xl:col-span-7">
@@ -672,6 +695,26 @@ export default function CatalogHppEditor({
                                   </span>
                                 </div>
                               </div>
+                            </div>
+
+                            <div className="md:col-span-3 xl:col-span-2">
+                              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                                Mode Perhitungan
+                              </label>
+                              <SearchDropdown
+                                options={[
+                                  { value: 'variable', label: 'Variable (ikut volume)' },
+                                  { value: 'fixed', label: 'Fixed (tetap per proyek)' },
+                                ]}
+                                value={row.calculation_mode === 'fixed' ? 'fixed' : 'variable'}
+                                onChange={(nextMode) =>
+                                  updateRow(idx, {
+                                    calculation_mode: nextMode === 'fixed' ? 'fixed' : 'variable',
+                                  })
+                                }
+                                placeholder="Pilih mode..."
+                                searchPlaceholder="Cari mode..."
+                              />
                             </div>
 
                             <div className="md:col-span-3 xl:col-span-2">
@@ -801,6 +844,7 @@ export default function CatalogHppEditor({
                           source_catalog_id?: string | null
                           quantity: number
                           section?: string | null
+                          calculation_mode?: 'variable' | 'fixed' | null
                           note?: string | null
                         }
                         const rawRows: RawHpp[] = (Array.isArray(raw) ? (raw as unknown[]) : [])
@@ -821,6 +865,8 @@ export default function CatalogHppEditor({
                                   : Number(safe.quantity || 0),
                               section:
                                 typeof safe.section === 'string' ? safe.section : null,
+                              calculation_mode:
+                                safe.calculation_mode === 'fixed' ? 'fixed' : 'variable',
                               note: typeof safe.note === 'string' ? safe.note : null,
                             }
                           })
@@ -838,6 +884,8 @@ export default function CatalogHppEditor({
                                 ? Number(c.quantity) * (copyFactor || 1)
                                 : 0,
                             section: normalizeSection(c.section || mat?.category),
+                            calculation_mode:
+                              c.calculation_mode === 'fixed' ? 'fixed' : 'variable',
                             note: String(c.note ?? ''),
                             material: mat,
                             source_catalog: sourceCatalog ?? null,

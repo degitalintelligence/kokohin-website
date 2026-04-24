@@ -48,6 +48,23 @@ export default function ErpItemEditor({
   const [activeBuilderIdx, setActiveBuilderIdx] = useState<number | null>(null)
   const isLocked = status === 'approved'
 
+  const resolveBaselineCosts = (item: ErpItem) => {
+    if ((item.baseline_costs?.length || 0) > 0) return item.baseline_costs
+    if (!item.builder_costs?.length) return []
+
+    return item.builder_costs.map((cost, idx) => ({
+      quotation_item_id: item.id || '',
+      component_key: String(cost.id || `${item.id || 'item'}-seed-${idx + 1}`),
+      component_name: String(cost.name || `Komponen ${idx + 1}`),
+      segment: String(cost.type || 'lainnya'),
+      unit_snapshot: String(cost.unit || 'unit'),
+      qty_snapshot: Number(cost.qtyCharged ?? cost.qtyNeeded ?? 0) || 0,
+      hpp_snapshot: Number(cost.hpp || 0) || 0,
+      subtotal_snapshot: Number(cost.subtotal || 0) || 0,
+      source_type: String((cost.id || '').startsWith('addon-') ? 'addon' : 'catalog'),
+    }))
+  }
+
   const {
     attachments,
     setAttachments,
@@ -347,7 +364,10 @@ export default function ErpItemEditor({
 
       {activeBuilderIdx !== null && (
         <QuoteBuilderClient
-          initialData={items[activeBuilderIdx]}
+          initialData={{
+            ...items[activeBuilderIdx],
+            baseline_costs: resolveBaselineCosts(items[activeBuilderIdx]),
+          }}
           parentZoneId={selectedZoneId}
           disableFlatFee={activeBuilderIdx !== 0}
           customerInfo={customerProfile ? {

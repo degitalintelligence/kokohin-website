@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const axios = require('axios');
 const { performance } = require('perf_hooks');
 

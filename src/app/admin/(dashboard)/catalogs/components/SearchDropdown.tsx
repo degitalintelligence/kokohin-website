@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
+import { createPortal } from 'react-dom'
 
 export type SearchDropdownOption = {
   value: string
@@ -38,6 +39,13 @@ export default function SearchDropdown({
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const [panelStyle, setPanelStyle] = useState<{ top: number; left: number; width: number }>({
+    top: 0,
+    left: 0,
+    width: 0,
+  })
   const selected = useMemo(
     () => options.find((opt) => opt.value === value) ?? null,
     [options, value],
@@ -65,16 +73,35 @@ export default function SearchDropdown({
 
   useEffect(() => {
     if (!open) return
+    const updatePanelPosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      setPanelStyle({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      })
+    }
+    updatePanelPosition()
     const handleOutsideClick = (event: MouseEvent) => {
       if (!rootRef.current) return
-      if (!rootRef.current.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      const clickedInsideRoot = rootRef.current.contains(target)
+      const clickedInsidePanel = panelRef.current?.contains(target) ?? false
+      if (!clickedInsideRoot && !clickedInsidePanel) setOpen(false)
     }
+    window.addEventListener('resize', updatePanelPosition)
+    window.addEventListener('scroll', updatePanelPosition, true)
     document.addEventListener('mousedown', handleOutsideClick)
-    return () => document.removeEventListener('mousedown', handleOutsideClick)
+    return () => {
+      window.removeEventListener('resize', updatePanelPosition)
+      window.removeEventListener('scroll', updatePanelPosition, true)
+      document.removeEventListener('mousedown', handleOutsideClick)
+    }
   }, [open])
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className={`relative ${open ? 'z-[120]' : ''}`}>
       {name ? <input type="hidden" name={name} value={value} /> : null}
       {name && required ? (
         <input
@@ -88,6 +115,7 @@ export default function SearchDropdown({
       ) : null}
 
       <button
+        ref={buttonRef}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((prev) => !prev)}
@@ -101,8 +129,13 @@ export default function SearchDropdown({
         <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open ? (
-        <div className="absolute z-30 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
+      {open && typeof document !== 'undefined'
+        ? createPortal(
+        <div
+          ref={panelRef}
+          className="fixed z-[9999] rounded-lg border border-gray-200 bg-white shadow-lg"
+          style={{ top: panelStyle.top, left: panelStyle.left, width: panelStyle.width }}
+        >
           <div className="p-2 border-b border-gray-100">
             <div className="relative">
               <Search className="w-4 h-4 text-gray-400 absolute left-2.5 top-2.5" />
@@ -149,8 +182,10 @@ export default function SearchDropdown({
               ))
             )}
           </div>
-        </div>
-      ) : null}
+        </div>,
+        document.body,
+      )
+        : null}
     </div>
   )
 }

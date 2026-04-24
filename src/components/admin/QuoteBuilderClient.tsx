@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect, useTransition } from 'react'
+import { Fragment, useState, useMemo, useEffect, useTransition } from 'react'
 import { 
   Calculator, 
   HardHat, 
@@ -14,10 +14,15 @@ import {
   MapPin,
   X,
   CheckCircle2,
-  Loader2
+  Loader2,
+  Plus,
+  Trash2,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react'
 import { buildCostingItems, formatCurrency, type CatalogCosting, type CostingItem, type HppComponent } from '@/lib/utils/costing'
 import { toast } from '@/components/ui/toaster'
+import SearchDropdown, { type SearchDropdownOption } from '@/app/admin/(dashboard)/catalogs/components/SearchDropdown'
 
 interface QuoteBuilderProps {
   initialData: {
@@ -36,6 +41,7 @@ interface QuoteBuilderProps {
     markup_percentage?: number
     markup_flat_fee?: number
     type: string
+    baseline_costs?: BaselineCostSnapshot[]
   }
   parentZoneId?: string
   customerInfo?: {
@@ -62,6 +68,58 @@ interface Zone {
   flat_fee: number
 }
 
+type CostingGroup = {
+  key: string
+  label: string
+  items: CostingItem[]
+  subtotal: number
+}
+
+type AddonDraft = {
+  id: string
+  materialId?: string | null
+  name: string
+  section: string
+  mode: 'fixed' | 'variable'
+  baseQty: number
+  hpp: number
+  unit: string
+}
+
+type OverrideDraft = {
+  id: string
+  targetId: string
+  targetName: string
+  materialId?: string | null
+  name: string
+  section: string
+  mode: 'fixed' | 'variable'
+  baseQty: number
+  hpp: number
+  unit: string
+}
+
+type AddonMaterialOption = {
+  id: string
+  name: string
+  variant_name?: string | null
+  category?: string | null
+  unit: string
+  base_price_per_unit: number
+}
+
+type BaselineCostSnapshot = {
+  quotation_item_id: string
+  component_key: string
+  component_name: string
+  segment: string
+  unit_snapshot: string | null
+  qty_snapshot: number
+  hpp_snapshot: number
+  subtotal_snapshot: number
+  source_type: string
+}
+
 export default function QuoteBuilderClient({
   initialData,
   parentZoneId,
@@ -71,7 +129,7 @@ export default function QuoteBuilderClient({
   onClose
 }: QuoteBuilderProps) {
   const [zones, setZones] = useState<Zone[]>([])
-  const selectedZoneId = initialData.zone_id || parentZoneId || ''
+  const selectedZoneId = parentZoneId || initialData.zone_id || ''
   
   // Custom Pricing State
   const [activeCatalog, setActiveCatalog] = useState<CatalogCosting | null>(null)
@@ -86,6 +144,11 @@ export default function QuoteBuilderClient({
   const [isSaving, startSaveTransition] = useTransition()
   const [hppComponents, setHppComponents] = useState<HppComponent[]>([])
   const [isLoadingComponents, setIsLoadingComponents] = useState(false)
+  const [addonDrafts, setAddonDrafts] = useState<AddonDraft[]>([])
+  const [overrideDrafts, setOverrideDrafts] = useState<OverrideDraft[]>([])
+  const [overrideEditor, setOverrideEditor] = useState<OverrideDraft | null>(null)
+  const [addonMaterials, setAddonMaterials] = useState<AddonMaterialOption[]>([])
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   const selectedZone = useMemo(() => zones.find(z => z.id === selectedZoneId), [zones, selectedZoneId])
 
@@ -94,6 +157,42 @@ export default function QuoteBuilderClient({
   const isCustom = initialData.type === 'manual' && !initialData.catalog_id
   const productLabel = activeCatalog?.title || initialData.name || 'Katalog tidak ditemukan'
   const unitLabel = catalogUnit === 'm2' ? 'm²' : catalogUnit === 'm1' ? 'm¹' : 'unit'
+  const addonSectionOptions = useMemo(
+    () => [
+      { value: 'rangka', label: 'Rangka' },
+      { value: 'atap', label: 'Atap' },
+      { value: 'finishing', label: 'Finishing' },
+      { value: 'isian', label: 'Isian' },
+      { value: 'aksesoris', label: 'Aksesoris' },
+      { value: 'lainnya', label: 'Lainnya' },
+    ],
+    [],
+  )
+  const addonMaterialOptions = useMemo(
+    () =>
+      addonMaterials.map((material) => {
+        const variantLabel =
+          material.variant_name && material.variant_name.toLowerCase() !== 'default'
+            ? ` - ${material.variant_name}`
+            : ''
+        const unitLabelValue = material.unit ? ` (${material.unit})` : ''
+        return {
+          ...material,
+          label: `${material.name}${variantLabel}${unitLabelValue}`,
+        }
+      }),
+    [addonMaterials],
+  )
+  const addonMaterialSearchOptions = useMemo<SearchDropdownOption[]>(
+    () =>
+      addonMaterialOptions.map((material) => ({
+        value: material.id,
+        label: material.label,
+        group: material.category || 'lainnya',
+        keywords: `${material.name} ${material.variant_name ?? ''} ${material.category ?? ''} ${material.unit ?? ''}`,
+      })),
+    [addonMaterialOptions],
+  )
 
   // Fetch Catalog & Zones & Components on mount
   useEffect(() => {
@@ -104,6 +203,14 @@ export default function QuoteBuilderClient({
       // 1. Fetch Zones
       const { data: zonesData } = await supabase.from('zones').select('*').order('name')
       setZones(zonesData || [])
+
+      // 1b. Fetch master materials for addon picker
+      const { data: materialsData } = await supabase
+        .from('materials')
+        .select('id, name, variant_name, category, unit, base_price_per_unit')
+        .eq('is_active', true)
+        .order('name', { ascending: true })
+      setAddonMaterials((materialsData || []) as AddonMaterialOption[])
 
       // 2. Fetch Catalog if present
       if (initialData.catalog_id) {
@@ -117,10 +224,24 @@ export default function QuoteBuilderClient({
         // 3. Fetch HPP Components
         setIsLoadingComponents(true)
         try {
-          const { data, error } = await supabase
+          let data: unknown[] | null = null
+          let error: { message?: string } | null = null
+
+          const primaryResult = await supabase
             .from('catalog_hpp_components')
-            .select('id, material_id, quantity, section, material:material_id(name, unit, base_price_per_unit)')
+            .select('id, material_id, quantity, section, calculation_mode, material:material_id(name, variant_name, unit, base_price_per_unit, length_per_unit)')
             .eq('catalog_id', initialData.catalog_id)
+          data = primaryResult.data
+          error = primaryResult.error
+
+          if (error) {
+            const fallback = await supabase
+              .from('catalog_hpp_components')
+              .select('id, material_id, quantity, section, material:material_id(name, variant_name, unit, base_price_per_unit, length_per_unit)')
+              .eq('catalog_id', initialData.catalog_id)
+            data = fallback.data as unknown[] | null
+            error = fallback.error as { message?: string } | null
+          }
 
           if (error) throw error
           setHppComponents((data ?? []) as unknown as HppComponent[])
@@ -141,6 +262,72 @@ export default function QuoteBuilderClient({
     }
   }, [activeCatalog, initialData.unit_price])
 
+  const normalizeSectionFromCategory = (category?: string | null): string => {
+    const text = String(category ?? '').toLowerCase()
+    if (text.includes('rangka') || text.includes('frame')) return 'rangka'
+    if (text.includes('atap')) return 'atap'
+    if (text.includes('finishing')) return 'finishing'
+    if (text.includes('isian')) return 'isian'
+    if (text.includes('aksesoris')) return 'aksesoris'
+    return 'lainnya'
+  }
+
+  useEffect(() => {
+    const rawCosts = initialData.builder_costs || []
+    const loadedAddons: AddonDraft[] = rawCosts
+      .filter((item) => String(item.id || '').startsWith('addon-'))
+      .map((item, idx) => {
+        const source = item as CostingItem & {
+          addon_mode?: 'fixed' | 'variable'
+          addon_base_qty?: number
+          addon_section?: string
+          addon_unit?: string
+          addon_hpp?: number
+          addon_material_id?: string
+        }
+        return {
+          id: source.id || `addon-${idx + 1}`,
+          materialId: source.addon_material_id || null,
+          name: source.name || 'Addon',
+          section: source.addon_section || source.type || 'lainnya',
+          mode: source.addon_mode === 'fixed' ? 'fixed' : 'variable',
+          baseQty: Number(source.addon_base_qty ?? source.qtyNeeded ?? source.qtyCharged ?? 1),
+          hpp: Number(source.addon_hpp ?? source.hpp ?? 0),
+          unit: source.addon_unit || source.unit || 'unit',
+        }
+      })
+    setAddonDrafts(loadedAddons)
+
+    const loadedOverrides: OverrideDraft[] = rawCosts
+      .filter((item) => String(item.id || '').startsWith('override-'))
+      .map((item, idx) => {
+        const source = item as CostingItem & {
+          override_target_id?: string
+          override_target_name?: string
+          override_mode?: 'fixed' | 'variable'
+          override_base_qty?: number
+          override_section?: string
+          override_unit?: string
+          override_hpp?: number
+          override_material_id?: string
+        }
+        const fallbackTargetId = String(source.id || `override-${idx + 1}`).replace(/^override-/, '')
+        return {
+          id: source.id || `override-${fallbackTargetId}`,
+          targetId: source.override_target_id || fallbackTargetId,
+          targetName: source.override_target_name || source.name || 'Komponen',
+          materialId: source.override_material_id || null,
+          name: source.name || 'Material Override',
+          section: source.override_section || source.type || 'lainnya',
+          mode: source.override_mode === 'fixed' ? 'fixed' : 'variable',
+          baseQty: Number(source.override_base_qty ?? source.qtyNeeded ?? source.qtyCharged ?? 1),
+          hpp: Number(source.override_hpp ?? source.hpp ?? 0),
+          unit: source.override_unit || source.unit || 'unit',
+        }
+      })
+    setOverrideDrafts(loadedOverrides)
+  }, [initialData.builder_costs])
+
   // 3. Dynamic Calculations
   const computedQty = useMemo(() => {
     if (catalogUnit === 'm2') return Math.max(0, panjang) * Math.max(0, lebar)
@@ -148,17 +335,163 @@ export default function QuoteBuilderClient({
     return Math.max(1, unitQty)
   }, [catalogUnit, panjang, lebar, unitQty])
 
-  const { costingItems, totalHpp } = useMemo(() => {
-    if (isLoadingComponents && (initialData.builder_costs?.length || 0) > 0) {
-        return { 
-          costingItems: initialData.builder_costs || [], 
-          totalHpp: (initialData.builder_costs || []).reduce((acc: number, item: CostingItem) => acc + item.subtotal, 0) 
-        }
+  const { costingItems: baseCostingItems } = useMemo(() => {
+    const snapshotItems = (initialData.builder_costs || []).filter(
+      (item) =>
+        !String(item.id || '').startsWith('addon-') &&
+        !String(item.id || '').startsWith('override-'),
+    )
+    if (!activeCatalog) {
+      return { costingItems: snapshotItems }
     }
     const items = buildCostingItems(activeCatalog, { panjang, lebar, unitQty }, isCustom, hppComponents)
-    const hpp = items.reduce((acc, item) => acc + item.subtotal, 0)
-    return { costingItems: items, totalHpp: hpp }
-  }, [activeCatalog, panjang, lebar, unitQty, isCustom, hppComponents, isLoadingComponents, initialData.builder_costs])
+    return { costingItems: items }
+  }, [activeCatalog, panjang, lebar, unitQty, isCustom, hppComponents, initialData.builder_costs])
+
+  const addonCostingItems = useMemo<CostingItem[]>(() => {
+    const stdCalc = activeCatalog?.std_calculation && activeCatalog.std_calculation > 0
+      ? activeCatalog.std_calculation
+      : 1
+    const scale = computedQty / stdCalc
+    return addonDrafts
+      .map((addon) => {
+        const qtyNeeded = addon.mode === 'fixed' ? addon.baseQty : addon.baseQty * scale
+        const qtyCharged = Math.ceil(Math.max(0, qtyNeeded))
+        const subtotal = Math.ceil(Math.max(0, addon.hpp) * qtyCharged)
+        if (!addon.name || qtyCharged <= 0) return null
+        const addonItem = {
+          id: addon.id,
+          name: addon.name,
+          unit: addon.unit || 'unit',
+          hpp: Math.max(0, addon.hpp),
+          lengthPerUnit: 1,
+          qtyNeeded,
+          qtyCharged,
+          subtotal,
+          type: addon.section || 'lainnya',
+          addon_mode: addon.mode,
+          addon_base_qty: addon.baseQty,
+          addon_section: addon.section || 'lainnya',
+          addon_unit: addon.unit || 'unit',
+          addon_hpp: addon.hpp,
+          addon_material_id: addon.materialId || null,
+        } as CostingItem
+        return addonItem
+      })
+      .filter((item): item is CostingItem => item !== null)
+  }, [addonDrafts, computedQty, activeCatalog?.std_calculation])
+
+  const overrideCostingItems = useMemo<CostingItem[]>(() => {
+    const stdCalc = activeCatalog?.std_calculation && activeCatalog.std_calculation > 0
+      ? activeCatalog.std_calculation
+      : 1
+    const scale = computedQty / stdCalc
+    return overrideDrafts
+      .map((override) => {
+        const qtyNeeded = override.mode === 'fixed' ? override.baseQty : override.baseQty * scale
+        const qtyCharged = Math.ceil(Math.max(0, qtyNeeded))
+        const subtotal = Math.ceil(Math.max(0, override.hpp) * qtyCharged)
+        if (!override.name || !override.targetId || qtyCharged <= 0) return null
+        return {
+          id: override.id || `override-${override.targetId}`,
+          name: override.name,
+          unit: override.unit || 'unit',
+          hpp: Math.max(0, override.hpp),
+          lengthPerUnit: 1,
+          qtyNeeded,
+          qtyCharged,
+          subtotal,
+          type: override.section || 'lainnya',
+          override_target_id: override.targetId,
+          override_target_name: override.targetName,
+          override_mode: override.mode,
+          override_base_qty: override.baseQty,
+          override_section: override.section || 'lainnya',
+          override_unit: override.unit || 'unit',
+          override_hpp: override.hpp,
+          override_material_id: override.materialId || null,
+        } as CostingItem
+      })
+      .filter((item): item is CostingItem => item !== null)
+  }, [overrideDrafts, computedQty, activeCatalog?.std_calculation])
+
+  const overriddenTargetIds = useMemo(
+    () => new Set(overrideDrafts.map((item) => item.targetId).filter(Boolean)),
+    [overrideDrafts],
+  )
+
+  const visibleBaseCostingItems = useMemo(
+    () => baseCostingItems.filter((item) => !overriddenTargetIds.has(item.id)),
+    [baseCostingItems, overriddenTargetIds],
+  )
+
+  const costingItems = useMemo(
+    () => [...visibleBaseCostingItems, ...overrideCostingItems, ...addonCostingItems],
+    [visibleBaseCostingItems, overrideCostingItems, addonCostingItems],
+  )
+
+  const totalHpp = useMemo(
+    () => costingItems.reduce((acc, item) => acc + item.subtotal, 0),
+    [costingItems],
+  )
+
+  const groupedCostingItems = useMemo<CostingGroup[]>(() => {
+    const sectionLabelMap: Record<string, string> = {
+      atap: 'Atap',
+      rangka: 'Rangka',
+      frame: 'Rangka',
+      finishing: 'Finishing',
+      isian: 'Isian',
+      aksesoris: 'Aksesoris',
+      labor: 'Jasa',
+      overhead: 'Overhead',
+      lainnya: 'Lainnya',
+      material: 'Material Lain',
+      global: 'Global',
+      custom: 'Custom',
+    }
+    const sectionOrder = ['rangka', 'atap', 'finishing', 'isian', 'aksesoris', 'labor', 'overhead', 'lainnya', 'material', 'global', 'custom']
+
+    const normalizeKey = (rawType?: string): string => {
+      const key = String(rawType ?? '').toLowerCase().trim()
+      if (!key) return 'lainnya'
+      if (key === 'frame') return 'rangka'
+      return key
+    }
+
+    const grouped = new Map<string, CostingGroup>()
+    costingItems.forEach((item) => {
+      const key = normalizeKey(item.type)
+      const existing = grouped.get(key)
+      if (existing) {
+        existing.items.push(item)
+        existing.subtotal += item.subtotal || 0
+        return
+      }
+      grouped.set(key, {
+        key,
+        label: sectionLabelMap[key] ?? key.charAt(0).toUpperCase() + key.slice(1),
+        items: [item],
+        subtotal: item.subtotal || 0,
+      })
+    })
+
+    return Array.from(grouped.values()).sort((a, b) => {
+      const ia = sectionOrder.indexOf(a.key)
+      const ib = sectionOrder.indexOf(b.key)
+      const pa = ia === -1 ? Number.MAX_SAFE_INTEGER : ia
+      const pb = ib === -1 ? Number.MAX_SAFE_INTEGER : ib
+      if (pa !== pb) return pa - pb
+      return a.label.localeCompare(b.label)
+    })
+  }, [costingItems])
+
+  const baselineTotalHpp = useMemo(
+    () => (initialData.baseline_costs || []).reduce((sum, row) => sum + Number(row.subtotal_snapshot || 0), 0),
+    [initialData.baseline_costs],
+  )
+  const hppDelta = totalHpp - baselineTotalHpp
+  const hasBaseline = (initialData.baseline_costs?.length || 0) > 0
 
   // Pricing Logic
   const matchedZone = useMemo(() => zones.find(z => z.id === selectedZoneId), [zones, selectedZoneId])
@@ -232,9 +565,78 @@ export default function QuoteBuilderClient({
     })
   }
 
+  const addAddonRow = () => {
+    const nextNumber = addonDrafts.length + 1
+    const defaultMaterial = addonMaterialOptions[0]
+    setAddonDrafts((prev) => [
+      ...prev,
+      {
+        id: `addon-${Date.now()}-${nextNumber}`,
+        materialId: defaultMaterial?.id ?? null,
+        name: defaultMaterial?.label || `Addon ${nextNumber}`,
+        section: normalizeSectionFromCategory(defaultMaterial?.category),
+        mode: 'variable',
+        baseQty: 1,
+        hpp: Number(defaultMaterial?.base_price_per_unit || 0),
+        unit: defaultMaterial?.unit || 'unit',
+      },
+    ])
+  }
+
+  const updateAddon = (id: string, patch: Partial<AddonDraft>) => {
+    setAddonDrafts((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
+  }
+
+  const removeAddon = (id: string) => {
+    setAddonDrafts((prev) => prev.filter((item) => item.id !== id))
+  }
+
+  const upsertOverride = (draft: OverrideDraft) => {
+    setOverrideDrafts((prev) => {
+      const next = prev.filter((item) => item.targetId !== draft.targetId)
+      return [...next, { ...draft, id: `override-${draft.targetId}` }]
+    })
+  }
+
+  const removeOverride = (targetId: string) => {
+    setOverrideDrafts((prev) => prev.filter((item) => item.targetId !== targetId))
+    setOverrideEditor((current) => (current?.targetId === targetId ? null : current))
+  }
+
+  const openOverrideEditor = (item: CostingItem) => {
+    const existing = overrideDrafts.find((override) => override.targetId === item.id)
+    if (existing) {
+      setOverrideEditor(existing)
+      return
+    }
+    const stdCalc = activeCatalog?.std_calculation && activeCatalog.std_calculation > 0
+      ? activeCatalog.std_calculation
+      : 1
+    const scale = Math.max(1e-9, computedQty / stdCalc)
+    const normalizedBaseQty = item.qtyNeeded > 0 ? item.qtyNeeded / scale : 1
+    setOverrideEditor({
+      id: `override-${item.id}`,
+      targetId: item.id,
+      targetName: item.name,
+      materialId: null,
+      name: item.name,
+      section: item.type || 'lainnya',
+      mode: 'variable',
+      baseQty: Number.isFinite(normalizedBaseQty) ? normalizedBaseQty : 1,
+      hpp: item.hpp || 0,
+      unit: item.unit || 'unit',
+    })
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div
+        className={`bg-white shadow-2xl w-full flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+          isFullscreen
+            ? 'max-w-[100vw] max-h-[100vh] h-[100vh] rounded-none'
+            : 'max-w-[96vw] xl:max-w-7xl max-h-[96vh] rounded-2xl'
+        }`}
+      >
         <header className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-[#E30613]/10 rounded-xl">
@@ -250,16 +652,27 @@ export default function QuoteBuilderClient({
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors border border-transparent hover:border-gray-200 text-gray-400 hover:text-gray-900">
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsFullscreen((prev) => !prev)}
+              className="p-2 hover:bg-white rounded-full transition-colors border border-transparent hover:border-gray-200 text-gray-400 hover:text-gray-900"
+              aria-label={isFullscreen ? 'Keluar fullscreen' : 'Masuk fullscreen'}
+              title={isFullscreen ? 'Keluar fullscreen' : 'Masuk fullscreen'}
+            >
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors border border-transparent hover:border-gray-200 text-gray-400 hover:text-gray-900">
+              <X size={20} />
+            </button>
+          </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-6 bg-gray-50/30">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-6">
+        <div className="flex-1 overflow-auto p-4 lg:p-6 bg-gray-50/30">
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            <div className="xl:col-span-8 space-y-6">
               {/* Input Parameters */}
-              <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-visible">
                 <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
                   <h4 className="font-bold text-sm text-gray-700 uppercase tracking-widest flex items-center gap-2">
                     <Package size={16} className="text-[#E30613]" /> Konfigurasi Utama
@@ -385,6 +798,109 @@ export default function QuoteBuilderClient({
                 </div>
               </div>
 
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+                  <h4 className="font-bold text-sm text-gray-700 uppercase tracking-widest">Addon Penawaran (Tanpa Ubah Katalog)</h4>
+                  <button
+                    type="button"
+                    onClick={addAddonRow}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-black text-white bg-[#E30613] rounded-lg hover:bg-[#c50511]"
+                  >
+                    <Plus size={14} />
+                    Tambah Addon
+                  </button>
+                </div>
+                <div className="p-4 space-y-3 overflow-visible">
+                  {addonDrafts.length === 0 ? (
+                    <p className="text-xs text-gray-500">Belum ada addon custom. Tambahkan untuk upgrade spek/aksesoris khusus penawaran ini.</p>
+                  ) : (
+                    addonDrafts.map((addon) => (
+                      <div key={addon.id} className="grid grid-cols-1 md:grid-cols-6 xl:grid-cols-12 gap-3 border border-gray-100 rounded-lg p-3">
+                        <div className="md:col-span-3 xl:col-span-4">
+                          <SearchDropdown
+                            options={addonMaterialSearchOptions}
+                            value={addon.materialId || ''}
+                            onChange={(nextMaterialId) => {
+                              const selected = addonMaterialOptions.find((opt) => opt.id === nextMaterialId)
+                              if (!selected) {
+                                updateAddon(addon.id, { materialId: null })
+                                return
+                              }
+                              updateAddon(addon.id, {
+                                materialId: selected.id,
+                                name: selected.label,
+                                unit: selected.unit || 'unit',
+                                hpp: Number(selected.base_price_per_unit || 0),
+                                section: normalizeSectionFromCategory(selected.category),
+                              })
+                            }}
+                            placeholder="Pilih material addon..."
+                            searchPlaceholder="Cari material/variant/kategori..."
+                          />
+                        </div>
+                        <input
+                          value={addon.name}
+                          onChange={(e) => updateAddon(addon.id, { name: e.target.value, materialId: null })}
+                          className="md:col-span-3 xl:col-span-3 h-10 px-3 border border-gray-200 rounded-lg text-sm"
+                          placeholder="Nama addon"
+                        />
+                        <select
+                          value={addon.section}
+                          onChange={(e) => updateAddon(addon.id, { section: e.target.value })}
+                          className="md:col-span-2 xl:col-span-2 h-10 px-2 border border-gray-200 rounded-lg text-sm"
+                        >
+                          {addonSectionOptions.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={addon.mode}
+                          onChange={(e) => updateAddon(addon.id, { mode: e.target.value === 'fixed' ? 'fixed' : 'variable' })}
+                          className="md:col-span-1 xl:col-span-1 h-10 px-2 border border-gray-200 rounded-lg text-sm"
+                        >
+                          <option value="variable">Var</option>
+                          <option value="fixed">Fix</option>
+                        </select>
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={addon.baseQty}
+                          onChange={(e) => updateAddon(addon.id, { baseQty: Number(e.target.value || 0) })}
+                          className="md:col-span-1 xl:col-span-1 h-10 px-2 border border-gray-200 rounded-lg text-sm"
+                          placeholder="Qty"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          step={100}
+                          value={addon.hpp}
+                          onChange={(e) => updateAddon(addon.id, { hpp: Number(e.target.value || 0) })}
+                          className="md:col-span-2 xl:col-span-1 h-10 px-2 border border-gray-200 rounded-lg text-sm"
+                          placeholder="HPP"
+                        />
+                        <div className="md:col-span-6 xl:col-span-12 flex items-center justify-end gap-2">
+                          <input
+                            value={addon.unit}
+                            onChange={(e) => updateAddon(addon.id, { unit: e.target.value })}
+                            className="h-9 w-24 px-2 border border-gray-200 rounded-lg text-xs"
+                            placeholder="Unit"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeAddon(addon.id)}
+                            className="h-9 w-9 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center"
+                            aria-label="Hapus addon"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
               {/* HPP Reference Breakdown */}
               <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                 <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
@@ -396,7 +912,140 @@ export default function QuoteBuilderClient({
                     MODAL: Rp {formatCurrency(totalHpp)}
                   </div>
                 </div>
-                <div className="overflow-x-auto max-h-[300px]">
+                <div className="px-4 py-3 border-b border-gray-100 bg-blue-50/40 grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] font-bold uppercase tracking-wide">
+                    <div className="text-gray-600">
+                      Baseline Katalog
+                      <div className="text-sm font-black text-gray-900 normal-case">Rp {formatCurrency(baselineTotalHpp)}</div>
+                    </div>
+                    <div className="text-gray-600">
+                      Aktual Penawaran
+                      <div className="text-sm font-black text-gray-900 normal-case">Rp {formatCurrency(totalHpp)}</div>
+                    </div>
+                    <div className={hppDelta >= 0 ? 'text-red-600' : 'text-green-600'}>
+                      Delta
+                      <div className="text-sm font-black normal-case">
+                        {hppDelta >= 0 ? '+' : '-'} Rp {formatCurrency(Math.abs(hppDelta))}
+                      </div>
+                    </div>
+                </div>
+                {!hasBaseline && (
+                  <div className="px-4 py-2 border-b border-gray-100 text-[11px] font-semibold text-amber-700 bg-amber-50/70">
+                    Baseline tabel belum tersedia untuk item lama. Ditampilkan fallback dari snapshot biaya terakhir item ini.
+                  </div>
+                )}
+                {overrideEditor && (
+                  <div className="p-4 border-b border-gray-100 bg-red-50/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-black text-gray-700 uppercase tracking-wide">
+                        Ganti Material: {overrideEditor.targetName}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setOverrideEditor(null)}
+                        className="text-[11px] font-bold text-gray-500 hover:text-gray-800"
+                      >
+                        Tutup
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+                      <div className="lg:col-span-6 min-w-0">
+                        <SearchDropdown
+                          options={addonMaterialSearchOptions}
+                          value={overrideEditor.materialId || ''}
+                          onChange={(nextMaterialId) => {
+                            const selected = addonMaterialOptions.find((opt) => opt.id === nextMaterialId)
+                            if (!selected) {
+                              setOverrideEditor((prev) => (prev ? { ...prev, materialId: null } : prev))
+                              return
+                            }
+                            setOverrideEditor((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    materialId: selected.id,
+                                    name: selected.label,
+                                    unit: selected.unit || 'unit',
+                                    hpp: Number(selected.base_price_per_unit || 0),
+                                    section: normalizeSectionFromCategory(selected.category),
+                                  }
+                                : prev,
+                            )
+                          }}
+                          placeholder="Pilih material pengganti..."
+                          searchPlaceholder="Cari material/variant/kategori..."
+                        />
+                      </div>
+                      <input
+                        value={overrideEditor.name}
+                        onChange={(e) => setOverrideEditor((prev) => (prev ? { ...prev, name: e.target.value, materialId: null } : prev))}
+                        className="lg:col-span-4 h-10 w-full min-w-0 px-3 border border-gray-200 rounded-lg text-sm"
+                        placeholder="Nama material"
+                      />
+                      <select
+                        value={overrideEditor.section}
+                        onChange={(e) => setOverrideEditor((prev) => (prev ? { ...prev, section: e.target.value } : prev))}
+                        className="lg:col-span-2 h-10 w-full px-2 border border-gray-200 rounded-lg text-sm"
+                      >
+                        {addonSectionOptions.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={overrideEditor.mode}
+                        onChange={(e) => setOverrideEditor((prev) => (prev ? { ...prev, mode: e.target.value === 'fixed' ? 'fixed' : 'variable' } : prev))}
+                        className="sm:col-span-1 lg:col-span-2 h-10 w-full px-2 border border-gray-200 rounded-lg text-sm"
+                      >
+                        <option value="variable">Var</option>
+                        <option value="fixed">Fix</option>
+                      </select>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={overrideEditor.baseQty}
+                        onChange={(e) => setOverrideEditor((prev) => (prev ? { ...prev, baseQty: Number(e.target.value || 0) } : prev))}
+                        className="sm:col-span-1 lg:col-span-1 h-10 w-full px-2 border border-gray-200 rounded-lg text-sm"
+                        placeholder="Qty"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        step={100}
+                        value={overrideEditor.hpp}
+                        onChange={(e) => setOverrideEditor((prev) => (prev ? { ...prev, hpp: Number(e.target.value || 0) } : prev))}
+                        className="sm:col-span-2 lg:col-span-3 h-10 w-full px-2 border border-gray-200 rounded-lg text-sm"
+                        placeholder="HPP"
+                      />
+                      <div className="lg:col-span-12 grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                        <input
+                          value={overrideEditor.unit}
+                          onChange={(e) => setOverrideEditor((prev) => (prev ? { ...prev, unit: e.target.value } : prev))}
+                          className="h-10 w-full px-3 border border-gray-200 rounded-lg text-sm"
+                          placeholder="Unit"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeOverride(overrideEditor.targetId)}
+                          className="h-10 w-full px-3 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-[11px] font-black uppercase whitespace-nowrap"
+                        >
+                          Batalkan Ganti
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!overrideEditor.name.trim()) return
+                            upsertOverride(overrideEditor)
+                            setOverrideEditor(null)
+                          }}
+                          className="h-10 w-full px-3 rounded-lg border border-[#E30613] text-white bg-[#E30613] hover:bg-[#c50511] text-[11px] font-black uppercase whitespace-nowrap"
+                        >
+                          Simpan Pengganti
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="overflow-x-auto max-h-[360px]">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="bg-white border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-widest sticky top-0 z-10">
@@ -404,26 +1053,74 @@ export default function QuoteBuilderClient({
                         <th className="p-4 text-center">Volume</th>
                         <th className="p-4 text-right">HPP Satuan</th>
                         <th className="p-4 text-right">Subtotal</th>
+                        <th className="p-4 text-right">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
-                      {costingItems.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                          <td className="p-4">
-                            <div className="font-bold text-gray-800">{item.name}</div>
-                            <div className="text-[9px] text-gray-400 uppercase font-black">{item.type}</div>
-                          </td>
-                          <td className="p-4 text-center">
-                            <span className="font-black text-gray-900">{formatCurrency(item.qtyCharged)}</span>
-                            <span className="text-[9px] text-gray-400 ml-1 uppercase">{item.unit}</span>
-                          </td>
-                          <td className="p-4 text-right text-gray-500 font-medium">Rp {formatCurrency(item.hpp)}</td>
-                          <td className="p-4 text-right font-black text-gray-900">Rp {formatCurrency(item.subtotal)}</td>
-                        </tr>
+                      {groupedCostingItems.map((group) => (
+                        <Fragment key={`group-${group.key}`}>
+                          <tr>
+                            <td colSpan={5} className="p-0">
+                              <div className="bg-gray-50/80 border-y border-gray-100 px-4 py-2 flex items-center justify-between">
+                                <span className="text-[10px] font-black text-gray-700 uppercase tracking-widest">
+                                  Segmen: {group.label}
+                                </span>
+                                <span className="text-[10px] font-black text-blue-700 uppercase tracking-wide">
+                                  Subtotal Rp {formatCurrency(group.subtotal)}
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                          {group.items.map((item, idx) => (
+                            <tr key={`${group.key}-${item.id}-${idx}`} className="hover:bg-gray-50 transition-colors">
+                              <td className="p-4">
+                                <div className="font-bold text-gray-800">{item.name}</div>
+                                <div className="text-[9px] text-gray-400 uppercase font-black">{group.label}</div>
+                              </td>
+                              <td className="p-4 text-center">
+                                <span className="font-black text-gray-900">{formatCurrency(item.qtyCharged)}</span>
+                                <span className="text-[9px] text-gray-400 ml-1 uppercase">{item.unit}</span>
+                              </td>
+                              <td className="p-4 text-right text-gray-500 font-medium">Rp {formatCurrency(item.hpp)}</td>
+                              <td className="p-4 text-right font-black text-gray-900">Rp {formatCurrency(item.subtotal)}</td>
+                              <td className="p-4 text-right">
+                                {String(item.id || '').startsWith('addon-') ? (
+                                  <span className="text-[10px] font-bold text-gray-400 uppercase">Addon</span>
+                                ) : String(item.id || '').startsWith('override-') ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const source = item as CostingItem & { override_target_id?: string }
+                                      if (source.override_target_id) removeOverride(source.override_target_id)
+                                    }}
+                                    className="text-[10px] font-black text-gray-600 uppercase hover:text-red-600"
+                                  >
+                                    Batalkan Ganti
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => openOverrideEditor(item)}
+                                    className="text-[10px] font-black text-[#E30613] uppercase hover:text-[#c50511]"
+                                  >
+                                    Ganti Material
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </Fragment>
                       ))}
+                      {!isLoadingComponents && costingItems.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="p-8 text-center text-xs font-bold text-gray-400 uppercase">
+                            Belum ada komponen HPP untuk ditampilkan.
+                          </td>
+                        </tr>
+                      )}
                       {isLoadingComponents && (
                           <tr>
-                              <td colSpan={4} className="p-12 text-center">
+                              <td colSpan={5} className="p-12 text-center">
                                   <Loader2 className="animate-spin mx-auto text-gray-300" size={32} />
                                   <p className="mt-2 text-xs font-bold text-gray-400 uppercase">Menghitung modal...</p>
                               </td>
@@ -436,7 +1133,7 @@ export default function QuoteBuilderClient({
             </div>
 
             {/* Price Status & Action Sidebar */}
-            <div className="space-y-6">
+            <div className="xl:col-span-4 space-y-6">
               <div className="bg-white border border-gray-200 rounded-3xl shadow-xl overflow-hidden sticky top-0">
                 <div className={`p-6 border-b text-center transition-colors duration-300 ${priceStatus.bg} ${priceStatus.border}`}>
                     <div className="flex justify-center mb-3">

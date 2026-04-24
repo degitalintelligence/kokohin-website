@@ -30,6 +30,8 @@ type Props = {
   activeCategory: string | null
 }
 
+const NOW_TS = Date.now()
+
 export default function MaterialsListClient({ materials, categories, activeCategory }: Props) {
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState<'name_asc' | 'name_desc' | 'price_asc' | 'price_desc'>('name_asc')
@@ -139,7 +141,7 @@ export default function MaterialsListClient({ materials, categories, activeCateg
       }
     }
     const latestTs = Math.max(...validDates)
-    const now = Date.now()
+    const now = NOW_TS
     const staleCount = materials.filter((m) => {
       if (!m.updated_at) return true
       const ts = new Date(m.updated_at).getTime()
